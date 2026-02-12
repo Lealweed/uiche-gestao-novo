@@ -8,7 +8,7 @@ export default function Home() {
           <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-cyan-400/10 blur-3xl" />
           <div className="absolute -bottom-20 -left-20 w-64 h-64 rounded-full bg-blue-500/10 blur-3xl" />
 
-          <p className="text-xs uppercase tracking-[0.18em] text-cyan-300">Shoppingcell • Projeto Guichê</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-cyan-300">Projeto Guichê • Painel de Gestão</p>
           <h1 className="mt-3 text-3xl md:text-5xl font-bold tracking-tight">Guichê Gestão</h1>
           <p className="mt-4 text-slate-300 max-w-2xl text-base md:text-lg">
             Controle de turnos, lançamentos por forma de pagamento, comprovantes e fechamento diário com auditoria.
