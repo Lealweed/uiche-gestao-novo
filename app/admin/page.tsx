@@ -683,7 +683,7 @@ export default function AdminPage() {
               <button onClick={() => setMenu("tarefas")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="tarefas" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Tarefas</button>
               <button onClick={() => setMenu("financeiro")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="financeiro" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Financeiro</button>
               <button onClick={() => setMenu("relatorios")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="relatorios" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Relatórios com IA</button>
-              <button onClick={() => setMenu("portal")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="portal" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Portal do Cliente</button>
+              <button onClick={() => setMenu("portal")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="portal" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Clientes</button>
               <button onClick={() => setMenu("configuracoes")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="configuracoes" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Configurações</button>
             </nav>
           </aside>
@@ -754,9 +754,9 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section id="portal-cliente" className={`${menu === "portal" ? "block" : "hidden"} glass-card p-4`}>
-          <h2 className="font-semibold mb-2">Portal do Cliente</h2>
-          <p className="text-sm text-slate-400">Área pronta para liberar consulta de extratos e relatórios por cliente/empresa em breve.</p>
+        <section id="clientes" className={`${menu === "portal" ? "block" : "hidden"} glass-card p-4`}>
+          <h2 className="font-semibold mb-2">Clientes</h2>
+          <p className="text-sm text-slate-400">Área preparada para histórico, extratos e relatórios por cliente/empresa.</p>
         </section>
 
         <form onSubmit={applyPeriodFilter} className={`${menu === "financeiro" ? "flex" : "hidden"} glass-card p-4 flex-wrap items-end gap-3`}>
