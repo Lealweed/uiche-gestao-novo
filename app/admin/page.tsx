@@ -133,7 +133,6 @@ type BoothDetailPunch = {
 };
 
 type MenuSection = "agenda" | "tarefas" | "financeiro" | "relatorios" | "portal" | "configuracoes";
-const MENU_ORDER: MenuSection[] = ["financeiro", "relatorios", "agenda", "portal", "configuracoes", "tarefas"];
 
 export default function AdminPage() {
   const router = useRouter();
@@ -956,12 +955,6 @@ export default function AdminPage() {
     await refreshData();
   }
 
-  function nextMenuForDemo() {
-    const idx = MENU_ORDER.indexOf(menu);
-    const next = MENU_ORDER[(idx + 1) % MENU_ORDER.length];
-    setMenu(next);
-  }
-
   async function logout() {
     await supabase.auth.signOut();
     router.push("/login");
@@ -977,7 +970,6 @@ export default function AdminPage() {
             <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={nextMenuForDemo} className="btn-ghost">Tour demo</button>
             <button onClick={() => setPresentationMode((v) => !v)} className="btn-ghost">{presentationMode ? "Modo normal" : "Modo apresentação"}</button>
             <button onClick={logout} className="btn-ghost">Sair</button>
           </div>
