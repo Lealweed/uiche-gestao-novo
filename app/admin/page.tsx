@@ -480,6 +480,49 @@ export default function AdminPage() {
     await refreshData();
   }
 
+  async function toggleCompanyActive(company: Company) {
+    const { error } = await supabase.from("companies").update({ active: !company.active }).eq("id", company.id);
+    if (error) return setMessage(`Erro ao atualizar empresa: ${error.message}`);
+    await logAction("TOGGLE_COMPANY_ACTIVE", "companies", company.id, { active: !company.active });
+    await refreshData();
+  }
+
+  async function toggleBoothActive(booth: Booth) {
+    const { error } = await supabase.from("booths").update({ active: !booth.active }).eq("id", booth.id);
+    if (error) return setMessage(`Erro ao atualizar guichê: ${error.message}`);
+    await logAction("TOGGLE_BOOTH_ACTIVE", "booths", booth.id, { active: !booth.active });
+    await refreshData();
+  }
+
+  async function toggleCategoryActive(category: Category) {
+    const { error } = await supabase.from("transaction_categories").update({ active: !category.active }).eq("id", category.id);
+    if (error) return setMessage(`Erro ao atualizar categoria: ${error.message}`);
+    await logAction("TOGGLE_CATEGORY_ACTIVE", "transaction_categories", category.id, { active: !category.active });
+    await refreshData();
+  }
+
+  async function toggleSubcategoryActive(sub: Subcategory) {
+    const { error } = await supabase.from("transaction_subcategories").update({ active: !sub.active }).eq("id", sub.id);
+    if (error) return setMessage(`Erro ao atualizar subcategoria: ${error.message}`);
+    await logAction("TOGGLE_SUBCATEGORY_ACTIVE", "transaction_subcategories", sub.id, { active: !sub.active });
+    await refreshData();
+  }
+
+  async function toggleOperatorBoothLink(link: OperatorBoothLink) {
+    const { error } = await supabase.from("operator_booths").update({ active: !link.active }).eq("id", link.id);
+    if (error) return setMessage(`Erro ao atualizar vínculo: ${error.message}`);
+    await logAction("TOGGLE_OPERATOR_BOOTH_LINK", "operator_booths", link.id, { active: !link.active });
+    await refreshData();
+  }
+
+  async function forceCloseShift(shiftId: string) {
+    const { error } = await supabase.rpc("close_shift", { p_shift_id: shiftId, p_ip: null, p_notes: "Encerrado pelo admin" });
+    if (error) return setMessage(`Erro ao encerrar turno: ${error.message}`);
+    await logAction("FORCE_CLOSE_SHIFT", "shifts", shiftId);
+    setMessage("Turno encerrado pelo admin.");
+    await refreshData();
+  }
+
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
     setMessage(null);
@@ -727,7 +770,7 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Empresas</h2>
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Nome</th><th>%</th><th>Status</th></tr>
+                <tr><th className="py-2">Nome</th><th>%</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {companies.map((c) => (
@@ -735,6 +778,7 @@ export default function AdminPage() {
                     <td className="py-2">{c.name}</td>
                     <td>{Number(c.commission_percent).toFixed(3)}%</td>
                     <td>{c.active ? "Ativa" : "Inativa"}</td>
+                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleCompanyActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -745,7 +789,7 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Guichês</h2>
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Código</th><th>Nome</th><th>Status</th></tr>
+                <tr><th className="py-2">Código</th><th>Nome</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {booths.map((b) => (
@@ -755,6 +799,7 @@ export default function AdminPage() {
                     </td>
                     <td>{b.name}</td>
                     <td>{b.active ? "Ativo" : "Inativo"}</td>
+                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleBoothActive(b)}>{b.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -835,13 +880,14 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Categorias</h2>
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Categoria</th><th>Status</th></tr>
+                <tr><th className="py-2">Categoria</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {categories.map((c) => (
                   <tr key={c.id} className="border-t border-slate-800">
                     <td className="py-2">{c.name}</td>
                     <td>{c.active ? "Ativa" : "Inativa"}</td>
+                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleCategoryActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -852,7 +898,7 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Subcategorias</h2>
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Subcategoria</th><th>Categoria</th><th>Status</th></tr>
+                <tr><th className="py-2">Subcategoria</th><th>Categoria</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {subcategories.map((s) => {
@@ -862,6 +908,7 @@ export default function AdminPage() {
                       <td className="py-2">{s.name}</td>
                       <td>{cName ?? "-"}</td>
                       <td>{s.active ? "Ativa" : "Inativa"}</td>
+                      <td><button className="text-blue-300 hover:underline" onClick={() => toggleSubcategoryActive(s)}>{s.active ? "Inativar" : "Ativar"}</button></td>
                     </tr>
                   );
                 })}
@@ -916,7 +963,7 @@ export default function AdminPage() {
           <h2 className="font-semibold mb-3">Vínculos operador ↔ guichê</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Operador</th><th>Guichê</th><th>Status</th></tr>
+              <tr><th className="py-2">Operador</th><th>Guichê</th><th>Status</th><th>Ação</th></tr>
             </thead>
             <tbody>
               {operatorBoothLinks.map((l) => {
@@ -927,6 +974,7 @@ export default function AdminPage() {
                     <td className="py-2">{op ?? "-"}</td>
                     <td>{booth ? `${booth.code} - ${booth.name}` : "-"}</td>
                     <td>{l.active ? "Ativo" : "Inativo"}</td>
+                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleOperatorBoothLink(l)}>{l.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 );
               })}
@@ -1069,7 +1117,7 @@ export default function AdminPage() {
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
                 <tr>
-                  <th className="py-2">Guichê</th><th>Operador</th><th>Status</th><th>Total</th><th>PIX</th><th>Crédito</th><th>Débito</th><th>Pendências</th>
+                  <th className="py-2">Guichê</th><th>Operador</th><th>Status</th><th>Total</th><th>PIX</th><th>Crédito</th><th>Débito</th><th>Pendências</th><th>Ação</th>
                 </tr>
               </thead>
               <tbody>
@@ -1083,6 +1131,7 @@ export default function AdminPage() {
                     <td>R$ {Number(r.total_credit).toFixed(2)}</td>
                     <td>R$ {Number(r.total_debit).toFixed(2)}</td>
                     <td>{r.missing_card_receipts}</td>
+                    <td>{r.status === "open" ? <button className="text-amber-300 hover:underline" onClick={() => forceCloseShift(r.shift_id)}>Encerrar</button> : <span className="text-slate-500">-</span>}</td>
                   </tr>
                 ))}
               </tbody>
