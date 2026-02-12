@@ -109,6 +109,16 @@ create table if not exists public.adjustment_requests (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  created_by uuid not null references public.profiles(user_id),
+  action text not null,
+  entity text,
+  entity_id text,
+  details jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 -- Helper functions
 create or replace function public.is_admin(uid uuid)
 returns boolean
@@ -298,6 +308,7 @@ alter table public.shifts enable row level security;
 alter table public.transactions enable row level security;
 alter table public.transaction_receipts enable row level security;
 alter table public.adjustment_requests enable row level security;
+alter table public.audit_logs enable row level security;
 
 -- profiles
 create policy profiles_self_or_admin_select on public.profiles
@@ -397,6 +408,13 @@ for insert with check (requested_by = auth.uid());
 
 create policy adj_admin_update on public.adjustment_requests
 for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+-- audit logs
+create policy audit_self_or_admin_select on public.audit_logs
+for select using (created_by = auth.uid() or public.is_admin(auth.uid()));
+
+create policy audit_insert_authenticated on public.audit_logs
+for insert with check (created_by = auth.uid());
 
 -- Grants for RPCs
 grant execute on function public.open_shift(uuid, text) to authenticated;

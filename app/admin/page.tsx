@@ -51,6 +51,15 @@ type OperatorBoothLink = {
   booths: { name: string; code: string } | { name: string; code: string }[] | null;
 };
 
+type AuditLog = {
+  id: string;
+  action: string;
+  entity: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const [rows, setRows] = useState<ShiftTotal[]>([]);
@@ -60,6 +69,7 @@ export default function AdminPage() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [operatorBoothLinks, setOperatorBoothLinks] = useState<OperatorBoothLink[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [reportTxs, setReportTxs] = useState<TxForReport[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +84,11 @@ export default function AdminPage() {
   const [subcategoryCategoryId, setSubcategoryCategoryId] = useState("");
   const [selectedOperatorId, setSelectedOperatorId] = useState("");
   const [selectedBoothId, setSelectedBoothId] = useState("");
+  const [newProfileUserId, setNewProfileUserId] = useState("");
+  const [newProfileName, setNewProfileName] = useState("");
+  const [newProfileRole, setNewProfileRole] = useState<"admin" | "operator">("operator");
+  const [newProfileActive, setNewProfileActive] = useState(true);
+  const [resetEmail, setResetEmail] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -116,7 +131,7 @@ export default function AdminPage() {
       txQuery = txQuery.lte("sold_at", endIso);
     }
 
-    const [shiftRes, companyRes, boothRes, catRes, subRes, profileRes, linkRes, txRes, adjRes] = await Promise.all([
+    const [shiftRes, companyRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, txRes, adjRes] = await Promise.all([
       shiftQuery,
       supabase.from("companies").select("id,name,commission_percent,active").order("name"),
       supabase.from("booths").select("id,code,name,active").order("name"),
@@ -124,6 +139,7 @@ export default function AdminPage() {
       supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
       supabase.from("profiles").select("user_id,full_name,role,active").order("full_name"),
       supabase.from("operator_booths").select("id,active,profiles(full_name),booths(name,code)").order("created_at", { ascending: false }).limit(200),
+      supabase.from("audit_logs").select("id,action,entity,details,created_at,profiles(full_name)").order("created_at", { ascending: false }).limit(50),
       txQuery,
       supabase
         .from("adjustment_requests")
@@ -140,6 +156,7 @@ export default function AdminPage() {
     setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
     setProfiles((profileRes.data as Profile[]) ?? []);
     setOperatorBoothLinks(((linkRes.data ?? []) as unknown as OperatorBoothLink[]) ?? []);
+    setAuditLogs(((auditRes.data ?? []) as unknown as AuditLog[]) ?? []);
     setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
     setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
   }
@@ -264,6 +281,7 @@ export default function AdminPage() {
     if (error) return setMessage(`Erro ao cadastrar empresa: ${error.message}`);
     setCompanyName("");
     setCompanyPct("6");
+    await logAction("CREATE_COMPANY", "companies", undefined, { name: companyName.trim(), pct: Number(companyPct) });
     setMessage("Empresa cadastrada com sucesso.");
     await refreshData();
   }
@@ -281,6 +299,7 @@ export default function AdminPage() {
     if (error) return setMessage(`Erro ao cadastrar guichê: ${error.message}`);
     setBoothCode("");
     setBoothName("");
+    await logAction("CREATE_BOOTH", "booths", undefined, { code: boothCode.trim().toUpperCase(), name: boothName.trim() });
     setMessage("Guichê cadastrado com sucesso.");
     await refreshData();
   }
@@ -296,6 +315,7 @@ export default function AdminPage() {
 
     if (error) return setMessage(`Erro ao cadastrar categoria: ${error.message}`);
     setCategoryName("");
+    await logAction("CREATE_CATEGORY", "transaction_categories", undefined, { name: categoryName.trim() });
     setMessage("Categoria cadastrada com sucesso.");
     await refreshData();
   }
@@ -313,6 +333,7 @@ export default function AdminPage() {
     if (error) return setMessage(`Erro ao cadastrar subcategoria: ${error.message}`);
     setSubcategoryName("");
     setSubcategoryCategoryId("");
+    await logAction("CREATE_SUBCATEGORY", "transaction_subcategories", undefined, { name: subcategoryName.trim(), category_id: subcategoryCategoryId });
     setMessage("Subcategoria cadastrada com sucesso.");
     await refreshData();
   }
@@ -328,6 +349,7 @@ export default function AdminPage() {
     });
 
     if (error) return setMessage(`Erro ao vincular operador: ${error.message}`);
+    await logAction("LINK_OPERATOR_BOOTH", "operator_booths", undefined, { operator_id: selectedOperatorId, booth_id: selectedBoothId });
     setMessage("Operador vinculado ao guichê com sucesso.");
     await refreshData();
   }
@@ -340,8 +362,52 @@ export default function AdminPage() {
       .eq("user_id", profile.user_id);
 
     if (error) return setMessage(`Erro ao atualizar usuário: ${error.message}`);
+    await logAction("TOGGLE_PROFILE_ACTIVE", "profiles", profile.user_id, { active: !profile.active });
     setMessage("Status do usuário atualizado.");
     await refreshData();
+  }
+
+  async function saveProfile(e: FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+
+    const { error } = await supabase.from("profiles").upsert({
+      user_id: newProfileUserId.trim(),
+      full_name: newProfileName.trim(),
+      role: newProfileRole,
+      active: newProfileActive,
+    });
+
+    if (error) return setMessage(`Erro ao salvar usuário: ${error.message}`);
+    await logAction("UPSERT_PROFILE", "profiles", newProfileUserId.trim(), { role: newProfileRole, active: newProfileActive });
+    setMessage("Usuário salvo com sucesso (perfil).\nObs: login/auth deve existir no Supabase Auth.");
+    setNewProfileUserId("");
+    setNewProfileName("");
+    setNewProfileRole("operator");
+    setNewProfileActive(true);
+    await refreshData();
+  }
+
+  async function sendResetLink(e: FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim());
+    if (error) return setMessage(`Erro ao enviar reset: ${error.message}`);
+    await logAction("SEND_PASSWORD_RESET", "auth", undefined, { email: resetEmail.trim() });
+    setMessage("Link de redefinição enviado para o e-mail informado.");
+    setResetEmail("");
+  }
+
+  async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string, unknown>) {
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData.user) return;
+    await supabase.from("audit_logs").insert({
+      created_by: authData.user.id,
+      action,
+      entity: entity ?? null,
+      entity_id: entityId ?? null,
+      details: details ?? {},
+    });
   }
 
   async function approveAdjustment(adjId: string, txId: string) {
@@ -362,6 +428,7 @@ export default function AdminPage() {
 
     if (adjErr) return setMessage(`Erro ao aprovar ajuste: ${adjErr.message}`);
 
+    await logAction("APPROVE_ADJUSTMENT", "adjustment_requests", adjId, { transaction_id: txId });
     setMessage("Ajuste aprovado e transação estornada.");
     await refreshData();
   }
@@ -376,6 +443,7 @@ export default function AdminPage() {
       .eq("id", adjId);
 
     if (error) return setMessage(`Erro ao rejeitar ajuste: ${error.message}`);
+    await logAction("REJECT_ADJUSTMENT", "adjustment_requests", adjId);
     setMessage("Solicitação rejeitada.");
     await refreshData();
   }
@@ -419,6 +487,29 @@ export default function AdminPage() {
           <button className="btn-ghost" type="button" onClick={exportOperatorCsv}>CSV Operadores</button>
           <button className="btn-ghost" type="button" onClick={exportBoothCsv}>CSV Guichês</button>
         </form>
+
+        <section className="grid lg:grid-cols-2 gap-4">
+          <form onSubmit={saveProfile} className="glass-card p-4 space-y-3">
+            <h2 className="font-semibold">Cadastrar/Atualizar usuário (perfil)</h2>
+            <input value={newProfileUserId} onChange={(e)=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuário (auth.users.id)" className="field" />
+            <input value={newProfileName} onChange={(e)=>setNewProfileName(e.target.value)} required placeholder="Nome completo" className="field" />
+            <select value={newProfileRole} onChange={(e)=>setNewProfileRole(e.target.value as "admin"|"operator")} className="field">
+              <option value="operator">Operator</option>
+              <option value="admin">Admin</option>
+            </select>
+            <label className="flex items-center gap-2 text-sm text-slate-300">
+              <input type="checkbox" checked={newProfileActive} onChange={(e)=>setNewProfileActive(e.target.checked)} />
+              Usuário ativo
+            </label>
+            <button className="btn-primary">Salvar usuário</button>
+          </form>
+
+          <form onSubmit={sendResetLink} className="glass-card p-4 space-y-3">
+            <h2 className="font-semibold">Enviar link de redefinição de senha</h2>
+            <input value={resetEmail} onChange={(e)=>setResetEmail(e.target.value)} required placeholder="E-mail do usuário" className="field" type="email" />
+            <button className="btn-primary">Enviar reset</button>
+          </form>
+        </section>
 
         <section className="grid lg:grid-cols-2 gap-4">
           <form onSubmit={createCompany} className="glass-card p-4 space-y-3">
@@ -660,14 +751,17 @@ export default function AdminPage() {
         </section>
 
         <section className="glass-card p-4 overflow-auto">
-          <h2 className="font-semibold mb-3">Timeline operacional</h2>
+          <h2 className="font-semibold mb-3">Timeline operacional (auditoria)</h2>
           <ul className="space-y-2 text-sm">
-            {auditTimeline.map((i, idx) => (
-              <li key={`${i.text}-${idx}`} className="border-b border-slate-800 pb-2">
-                <span className={i.status === "closed" ? "text-emerald-300" : "text-cyan-300"}>{i.when}</span>
-                <span className="text-slate-300"> — {i.text}</span>
-              </li>
-            ))}
+            {auditLogs.map((log) => {
+              const who = Array.isArray(log.profiles) ? log.profiles[0]?.full_name : log.profiles?.full_name;
+              return (
+                <li key={log.id} className="border-b border-slate-800 pb-2">
+                  <span className="text-cyan-300">{log.action}</span>
+                  <span className="text-slate-300"> — {who ?? "Usuário"} • {new Date(log.created_at).toLocaleString("pt-BR")}</span>
+                </li>
+              );
+            })}
           </ul>
         </section>
 

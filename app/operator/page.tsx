@@ -92,10 +92,22 @@ export default function OperatorPage() {
     setTxs(((data ?? []) as unknown) as Tx[]);
   }
 
+  async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string, unknown>) {
+    if (!userId) return;
+    await supabase.from("audit_logs").insert({
+      created_by: userId,
+      action,
+      entity: entity ?? null,
+      entity_id: entityId ?? null,
+      details: details ?? {},
+    });
+  }
+
   async function openShift() {
     if (!boothId) return;
     const { data, error } = await supabase.rpc("open_shift", { p_booth_id: boothId, p_ip: null });
     if (error) return setMessage(error.message);
+    await logAction("OPEN_SHIFT", "shifts", (data as Shift).id, { booth_id: boothId });
     setShift(data as Shift);
     setMessage("Turno aberto com sucesso.");
     await loadTxs((data as Shift).id);
@@ -115,6 +127,7 @@ export default function OperatorPage() {
 
     const { error } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: null });
     if (error) return setMessage(error.message);
+    await logAction("CLOSE_SHIFT", "shifts", shift.id);
     setShift(null);
     setTxs([]);
     setMessage("Turno encerrado.");
@@ -138,8 +151,15 @@ export default function OperatorPage() {
       note: note || null,
     };
 
-    const { error } = await supabase.from("transactions").insert(payload);
+    const { data: inserted, error } = await supabase.from("transactions").insert(payload).select("id").single();
     if (error) return setMessage(error.message);
+
+    await logAction("CREATE_TRANSACTION", "transactions", inserted?.id, {
+      amount: Number(amount),
+      payment_method: paymentMethod,
+      category_id: categoryId,
+      subcategory_id: subcategoryId,
+    });
 
     setAmount("");
     setTicketReference("");
@@ -182,6 +202,7 @@ export default function OperatorPage() {
       return;
     }
 
+    await logAction("UPLOAD_RECEIPT", "transactions", txId, { path });
     setMessage("Comprovante enviado com sucesso.");
     if (shift) await loadTxs(shift.id);
     setUploadingTxId(null);
@@ -213,6 +234,7 @@ export default function OperatorPage() {
     });
 
     if (error) return setMessage(`Erro ao solicitar ajuste: ${error.message}`);
+    await logAction("REQUEST_ADJUSTMENT", "transactions", txId, { reason });
     setMessage("Solicitação de ajuste enviada para o admin.");
   }
 
