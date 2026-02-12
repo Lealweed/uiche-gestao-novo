@@ -90,6 +90,17 @@ type CashMovementRow = {
   booths: { code: string; name: string } | { code: string; name: string }[] | null;
 };
 
+type ShiftCashClosingRow = {
+  id: string;
+  expected_cash: number;
+  declared_cash: number;
+  difference: number;
+  note: string | null;
+  created_at: string;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+  booths: { code: string; name: string } | { code: string; name: string }[] | null;
+};
+
 type BoothDetailTx = {
   id: string;
   sold_at: string;
@@ -134,6 +145,7 @@ export default function AdminPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [timePunchRows, setTimePunchRows] = useState<TimePunchRow[]>([]);
   const [cashMovementRows, setCashMovementRows] = useState<CashMovementRow[]>([]);
+  const [shiftCashClosingRows, setShiftCashClosingRows] = useState<ShiftCashClosingRow[]>([]);
   const [reportTxs, setReportTxs] = useState<TxForReport[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [selectedBooth, setSelectedBooth] = useState<Booth | null>(null);
@@ -216,7 +228,7 @@ export default function AdminPage() {
       txQuery = txQuery.lte("sold_at", endIso);
     }
 
-    const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, cashRes, txRes, adjRes] = await Promise.all([
+    const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, cashRes, cashCloseRes, txRes, adjRes] = await Promise.all([
       shiftQuery,
       supabase.from("companies").select("id,name,commission_percent,active").order("name"),
       supabase.from("clients").select("id,name,document,phone,email,address,notes,active").order("name"),
@@ -228,6 +240,7 @@ export default function AdminPage() {
       supabase.from("audit_logs").select("id,action,entity,details,created_at,profiles(full_name)").order("created_at", { ascending: false }).limit(50),
       supabase.from("time_punches").select("id,punch_type,punched_at,note,profiles(full_name),booths(code,name)").order("punched_at", { ascending: false }).limit(200),
       supabase.from("cash_movements").select("id,movement_type,amount,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
+      supabase.from("shift_cash_closings").select("id,expected_cash,declared_cash,difference,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
       txQuery,
       supabase
         .from("adjustment_requests")
@@ -248,6 +261,7 @@ export default function AdminPage() {
     setAuditLogs(((auditRes.data ?? []) as unknown as AuditLog[]) ?? []);
     setTimePunchRows(((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
     setCashMovementRows(((cashRes.data ?? []) as unknown as CashMovementRow[]) ?? []);
+    setShiftCashClosingRows(((cashCloseRes.data ?? []) as unknown as ShiftCashClosingRow[]) ?? []);
     setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
     setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
   }
@@ -401,6 +415,13 @@ export default function AdminPage() {
     const ajuste = cashMovementRows.filter((m) => m.movement_type === "ajuste").reduce((a, m) => a + Number(m.amount || 0), 0);
     return { suprimento, sangria, ajuste, saldo: suprimento - sangria + ajuste };
   }, [cashMovementRows]);
+
+  const cashClosingTotals = useMemo(() => {
+    const expected = shiftCashClosingRows.reduce((a, r) => a + Number(r.expected_cash || 0), 0);
+    const declared = shiftCashClosingRows.reduce((a, r) => a + Number(r.declared_cash || 0), 0);
+    const difference = shiftCashClosingRows.reduce((a, r) => a + Number(r.difference || 0), 0);
+    return { expected, declared, difference };
+  }, [shiftCashClosingRows]);
 
   const filteredReportTxs = useMemo(() => {
     const opTerm = reportOperatorFilter.trim().toLowerCase();
@@ -935,6 +956,37 @@ export default function AdminPage() {
                     <td>{m.movement_type}</td>
                     <td>R$ {Number(m.amount).toFixed(2)}</td>
                     <td>{m.note ?? ""}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+
+        <section className={`${menu === "financeiro" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+          <h2 className="font-semibold mb-3">Fechamento de caixa por turno</h2>
+          <div className="grid md:grid-cols-3 gap-2 text-sm mb-3">
+            <div className="rounded-lg border border-slate-800 p-2">Esperado: <b>R$ {cashClosingTotals.expected.toFixed(2)}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Declarado: <b>R$ {cashClosingTotals.declared.toFixed(2)}</b></div>
+            <div className={`rounded-lg border p-2 ${cashClosingTotals.difference === 0 ? "border-emerald-700/60" : "border-amber-700/60"}`}>Diferença: <b>R$ {cashClosingTotals.difference.toFixed(2)}</b></div>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-400">
+              <tr><th className="py-2">Data</th><th>Operador</th><th>Guichê</th><th>Esperado</th><th>Declarado</th><th>Diferença</th><th>Obs</th></tr>
+            </thead>
+            <tbody>
+              {shiftCashClosingRows.slice(0, 120).map((r) => {
+                const op = Array.isArray(r.profiles) ? r.profiles[0]?.full_name : r.profiles?.full_name;
+                const b = Array.isArray(r.booths) ? r.booths[0] : r.booths;
+                return (
+                  <tr key={r.id} className="border-t border-slate-800">
+                    <td className="py-2">{new Date(r.created_at).toLocaleString("pt-BR")}</td>
+                    <td>{op ?? "-"}</td>
+                    <td>{b ? `${b.code} - ${b.name}` : "-"}</td>
+                    <td>R$ {Number(r.expected_cash).toFixed(2)}</td>
+                    <td>R$ {Number(r.declared_cash).toFixed(2)}</td>
+                    <td className={Number(r.difference) === 0 ? "text-emerald-300" : "text-amber-300"}>R$ {Number(r.difference).toFixed(2)}</td>
+                    <td>{r.note ?? ""}</td>
                   </tr>
                 );
               })}

@@ -163,6 +163,22 @@ create index if not exists cash_movements_shift_idx on public.cash_movements(shi
 create index if not exists cash_movements_booth_idx on public.cash_movements(booth_id);
 create index if not exists cash_movements_user_idx on public.cash_movements(user_id);
 
+create table if not exists public.shift_cash_closings (
+  id uuid primary key default gen_random_uuid(),
+  shift_id uuid not null unique references public.shifts(id) on delete cascade,
+  booth_id uuid not null references public.booths(id),
+  user_id uuid not null references public.profiles(user_id),
+  expected_cash numeric(12,2) not null,
+  declared_cash numeric(12,2) not null,
+  difference numeric(12,2) not null,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists shift_cash_closings_shift_idx on public.shift_cash_closings(shift_id);
+create index if not exists shift_cash_closings_booth_idx on public.shift_cash_closings(booth_id);
+create index if not exists shift_cash_closings_user_idx on public.shift_cash_closings(user_id);
+
 -- Helper functions
 create or replace function public.is_admin(uid uuid)
 returns boolean
@@ -356,6 +372,7 @@ alter table public.adjustment_requests enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.time_punches enable row level security;
 alter table public.cash_movements enable row level security;
+alter table public.shift_cash_closings enable row level security;
 
 -- profiles
 create policy profiles_self_or_admin_select on public.profiles
@@ -492,6 +509,23 @@ for insert with check (
 );
 
 create policy cash_movements_admin_update on public.cash_movements
+for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+-- shift cash closings
+create policy shift_cash_closings_self_or_admin_select on public.shift_cash_closings
+for select using (user_id = auth.uid() or public.is_admin(auth.uid()));
+
+create policy shift_cash_closings_self_insert on public.shift_cash_closings
+for insert with check (
+  user_id = auth.uid()
+  and exists (
+    select 1 from public.shifts s
+    where s.id = shift_cash_closings.shift_id
+      and s.operator_id = auth.uid()
+  )
+);
+
+create policy shift_cash_closings_admin_update on public.shift_cash_closings
 for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
 -- Grants for RPCs

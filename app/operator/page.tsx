@@ -159,7 +159,7 @@ export default function OperatorPage() {
   }
 
   async function closeShift() {
-    if (!shift) return;
+    if (!shift || !userId) return;
 
     const pendencias = txs.filter(
       (t) => (t.payment_method === "credit" || t.payment_method === "debit") && (!t.transaction_receipts || t.transaction_receipts.length === 0)
@@ -170,13 +170,45 @@ export default function OperatorPage() {
       return;
     }
 
-    const { error } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: null });
+    const cashSales = txs.filter((t) => t.payment_method === "cash").reduce((a, t) => a + Number(t.amount || 0), 0);
+    const suprimento = cashMovements.filter((m) => m.movement_type === "suprimento").reduce((a, m) => a + Number(m.amount || 0), 0);
+    const sangria = cashMovements.filter((m) => m.movement_type === "sangria").reduce((a, m) => a + Number(m.amount || 0), 0);
+    const ajuste = cashMovements.filter((m) => m.movement_type === "ajuste").reduce((a, m) => a + Number(m.amount || 0), 0);
+    const expectedCash = cashSales + suprimento - sangria + ajuste;
+
+    const declaredRaw = window.prompt(`Fechamento de caixa\nValor esperado: R$ ${expectedCash.toFixed(2)}\n\nInforme o valor contado no caixa:`);
+    if (declaredRaw === null) return;
+    const declaredCash = Number(declaredRaw.replace(",", "."));
+    if (Number.isNaN(declaredCash)) return setMessage("Valor de caixa inválido.");
+
+    const note = window.prompt("Observação do fechamento (opcional):") || null;
+    const difference = Number((declaredCash - expectedCash).toFixed(2));
+
+    const closeCash = await supabase.from("shift_cash_closings").upsert({
+      shift_id: shift.id,
+      booth_id: shift.booth_id,
+      user_id: userId,
+      expected_cash: Number(expectedCash.toFixed(2)),
+      declared_cash: Number(declaredCash.toFixed(2)),
+      difference,
+      note,
+    });
+
+    if (closeCash.error) return setMessage(`Erro ao salvar fechamento de caixa: ${closeCash.error.message}`);
+
+    const { error } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: note });
     if (error) return setMessage(error.message);
-    await logAction("CLOSE_SHIFT", "shifts", shift.id);
+
+    await logAction("CLOSE_SHIFT", "shifts", shift.id, {
+      expected_cash: Number(expectedCash.toFixed(2)),
+      declared_cash: Number(declaredCash.toFixed(2)),
+      difference,
+    });
+
     setShift(null);
     setTxs([]);
     setCashMovements([]);
-    setMessage("Turno encerrado.");
+    setMessage(`Turno encerrado. Diferença de caixa: R$ ${difference.toFixed(2)}.`);
   }
 
   async function registerPunch(type: Punch["punch_type"]) {
