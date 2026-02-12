@@ -151,6 +151,9 @@ export default function AdminPage() {
   const [dateTo, setDateTo] = useState("");
   const [profileSearch, setProfileSearch] = useState("");
   const [boothSearch, setBoothSearch] = useState("");
+  const [reportOperatorFilter, setReportOperatorFilter] = useState("");
+  const [reportBoothFilter, setReportBoothFilter] = useState("");
+  const [reportCategoryFilter, setReportCategoryFilter] = useState("");
   const [presentationMode, setPresentationMode] = useState(false);
   const [menu, setMenu] = useState<MenuSection>("financeiro");
 
@@ -348,6 +351,25 @@ export default function AdminPage() {
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [reportTxs]);
 
+  const filteredReportTxs = useMemo(() => {
+    const opTerm = reportOperatorFilter.trim().toLowerCase();
+    const boothTerm = reportBoothFilter.trim().toLowerCase();
+    const catTerm = reportCategoryFilter.trim().toLowerCase();
+
+    return reportTxs.filter((tx) => {
+      const op = (Array.isArray(tx.profiles) ? tx.profiles[0]?.full_name : tx.profiles?.full_name) ?? "";
+      const boothObj = Array.isArray(tx.booths) ? tx.booths[0] : tx.booths;
+      const booth = boothObj ? `${boothObj.code} ${boothObj.name}` : "";
+      const cat = (Array.isArray(tx.transaction_categories) ? tx.transaction_categories[0]?.name : tx.transaction_categories?.name) ?? "";
+      const sub = (Array.isArray(tx.transaction_subcategories) ? tx.transaction_subcategories[0]?.name : tx.transaction_subcategories?.name) ?? "";
+
+      const opOk = !opTerm || op.toLowerCase().includes(opTerm);
+      const boothOk = !boothTerm || booth.toLowerCase().includes(boothTerm);
+      const catOk = !catTerm || `${cat} ${sub}`.toLowerCase().includes(catTerm);
+      return opOk && boothOk && catOk;
+    });
+  }, [reportTxs, reportOperatorFilter, reportBoothFilter, reportCategoryFilter]);
+
   const auditTimeline = useMemo(() => {
     return rows.slice(0, 20).map((r) => ({
       when: r.status === "closed" ? "Turno fechado" : "Turno em andamento",
@@ -400,6 +422,25 @@ export default function AdminPage() {
     const header = ["Guichê", "Quantidade", "Total"];
     const lines = reportByBooth.map((r) => [r.booth, String(r.qty), r.total.toFixed(2)]);
     downloadCsv(`relatorio-guiches-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
+  }
+
+  function exportFilteredReportCsv() {
+    const header = ["Data", "Operador", "Guichê", "Categoria", "Subcategoria", "Valor"];
+    const lines = filteredReportTxs.map((tx) => {
+      const op = Array.isArray(tx.profiles) ? tx.profiles[0]?.full_name : tx.profiles?.full_name;
+      const boothObj = Array.isArray(tx.booths) ? tx.booths[0] : tx.booths;
+      const cat = Array.isArray(tx.transaction_categories) ? tx.transaction_categories[0]?.name : tx.transaction_categories?.name;
+      const sub = Array.isArray(tx.transaction_subcategories) ? tx.transaction_subcategories[0]?.name : tx.transaction_subcategories?.name;
+      return [
+        tx.sold_at ? new Date(tx.sold_at).toLocaleString("pt-BR") : "-",
+        op ?? "-",
+        boothObj ? `${boothObj.code} - ${boothObj.name}` : "-",
+        cat ?? "-",
+        sub ?? "-",
+        Number(tx.amount).toFixed(2),
+      ];
+    });
+    downloadCsv(`relatorio-filtrado-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
   }
 
   function printReport() {
@@ -1118,6 +1159,12 @@ export default function AdminPage() {
 
         <section id="relatorios" className={`${menu === "relatorios" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Relatório por categoria/subcategoria</h2>
+          <div className="grid lg:grid-cols-4 gap-2 mb-3">
+            <input value={reportOperatorFilter} onChange={(e)=>setReportOperatorFilter(e.target.value)} className="field" placeholder="Filtrar operador" />
+            <input value={reportBoothFilter} onChange={(e)=>setReportBoothFilter(e.target.value)} className="field" placeholder="Filtrar guichê" />
+            <input value={reportCategoryFilter} onChange={(e)=>setReportCategoryFilter(e.target.value)} className="field" placeholder="Filtrar categoria" />
+            <button type="button" className="btn-ghost" onClick={exportFilteredReportCsv}>CSV filtrado</button>
+          </div>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
               <tr><th className="py-2">Categoria</th><th>Subcategoria</th><th>Qtd</th><th>Total</th></tr>
@@ -1171,6 +1218,34 @@ export default function AdminPage() {
               </table>
             </div>
           </div>
+        </section>
+
+        <section className={`${menu === "relatorios" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+          <h2 className="font-semibold mb-3">Relatório detalhado (operador/categoria/guichê)</h2>
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-400">
+              <tr><th className="py-2">Data</th><th>Operador</th><th>Guichê</th><th>Categoria</th><th>Subcategoria</th><th>Valor</th></tr>
+            </thead>
+            <tbody>
+              {filteredReportTxs.slice(0, 300).map((tx, idx) => {
+                const op = Array.isArray(tx.profiles) ? tx.profiles[0]?.full_name : tx.profiles?.full_name;
+                const boothObj = Array.isArray(tx.booths) ? tx.booths[0] : tx.booths;
+                const cat = Array.isArray(tx.transaction_categories) ? tx.transaction_categories[0]?.name : tx.transaction_categories?.name;
+                const sub = Array.isArray(tx.transaction_subcategories) ? tx.transaction_subcategories[0]?.name : tx.transaction_subcategories?.name;
+                return (
+                  <tr key={`${tx.sold_at}-${idx}`} className="border-t border-slate-800">
+                    <td className="py-2">{tx.sold_at ? new Date(tx.sold_at).toLocaleString("pt-BR") : "-"}</td>
+                    <td>{op ?? "-"}</td>
+                    <td>{boothObj ? `${boothObj.code} - ${boothObj.name}` : "-"}</td>
+                    <td>{cat ?? "-"}</td>
+                    <td>{sub ?? "-"}</td>
+                    <td>R$ {Number(tx.amount).toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="text-xs text-slate-500 mt-2">Exibindo até 300 linhas na tela para manter performance.</p>
         </section>
 
         <section id="agenda" className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
