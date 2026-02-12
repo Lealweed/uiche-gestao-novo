@@ -34,6 +34,11 @@ type Adjustment = {
 
 type TxForReport = {
   amount: number;
+  sold_at?: string;
+  operator_id?: string;
+  booth_id?: string;
+  profiles?: { full_name: string } | { full_name: string }[] | null;
+  booths?: { name: string; code: string } | { name: string; code: string }[] | null;
   transaction_categories: { name: string } | { name: string }[] | null;
   transaction_subcategories: { name: string } | { name: string }[] | null;
 };
@@ -97,7 +102,7 @@ export default function AdminPage() {
     let shiftQuery = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
     let txQuery = supabase
       .from("transactions")
-      .select("amount,transaction_categories(name),transaction_subcategories(name),sold_at")
+      .select("amount,sold_at,operator_id,booth_id,profiles(full_name),booths(name,code),transaction_categories(name),transaction_subcategories(name)")
       .eq("status", "posted")
       .order("sold_at", { ascending: false })
       .limit(5000);
@@ -166,6 +171,41 @@ export default function AdminPage() {
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [reportTxs]);
 
+  const reportByOperator = useMemo(() => {
+    const map = new Map<string, { operator: string; qty: number; total: number }>();
+    for (const tx of reportTxs) {
+      const op = Array.isArray(tx.profiles) ? tx.profiles[0]?.full_name : tx.profiles?.full_name;
+      const operator = op ?? "Sem operador";
+      const prev = map.get(operator) ?? { operator, qty: 0, total: 0 };
+      prev.qty += 1;
+      prev.total += Number(tx.amount || 0);
+      map.set(operator, prev);
+    }
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [reportTxs]);
+
+  const reportByBooth = useMemo(() => {
+    const map = new Map<string, { booth: string; qty: number; total: number }>();
+    for (const tx of reportTxs) {
+      const boothObj = Array.isArray(tx.booths) ? tx.booths[0] : tx.booths;
+      const booth = boothObj ? `${boothObj.code} - ${boothObj.name}` : "Sem guichê";
+      const prev = map.get(booth) ?? { booth, qty: 0, total: 0 };
+      prev.qty += 1;
+      prev.total += Number(tx.amount || 0);
+      map.set(booth, prev);
+    }
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [reportTxs]);
+
+  const auditTimeline = useMemo(() => {
+    return rows.slice(0, 20).map((r) => ({
+      when: r.status === "closed" ? "Turno fechado" : "Turno em andamento",
+      at: r.status === "closed" ? r.shift_id : r.shift_id,
+      text: `${r.booth_name} • ${r.operator_name} • R$ ${Number(r.gross_amount).toFixed(2)}`,
+      status: r.status,
+    }));
+  }, [rows]);
+
   async function applyPeriodFilter(e: FormEvent) {
     e.preventDefault();
     await refreshData();
@@ -179,15 +219,7 @@ export default function AdminPage() {
     }, 0);
   }
 
-  function exportCategoryCsv() {
-    const header = ["Categoria", "Subcategoria", "Quantidade", "Total"];
-    const lines = reportByCategory.map((r) => [
-      r.category,
-      r.subcategory,
-      String(r.qty),
-      r.total.toFixed(2),
-    ]);
-
+  function downloadCsv(filename: string, header: string[], lines: string[][]) {
     const csv = [header, ...lines]
       .map((row) => row.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(";"))
       .join("\n");
@@ -196,9 +228,27 @@ export default function AdminPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `relatorio-categorias-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportCategoryCsv() {
+    const header = ["Categoria", "Subcategoria", "Quantidade", "Total"];
+    const lines = reportByCategory.map((r) => [r.category, r.subcategory, String(r.qty), r.total.toFixed(2)]);
+    downloadCsv(`relatorio-categorias-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
+  }
+
+  function exportOperatorCsv() {
+    const header = ["Operador", "Quantidade", "Total"];
+    const lines = reportByOperator.map((r) => [r.operator, String(r.qty), r.total.toFixed(2)]);
+    downloadCsv(`relatorio-operadores-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
+  }
+
+  function exportBoothCsv() {
+    const header = ["Guichê", "Quantidade", "Total"];
+    const lines = reportByBooth.map((r) => [r.booth, String(r.qty), r.total.toFixed(2)]);
+    downloadCsv(`relatorio-guiches-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
   }
 
   async function createCompany(e: FormEvent) {
@@ -365,7 +415,9 @@ export default function AdminPage() {
           </div>
           <button className="btn-primary" type="submit">Aplicar filtro</button>
           <button className="btn-ghost" type="button" onClick={clearPeriodFilter}>Limpar</button>
-          <button className="btn-ghost" type="button" onClick={exportCategoryCsv}>Exportar CSV</button>
+          <button className="btn-ghost" type="button" onClick={exportCategoryCsv}>CSV Categorias</button>
+          <button className="btn-ghost" type="button" onClick={exportOperatorCsv}>CSV Operadores</button>
+          <button className="btn-ghost" type="button" onClick={exportBoothCsv}>CSV Guichês</button>
         </form>
 
         <section className="grid lg:grid-cols-2 gap-4">
@@ -567,6 +619,56 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+        </section>
+
+        <section className="grid lg:grid-cols-2 gap-4">
+          <div className="glass-card p-4 overflow-auto">
+            <h2 className="font-semibold mb-3">Relatório por operador</h2>
+            <table className="w-full text-sm">
+              <thead className="text-left text-slate-400">
+                <tr><th className="py-2">Operador</th><th>Qtd</th><th>Total</th></tr>
+              </thead>
+              <tbody>
+                {reportByOperator.map((r) => (
+                  <tr key={r.operator} className="border-t border-slate-800">
+                    <td className="py-2">{r.operator}</td>
+                    <td>{r.qty}</td>
+                    <td>R$ {r.total.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="glass-card p-4 overflow-auto">
+            <h2 className="font-semibold mb-3">Relatório por guichê</h2>
+            <table className="w-full text-sm">
+              <thead className="text-left text-slate-400">
+                <tr><th className="py-2">Guichê</th><th>Qtd</th><th>Total</th></tr>
+              </thead>
+              <tbody>
+                {reportByBooth.map((r) => (
+                  <tr key={r.booth} className="border-t border-slate-800">
+                    <td className="py-2">{r.booth}</td>
+                    <td>{r.qty}</td>
+                    <td>R$ {r.total.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="glass-card p-4 overflow-auto">
+          <h2 className="font-semibold mb-3">Timeline operacional</h2>
+          <ul className="space-y-2 text-sm">
+            {auditTimeline.map((i, idx) => (
+              <li key={`${i.text}-${idx}`} className="border-b border-slate-800 pb-2">
+                <span className={i.status === "closed" ? "text-emerald-300" : "text-cyan-300"}>{i.when}</span>
+                <span className="text-slate-300"> — {i.text}</span>
+              </li>
+            ))}
+          </ul>
         </section>
 
         <section className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
