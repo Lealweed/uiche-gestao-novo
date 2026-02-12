@@ -60,6 +60,15 @@ type AuditLog = {
   profiles: { full_name: string } | { full_name: string }[] | null;
 };
 
+type TimePunchRow = {
+  id: string;
+  punch_type: "entrada" | "saida" | "pausa_inicio" | "pausa_fim";
+  punched_at: string;
+  note: string | null;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+  booths: { code: string; name: string } | { code: string; name: string }[] | null;
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const [rows, setRows] = useState<ShiftTotal[]>([]);
@@ -70,6 +79,7 @@ export default function AdminPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [operatorBoothLinks, setOperatorBoothLinks] = useState<OperatorBoothLink[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [timePunchRows, setTimePunchRows] = useState<TimePunchRow[]>([]);
   const [reportTxs, setReportTxs] = useState<TxForReport[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,7 +141,7 @@ export default function AdminPage() {
       txQuery = txQuery.lte("sold_at", endIso);
     }
 
-    const [shiftRes, companyRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, txRes, adjRes] = await Promise.all([
+    const [shiftRes, companyRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, txRes, adjRes] = await Promise.all([
       shiftQuery,
       supabase.from("companies").select("id,name,commission_percent,active").order("name"),
       supabase.from("booths").select("id,code,name,active").order("name"),
@@ -140,6 +150,7 @@ export default function AdminPage() {
       supabase.from("profiles").select("user_id,full_name,role,active").order("full_name"),
       supabase.from("operator_booths").select("id,active,profiles(full_name),booths(name,code)").order("created_at", { ascending: false }).limit(200),
       supabase.from("audit_logs").select("id,action,entity,details,created_at,profiles(full_name)").order("created_at", { ascending: false }).limit(50),
+      supabase.from("time_punches").select("id,punch_type,punched_at,note,profiles(full_name),booths(code,name)").order("punched_at", { ascending: false }).limit(200),
       txQuery,
       supabase
         .from("adjustment_requests")
@@ -157,6 +168,7 @@ export default function AdminPage() {
     setProfiles((profileRes.data as Profile[]) ?? []);
     setOperatorBoothLinks(((linkRes.data ?? []) as unknown as OperatorBoothLink[]) ?? []);
     setAuditLogs(((auditRes.data ?? []) as unknown as AuditLog[]) ?? []);
+    setTimePunchRows(((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
     setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
     setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
   }
@@ -266,6 +278,22 @@ export default function AdminPage() {
     const header = ["Guichê", "Quantidade", "Total"];
     const lines = reportByBooth.map((r) => [r.booth, String(r.qty), r.total.toFixed(2)]);
     downloadCsv(`relatorio-guiches-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
+  }
+
+  function exportPunchCsv() {
+    const header = ["Data/Hora", "Operador", "Guichê", "Tipo", "Observação"];
+    const lines = timePunchRows.map((p) => {
+      const op = Array.isArray(p.profiles) ? p.profiles[0]?.full_name : p.profiles?.full_name;
+      const b = Array.isArray(p.booths) ? p.booths[0] : p.booths;
+      return [
+        new Date(p.punched_at).toLocaleString("pt-BR"),
+        op ?? "-",
+        b ? `${b.code} - ${b.name}` : "-",
+        p.punch_type,
+        p.note ?? "",
+      ];
+    });
+    downloadCsv(`relatorio-ponto-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
   }
 
   async function createCompany(e: FormEvent) {
@@ -534,6 +562,7 @@ export default function AdminPage() {
           <button className="btn-ghost" type="button" onClick={exportCategoryCsv}>CSV Categorias</button>
           <button className="btn-ghost" type="button" onClick={exportOperatorCsv}>CSV Operadores</button>
           <button className="btn-ghost" type="button" onClick={exportBoothCsv}>CSV Guichês</button>
+          <button className="btn-ghost" type="button" onClick={exportPunchCsv}>CSV Ponto</button>
         </form>
 
         <section className="grid lg:grid-cols-2 gap-4">
@@ -793,6 +822,30 @@ export default function AdminPage() {
               );
             })}
           </ul>
+        </section>
+
+        <section className="glass-card p-4 overflow-auto">
+          <h2 className="font-semibold mb-3">Controle de ponto (últimos registros)</h2>
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-400">
+              <tr><th className="py-2">Data/Hora</th><th>Operador</th><th>Guichê</th><th>Tipo</th><th>Obs</th></tr>
+            </thead>
+            <tbody>
+              {timePunchRows.map((p) => {
+                const op = Array.isArray(p.profiles) ? p.profiles[0]?.full_name : p.profiles?.full_name;
+                const b = Array.isArray(p.booths) ? p.booths[0] : p.booths;
+                return (
+                  <tr key={p.id} className="border-t border-slate-800">
+                    <td className="py-2">{new Date(p.punched_at).toLocaleString("pt-BR")}</td>
+                    <td>{op ?? "-"}</td>
+                    <td>{b ? `${b.code} - ${b.name}` : "-"}</td>
+                    <td>{p.punch_type}</td>
+                    <td>{p.note ?? ""}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </section>
 
         <section className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
