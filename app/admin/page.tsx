@@ -19,6 +19,7 @@ type ShiftTotal = {
 };
 
 type Company = { id: string; name: string; commission_percent: number; active: boolean };
+type Client = { id: string; name: string; document: string | null; phone: string | null; email: string | null; address: string | null; notes: string | null; active: boolean };
 type Booth = { id: string; code: string; name: string; active: boolean };
 type Category = { id: string; name: string; active: boolean };
 type Subcategory = { id: string; name: string; active: boolean; category_id: string; transaction_categories?: { name: string } | { name: string }[] | null };
@@ -113,6 +114,7 @@ export default function AdminPage() {
   const router = useRouter();
   const [rows, setRows] = useState<ShiftTotal[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [booths, setBooths] = useState<Booth[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
@@ -131,6 +133,12 @@ export default function AdminPage() {
 
   const [companyName, setCompanyName] = useState("");
   const [companyPct, setCompanyPct] = useState("6");
+  const [clientName, setClientName] = useState("");
+  const [clientDocument, setClientDocument] = useState("");
+  const [clientPhone, setClientPhone] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientAddress, setClientAddress] = useState("");
+  const [clientNotes, setClientNotes] = useState("");
   const [boothCode, setBoothCode] = useState("");
   const [boothName, setBoothName] = useState("");
   const [categoryName, setCategoryName] = useState("");
@@ -196,9 +204,10 @@ export default function AdminPage() {
       txQuery = txQuery.lte("sold_at", endIso);
     }
 
-    const [shiftRes, companyRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, txRes, adjRes] = await Promise.all([
+    const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, txRes, adjRes] = await Promise.all([
       shiftQuery,
       supabase.from("companies").select("id,name,commission_percent,active").order("name"),
+      supabase.from("clients").select("id,name,document,phone,email,address,notes,active").order("name"),
       supabase.from("booths").select("id,code,name,active").order("name"),
       supabase.from("transaction_categories").select("id,name,active").order("name"),
       supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
@@ -217,6 +226,7 @@ export default function AdminPage() {
 
     setRows((shiftRes.data as ShiftTotal[]) ?? []);
     setCompanies((companyRes.data as Company[]) ?? []);
+    setClients((clientRes.data as Client[]) ?? []);
     setBooths((boothRes.data as Booth[]) ?? []);
     setCategories((catRes.data as Category[]) ?? []);
     setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
@@ -468,6 +478,7 @@ export default function AdminPage() {
       exported_at: new Date().toISOString(),
       summary,
       companies,
+      clients,
       booths,
       categories,
       subcategories,
@@ -498,6 +509,34 @@ export default function AdminPage() {
     setCompanyPct("6");
     await logAction("CREATE_COMPANY", "companies", undefined, { name: companyName.trim(), pct: Number(companyPct) });
     setMessage("Empresa cadastrada com sucesso.");
+    await refreshData();
+  }
+
+  async function createClient(e: FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+
+    const payload = {
+      name: clientName.trim(),
+      document: clientDocument.trim() || null,
+      phone: clientPhone.trim() || null,
+      email: clientEmail.trim() || null,
+      address: clientAddress.trim() || null,
+      notes: clientNotes.trim() || null,
+      active: true,
+    };
+
+    const { error } = await supabase.from("clients").insert(payload);
+    if (error) return setMessage(`Erro ao cadastrar cliente: ${error.message}`);
+
+    await logAction("CREATE_CLIENT", "clients", undefined, payload);
+    setClientName("");
+    setClientDocument("");
+    setClientPhone("");
+    setClientEmail("");
+    setClientAddress("");
+    setClientNotes("");
+    setMessage("Cliente cadastrado com sucesso.");
     await refreshData();
   }
 
@@ -586,6 +625,13 @@ export default function AdminPage() {
     const { error } = await supabase.from("companies").update({ active: !company.active }).eq("id", company.id);
     if (error) return setMessage(`Erro ao atualizar empresa: ${error.message}`);
     await logAction("TOGGLE_COMPANY_ACTIVE", "companies", company.id, { active: !company.active });
+    await refreshData();
+  }
+
+  async function toggleClientActive(client: Client) {
+    const { error } = await supabase.from("clients").update({ active: !client.active }).eq("id", client.id);
+    if (error) return setMessage(`Erro ao atualizar cliente: ${error.message}`);
+    await logAction("TOGGLE_CLIENT_ACTIVE", "clients", client.id, { active: !client.active });
     await refreshData();
   }
 
@@ -841,9 +887,37 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section id="clientes" className={`${menu === "portal" ? "block" : "hidden"} glass-card p-4`}>
-          <h2 className="font-semibold mb-2">Clientes</h2>
-          <p className="text-sm text-slate-400">Área preparada para histórico, extratos e relatórios por cliente/empresa.</p>
+        <section id="clientes" className={`${menu === "portal" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
+          <form onSubmit={createClient} className="glass-card p-4 space-y-3">
+            <h2 className="font-semibold">Cadastro de cliente</h2>
+            <input value={clientName} onChange={(e)=>setClientName(e.target.value)} required placeholder="Nome do cliente" className="field" />
+            <input value={clientDocument} onChange={(e)=>setClientDocument(e.target.value)} placeholder="CPF/CNPJ" className="field" />
+            <input value={clientPhone} onChange={(e)=>setClientPhone(e.target.value)} placeholder="Telefone" className="field" />
+            <input value={clientEmail} onChange={(e)=>setClientEmail(e.target.value)} placeholder="E-mail" className="field" type="email" />
+            <input value={clientAddress} onChange={(e)=>setClientAddress(e.target.value)} placeholder="Endereço" className="field" />
+            <textarea value={clientNotes} onChange={(e)=>setClientNotes(e.target.value)} placeholder="Observações" className="field min-h-[80px]" />
+            <button className="btn-primary">Salvar cliente</button>
+          </form>
+
+          <div className="glass-card p-4 overflow-auto">
+            <h2 className="font-semibold mb-3">Clientes cadastrados</h2>
+            <table className="w-full text-sm">
+              <thead className="text-left text-slate-400">
+                <tr><th className="py-2">Nome</th><th>Contato</th><th>Documento</th><th>Status</th><th>Ação</th></tr>
+              </thead>
+              <tbody>
+                {clients.map((c) => (
+                  <tr key={c.id} className="border-t border-slate-800">
+                    <td className="py-2">{c.name}</td>
+                    <td>{c.phone ?? c.email ?? "-"}</td>
+                    <td>{c.document ?? "-"}</td>
+                    <td>{c.active ? "Ativo" : "Inativo"}</td>
+                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleClientActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <form onSubmit={applyPeriodFilter} className={`${menu === "financeiro" ? "flex" : "hidden"} glass-card p-4 flex-wrap items-end gap-3`}>
