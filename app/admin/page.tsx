@@ -69,6 +69,35 @@ type TimePunchRow = {
   booths: { code: string; name: string } | { code: string; name: string }[] | null;
 };
 
+type BoothDetailTx = {
+  id: string;
+  sold_at: string;
+  amount: number;
+  payment_method: string;
+  ticket_reference: string | null;
+  note: string | null;
+  companies: { name: string } | { name: string }[] | null;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+  transaction_categories: { name: string } | { name: string }[] | null;
+  transaction_subcategories: { name: string } | { name: string }[] | null;
+};
+
+type BoothDetailShift = {
+  id: string;
+  opened_at: string;
+  closed_at: string | null;
+  status: "open" | "closed";
+  profiles: { full_name: string } | { full_name: string }[] | null;
+};
+
+type BoothDetailPunch = {
+  id: string;
+  punch_type: string;
+  punched_at: string;
+  note: string | null;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+};
+
 type MenuSection = "agenda" | "tarefas" | "financeiro" | "relatorios" | "portal" | "configuracoes";
 
 export default function AdminPage() {
@@ -84,6 +113,10 @@ export default function AdminPage() {
   const [timePunchRows, setTimePunchRows] = useState<TimePunchRow[]>([]);
   const [reportTxs, setReportTxs] = useState<TxForReport[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
+  const [selectedBooth, setSelectedBooth] = useState<Booth | null>(null);
+  const [boothDetailTxs, setBoothDetailTxs] = useState<BoothDetailTx[]>([]);
+  const [boothDetailShifts, setBoothDetailShifts] = useState<BoothDetailShift[]>([]);
+  const [boothDetailPunches, setBoothDetailPunches] = useState<BoothDetailPunch[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -174,6 +207,51 @@ export default function AdminPage() {
     setTimePunchRows(((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
     setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
     setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
+  }
+
+  async function openBoothDetail(booth: Booth) {
+    setSelectedBooth(booth);
+    const startIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : null;
+    const endIso = dateTo ? `${dateTo}T23:59:59.999Z` : null;
+
+    let txQ = supabase
+      .from("transactions")
+      .select("id,sold_at,amount,payment_method,ticket_reference,note,companies(name),profiles(full_name),transaction_categories(name),transaction_subcategories(name)")
+      .eq("booth_id", booth.id)
+      .eq("status", "posted")
+      .order("sold_at", { ascending: false })
+      .limit(300);
+
+    let shiftQ = supabase
+      .from("shifts")
+      .select("id,opened_at,closed_at,status,profiles(full_name)")
+      .eq("booth_id", booth.id)
+      .order("opened_at", { ascending: false })
+      .limit(100);
+
+    let punchQ = supabase
+      .from("time_punches")
+      .select("id,punch_type,punched_at,note,profiles(full_name)")
+      .eq("booth_id", booth.id)
+      .order("punched_at", { ascending: false })
+      .limit(300);
+
+    if (startIso) {
+      txQ = txQ.gte("sold_at", startIso);
+      shiftQ = shiftQ.gte("opened_at", startIso);
+      punchQ = punchQ.gte("punched_at", startIso);
+    }
+    if (endIso) {
+      txQ = txQ.lte("sold_at", endIso);
+      shiftQ = shiftQ.lte("opened_at", endIso);
+      punchQ = punchQ.lte("punched_at", endIso);
+    }
+
+    const [txRes, shiftRes, punchRes] = await Promise.all([txQ, shiftQ, punchQ]);
+
+    setBoothDetailTxs(((txRes.data ?? []) as unknown as BoothDetailTx[]) ?? []);
+    setBoothDetailShifts(((shiftRes.data ?? []) as unknown as BoothDetailShift[]) ?? []);
+    setBoothDetailPunches(((punchRes.data ?? []) as unknown as BoothDetailPunch[]) ?? []);
   }
 
   const summary = useMemo(() => {
@@ -664,13 +742,83 @@ export default function AdminPage() {
               <tbody>
                 {booths.map((b) => (
                   <tr key={b.id} className="border-t border-slate-800">
-                    <td className="py-2">{b.code}</td>
+                    <td className="py-2">
+                      <button className="text-cyan-300 hover:underline" onClick={() => openBoothDetail(b)}>{b.code}</button>
+                    </td>
                     <td>{b.name}</td>
                     <td>{b.active ? "Ativo" : "Inativo"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <section className={`${menu === "configuracoes" && selectedBooth ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+          <h2 className="font-semibold mb-3">Detalhes do guichê {selectedBooth?.code} - {selectedBooth?.name}</h2>
+          <div className="grid lg:grid-cols-3 gap-4 text-sm mb-4">
+            <div className="rounded-xl border border-slate-800 p-3 bg-slate-950/50">
+              <div className="text-slate-400">Lançamentos</div>
+              <div className="text-lg font-semibold">{boothDetailTxs.length}</div>
+            </div>
+            <div className="rounded-xl border border-slate-800 p-3 bg-slate-950/50">
+              <div className="text-slate-400">Turnos</div>
+              <div className="text-lg font-semibold">{boothDetailShifts.length}</div>
+            </div>
+            <div className="rounded-xl border border-slate-800 p-3 bg-slate-950/50">
+              <div className="text-slate-400">Registros de ponto</div>
+              <div className="text-lg font-semibold">{boothDetailPunches.length}</div>
+            </div>
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-4">
+            <div>
+              <h3 className="font-semibold mb-2">Transações</h3>
+              <div className="max-h-72 overflow-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-left text-slate-400">
+                    <tr><th className="py-2">Data</th><th>Operador</th><th>Método</th><th>Total</th></tr>
+                  </thead>
+                  <tbody>
+                    {boothDetailTxs.map((t) => {
+                      const op = Array.isArray(t.profiles) ? t.profiles[0]?.full_name : t.profiles?.full_name;
+                      return (
+                        <tr key={t.id} className="border-t border-slate-800">
+                          <td className="py-2">{new Date(t.sold_at).toLocaleString("pt-BR")}</td>
+                          <td>{op ?? "-"}</td>
+                          <td>{t.payment_method}</td>
+                          <td>R$ {Number(t.amount).toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-semibold mb-2">Turnos e pontos</h3>
+              <div className="max-h-72 overflow-auto space-y-3">
+                <div>
+                  <div className="text-slate-400 mb-1">Turnos</div>
+                  <ul className="space-y-1 text-xs">
+                    {boothDetailShifts.map((s) => {
+                      const op = Array.isArray(s.profiles) ? s.profiles[0]?.full_name : s.profiles?.full_name;
+                      return <li key={s.id} className="border-b border-slate-800 pb-1">{new Date(s.opened_at).toLocaleString("pt-BR")} • {op ?? "-"} • {s.status}</li>;
+                    })}
+                  </ul>
+                </div>
+                <div>
+                  <div className="text-slate-400 mb-1">Pontos</div>
+                  <ul className="space-y-1 text-xs">
+                    {boothDetailPunches.map((p) => {
+                      const op = Array.isArray(p.profiles) ? p.profiles[0]?.full_name : p.profiles?.full_name;
+                      return <li key={p.id} className="border-b border-slate-800 pb-1">{new Date(p.punched_at).toLocaleString("pt-BR")} • {op ?? "-"} • {p.punch_type}</li>;
+                    })}
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
