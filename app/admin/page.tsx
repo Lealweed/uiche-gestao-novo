@@ -466,10 +466,38 @@ export default function AdminPage() {
         </header>
 
         <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card label="Total" value={`R$ ${summary.totalDia.toFixed(2)}`} />
-          <Card label="Comissão" value={`R$ ${summary.totalComissao.toFixed(2)}`} />
+          <Card label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} />
+          <Card label="Comissão estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} />
           <Card label="Turnos abertos" value={String(summary.abertos)} />
           <Card label="Pendências" value={String(summary.pendencias)} />
+        </section>
+
+        <section className="grid lg:grid-cols-3 gap-4">
+          <div className="glass-card p-4">
+            <h2 className="font-semibold mb-3">Financeiro</h2>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-slate-400">PIX</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_pix||0),0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Crédito</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_credit||0),0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Débito</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_debit||0),0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Dinheiro</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_cash||0),0).toFixed(2)}</span></div>
+            </div>
+          </div>
+
+          <div className="glass-card p-4">
+            <h2 className="font-semibold mb-3">Cadastros</h2>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <MiniStat label="Guichês" value={String(booths.length)} />
+              <MiniStat label="Empresas" value={String(companies.length)} />
+              <MiniStat label="Usuários" value={String(profiles.length)} />
+              <MiniStat label="Categorias" value={String(categories.length)} />
+            </div>
+          </div>
+
+          <div className="glass-card p-4">
+            <h2 className="font-semibold mb-3">CRM Operacional</h2>
+            <p className="text-sm text-slate-400">Central de guichês, colaboradores e auditoria em tempo real.</p>
+            <div className="mt-3 text-xs text-slate-500">Use os blocos abaixo para gerenciar cadastros, vínculos e relatórios.</div>
+          </div>
         </section>
 
         <form onSubmit={applyPeriodFilter} className="glass-card p-4 flex flex-wrap items-end gap-3">
@@ -715,38 +743,20 @@ export default function AdminPage() {
         <section className="grid lg:grid-cols-2 gap-4">
           <div className="glass-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Relatório por operador</h2>
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Operador</th><th>Qtd</th><th>Total</th></tr>
-              </thead>
-              <tbody>
-                {reportByOperator.map((r) => (
-                  <tr key={r.operator} className="border-t border-slate-800">
-                    <td className="py-2">{r.operator}</td>
-                    <td>{r.qty}</td>
-                    <td>R$ {r.total.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="space-y-3">
+              {reportByOperator.slice(0, 8).map((r) => (
+                <BarRow key={r.operator} label={r.operator} value={r.total} max={reportByOperator[0]?.total ?? 1} />
+              ))}
+            </div>
           </div>
 
           <div className="glass-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Relatório por guichê</h2>
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Guichê</th><th>Qtd</th><th>Total</th></tr>
-              </thead>
-              <tbody>
-                {reportByBooth.map((r) => (
-                  <tr key={r.booth} className="border-t border-slate-800">
-                    <td className="py-2">{r.booth}</td>
-                    <td>{r.qty}</td>
-                    <td>R$ {r.total.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="space-y-3">
+              {reportByBooth.slice(0, 8).map((r) => (
+                <BarRow key={r.booth} label={r.booth} value={r.total} max={reportByBooth[0]?.total ?? 1} />
+              ))}
+            </div>
           </div>
         </section>
 
@@ -834,6 +844,30 @@ function Card({ label, value }: { label: string; value: string }) {
     <div className="glass-card p-4">
       <p className="text-sm text-slate-400">{label}</p>
       <p className="text-xl font-semibold mt-2">{value}</p>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+      <p className="text-slate-400">{label}</p>
+      <p className="text-lg font-semibold mt-1">{value}</p>
+    </div>
+  );
+}
+
+function BarRow({ label, value, max }: { label: string; value: number; max: number }) {
+  const pct = Math.max(4, Math.round((value / (max || 1)) * 100));
+  return (
+    <div>
+      <div className="flex justify-between text-xs mb-1">
+        <span className="text-slate-300 truncate max-w-[70%]">{label}</span>
+        <span className="text-slate-400">R$ {value.toFixed(2)}</span>
+      </div>
+      <div className="h-2 rounded-full bg-slate-800">
+        <div className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }
