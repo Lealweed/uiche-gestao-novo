@@ -69,6 +69,8 @@ type TimePunchRow = {
   booths: { code: string; name: string } | { code: string; name: string }[] | null;
 };
 
+type MenuSection = "agenda" | "tarefas" | "financeiro" | "relatorios" | "portal" | "configuracoes";
+
 export default function AdminPage() {
   const router = useRouter();
   const [rows, setRows] = useState<ShiftTotal[]>([]);
@@ -101,6 +103,7 @@ export default function AdminPage() {
   const [resetEmail, setResetEmail] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [menu, setMenu] = useState<MenuSection>("financeiro");
 
   useEffect(() => {
     (async () => {
@@ -497,25 +500,25 @@ export default function AdminPage() {
           <aside className="glass-card p-4 sticky top-4">
             <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
             <nav className="space-y-2 text-sm">
-              <a href="#agenda" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Agenda</a>
-              <a href="#tarefas" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Tarefas</a>
-              <a href="#financeiro" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Financeiro</a>
-              <a href="#relatorios" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Relatórios com IA</a>
-              <a href="#portal-cliente" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Portal do Cliente</a>
-              <a href="#configuracoes" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Configurações</a>
+              <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Agenda</button>
+              <button onClick={() => setMenu("tarefas")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="tarefas" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Tarefas</button>
+              <button onClick={() => setMenu("financeiro")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="financeiro" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Financeiro</button>
+              <button onClick={() => setMenu("relatorios")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="relatorios" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Relatórios com IA</button>
+              <button onClick={() => setMenu("portal")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="portal" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Portal do Cliente</button>
+              <button onClick={() => setMenu("configuracoes")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="configuracoes" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Configurações</button>
             </nav>
           </aside>
 
           <div className="space-y-6">
 
-        <section id="financeiro" className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <section id="financeiro" className={`${menu === "financeiro" ? "grid" : "hidden"} sm:grid-cols-2 lg:grid-cols-4 gap-4`}>
           <Card label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} />
           <Card label="Comissão estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} />
           <Card label="Turnos abertos" value={String(summary.abertos)} />
           <Card label="Pendências" value={String(summary.pendencias)} />
         </section>
 
-        <section className="grid lg:grid-cols-3 gap-4">
+        <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-3 gap-4`}>
           <div className="glass-card p-4">
             <h2 className="font-semibold mb-3">Financeiro</h2>
             <div className="space-y-2 text-sm">
@@ -543,12 +546,12 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section id="portal-cliente" className="glass-card p-4">
+        <section id="portal-cliente" className={`${menu === "portal" ? "block" : "hidden"} glass-card p-4`}>
           <h2 className="font-semibold mb-2">Portal do Cliente</h2>
           <p className="text-sm text-slate-400">Área pronta para liberar consulta de extratos e relatórios por cliente/empresa em breve.</p>
         </section>
 
-        <form onSubmit={applyPeriodFilter} className="glass-card p-4 flex flex-wrap items-end gap-3">
+        <form onSubmit={applyPeriodFilter} className={`${menu === "financeiro" ? "flex" : "hidden"} glass-card p-4 flex-wrap items-end gap-3`}>
           <div>
             <label className="text-xs text-slate-400">Data inicial</label>
             <input type="date" value={dateFrom} onChange={(e)=>setDateFrom(e.target.value)} className="field mt-1" />
@@ -565,7 +568,7 @@ export default function AdminPage() {
           <button className="btn-ghost" type="button" onClick={exportPunchCsv}>CSV Ponto</button>
         </form>
 
-        <section className="grid lg:grid-cols-2 gap-4">
+        <section className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <form onSubmit={saveProfile} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Cadastrar/Atualizar usuário (perfil)</h2>
             <input value={newProfileUserId} onChange={(e)=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuário (auth.users.id)" className="field" />
@@ -588,7 +591,7 @@ export default function AdminPage() {
           </form>
         </section>
 
-        <section className="grid lg:grid-cols-2 gap-4">
+        <section className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <form onSubmit={createCompany} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Cadastrar Empresa</h2>
             <input value={companyName} onChange={(e)=>setCompanyName(e.target.value)} required placeholder="Nome da empresa" className="field" />
@@ -604,7 +607,7 @@ export default function AdminPage() {
           </form>
         </section>
 
-        <section className="grid lg:grid-cols-2 gap-4">
+        <section className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <form onSubmit={createCategory} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Cadastrar Categoria</h2>
             <input value={categoryName} onChange={(e)=>setCategoryName(e.target.value)} required placeholder="Ex: Venda de Passagem" className="field" />
@@ -628,7 +631,7 @@ export default function AdminPage() {
           </section>
         )}
 
-        <section className="grid lg:grid-cols-2 gap-4">
+        <section className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Empresas</h2>
             <table className="w-full text-sm">
@@ -666,7 +669,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section className="grid lg:grid-cols-2 gap-4">
+        <section className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Categorias</h2>
             <table className="w-full text-sm">
@@ -706,7 +709,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section id="configuracoes" className="grid lg:grid-cols-2 gap-4">
+        <section id="configuracoes" className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <form onSubmit={linkOperatorToBooth} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Vincular operador ao guichê</h2>
             <select className="field" value={selectedOperatorId} onChange={(e)=>setSelectedOperatorId(e.target.value)} required>
@@ -770,7 +773,7 @@ export default function AdminPage() {
           </table>
         </section>
 
-        <section id="relatorios" className="glass-card p-4 overflow-auto">
+        <section id="relatorios" className={`${menu === "relatorios" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Relatório por categoria/subcategoria</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
@@ -789,7 +792,7 @@ export default function AdminPage() {
           </table>
         </section>
 
-        <section className="grid lg:grid-cols-2 gap-4">
+        <section className={`${menu === "relatorios" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Relatório por operador</h2>
             <div className="space-y-3">
@@ -809,7 +812,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section id="agenda" className="glass-card p-4 overflow-auto">
+        <section id="agenda" className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Timeline operacional (auditoria)</h2>
           <ul className="space-y-2 text-sm">
             {auditLogs.map((log) => {
@@ -824,7 +827,7 @@ export default function AdminPage() {
           </ul>
         </section>
 
-        <section className="glass-card p-4 overflow-auto">
+        <section className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Controle de ponto (últimos registros)</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
@@ -881,7 +884,7 @@ export default function AdminPage() {
           )}
         </section>
 
-        <section id="tarefas" className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
+        <section id="tarefas" className={`${menu === "tarefas" ? "block" : "hidden"} rounded-xl border border-slate-800 bg-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Últimos turnos</h2>
           {loading ? <p className="text-slate-400">Carregando...</p> : (
             <table className="w-full text-sm">
