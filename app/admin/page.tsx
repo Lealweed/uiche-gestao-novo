@@ -165,14 +165,15 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-bg p-6 md:p-10 text-slate-100">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <main className="app-shell">
+      <div className="app-container">
         <header className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Painel Admin</h1>
-            <p className="text-slate-400">Gestão central de guichês, empresas e fechamento.</p>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2">● Produção</div>
+            <h1 className="text-2xl font-bold tracking-tight">Painel Admin</h1>
+            <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
-          <button onClick={logout} className="px-4 py-2 rounded-lg border border-slate-700">Sair</button>
+          <button onClick={logout} className="btn-ghost">Sair</button>
         </header>
 
         <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -183,18 +184,18 @@ export default function AdminPage() {
         </section>
 
         <section className="grid lg:grid-cols-2 gap-4">
-          <form onSubmit={createCompany} className="rounded-xl border border-slate-800 bg-card p-4 space-y-3">
+          <form onSubmit={createCompany} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Cadastrar Empresa</h2>
-            <input value={companyName} onChange={(e)=>setCompanyName(e.target.value)} required placeholder="Nome da empresa" className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" />
-            <input value={companyPct} onChange={(e)=>setCompanyPct(e.target.value)} required type="number" min="0" step="0.001" placeholder="% comissão" className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" />
-            <button className="px-4 py-2 rounded-lg bg-accent">Salvar empresa</button>
+            <input value={companyName} onChange={(e)=>setCompanyName(e.target.value)} required placeholder="Nome da empresa" className="field" />
+            <input value={companyPct} onChange={(e)=>setCompanyPct(e.target.value)} required type="number" min="0" step="0.001" placeholder="% comissão" className="field" />
+            <button className="btn-primary">Salvar empresa</button>
           </form>
 
-          <form onSubmit={createBooth} className="rounded-xl border border-slate-800 bg-card p-4 space-y-3">
+          <form onSubmit={createBooth} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Cadastrar Guichê</h2>
-            <input value={boothCode} onChange={(e)=>setBoothCode(e.target.value)} required placeholder="Código (ex: G02)" className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" />
-            <input value={boothName} onChange={(e)=>setBoothName(e.target.value)} required placeholder="Nome (ex: Guichê 02)" className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" />
-            <button className="px-4 py-2 rounded-lg bg-accent">Salvar guichê</button>
+            <input value={boothCode} onChange={(e)=>setBoothCode(e.target.value)} required placeholder="Código (ex: G02)" className="field" />
+            <input value={boothName} onChange={(e)=>setBoothName(e.target.value)} required placeholder="Nome (ex: Guichê 02)" className="field" />
+            <button className="btn-primary">Salvar guichê</button>
           </form>
         </section>
 
@@ -308,7 +309,7 @@ export default function AdminPage() {
 
 function Card({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-card p-4">
+    <div className="glass-card p-4">
       <p className="text-sm text-slate-400">{label}</p>
       <p className="text-xl font-semibold mt-2">{value}</p>
     </div>

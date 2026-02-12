@@ -198,14 +198,15 @@ export default function OperatorPage() {
   }
 
   return (
-    <main className="min-h-screen bg-bg p-6 md:p-10 text-slate-100">
+    <main className="app-shell">
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Operador de Guichê</h1>
-            <p className="text-slate-400">Turno e lançamentos.</p>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-xs mb-2">● Operação ativa</div>
+            <h1 className="text-2xl font-bold tracking-tight">Operador de Guichê</h1>
+            <p className="muted">Turno e lançamentos.</p>
           </div>
-          <button onClick={logout} className="px-4 py-2 rounded-lg border border-slate-700">Sair</button>
+          <button onClick={logout} className="btn-ghost">Sair</button>
         </header>
 
         <section className="grid md:grid-cols-4 gap-3">
@@ -216,7 +217,7 @@ export default function OperatorPage() {
         </section>
 
         {!shift ? (
-          <section className="rounded-xl border border-slate-800 bg-card p-4 space-y-3">
+          <section className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Abrir turno</h2>
             <select value={boothId} onChange={(e) => setBoothId(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
               <option value="">Selecione o guichê</option>
@@ -224,7 +225,7 @@ export default function OperatorPage() {
                 <option key={b.booth_id} value={b.booth_id}>{b.booths?.name ?? b.booth_id}</option>
               ))}
             </select>
-            <button onClick={openShift} className="px-4 py-2 rounded-lg bg-accent">Abrir turno</button>
+            <button onClick={openShift} className="btn-primary">Abrir turno</button>
           </section>
         ) : (
           <section className="rounded-xl border border-slate-800 bg-card p-4">
@@ -235,7 +236,7 @@ export default function OperatorPage() {
           </section>
         )}
 
-        <form onSubmit={submitTx} className="rounded-xl border border-slate-800 bg-card p-4 space-y-3">
+        <form onSubmit={submitTx} className="glass-card p-4 space-y-3">
           <h2 className="font-semibold">Novo lançamento</h2>
           <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" required>
             <option value="">Selecione a empresa</option>
@@ -250,11 +251,11 @@ export default function OperatorPage() {
             <option value="cash">Dinheiro</option>
           </select>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" placeholder="Observação (opcional)" />
-          <button disabled={!shift} className="px-4 py-2 rounded-lg bg-accent disabled:opacity-50">Salvar lançamento</button>
+          <button disabled={!shift} className="btn-primary disabled:opacity-50">Salvar lançamento</button>
           {message && <p className="text-sm text-blue-300">{message}</p>}
         </form>
 
-        <section className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
+        <section className="glass-card p-4 overflow-auto">
           <h2 className="font-semibold mb-2">Lançamentos do turno</h2>
           <table className="w-full text-sm">
             <thead className="text-slate-400 text-left">
@@ -309,7 +310,7 @@ export default function OperatorPage() {
 
 function MiniCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-card p-4">
+    <div className="glass-card p-4">
       <p className="text-sm text-slate-400">{label}</p>
       <p className="text-lg font-semibold mt-1">R$ {value.toFixed(2)}</p>
     </div>

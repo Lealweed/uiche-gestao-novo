@@ -2,5 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
-html, body { background: #070B14; color: #e5e7eb; }
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  min-height: 100%;
+  background:
+    radial-gradient(1200px 700px at 10% -10%, rgba(47, 123, 255, 0.25), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(34, 211, 238, 0.18), transparent 55%),
+    #050913;
+  color: #e5e7eb;
+}
+
+* {
+  border-color: rgb(30 41 59 / 1);
+}
+
+@layer components {
+  .app-shell {
+    @apply min-h-screen p-4 md:p-8 text-slate-100;
+  }
+
+  .app-container {
+    @apply max-w-7xl mx-auto space-y-6;
+  }
+
+  .glass-card {
+    @apply rounded-2xl border border-slate-800/80 bg-slate-900/70 backdrop-blur-sm shadow-[0_10px_35px_rgba(0,0,0,0.25)];
+  }
+
+  .card-title {
+    @apply font-semibold tracking-tight;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold hover:from-blue-400 hover:to-cyan-400 transition;
+  }
+
+  .btn-ghost {
+    @apply px-4 py-2 rounded-xl border border-slate-700 hover:border-slate-500 hover:bg-slate-800/60 transition;
+  }
+
+  .field {
+    @apply w-full rounded-xl bg-slate-950/80 border border-slate-700 px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/50;
+  }
+
+  .muted {
+    @apply text-slate-400;
+  }
+}
