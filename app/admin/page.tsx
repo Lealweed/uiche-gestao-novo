@@ -34,6 +34,8 @@ type Adjustment = {
 };
 
 type TxForReport = {
+  id: string;
+  status?: string;
   amount: number;
   sold_at?: string;
   operator_id?: string;
@@ -216,7 +218,7 @@ export default function AdminPage() {
     let shiftQuery = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
     let txQuery = supabase
       .from("transactions")
-      .select("amount,sold_at,operator_id,booth_id,profiles(full_name),booths(name,code),companies(name),transaction_categories(name),transaction_subcategories(name)")
+      .select("id,status,amount,sold_at,operator_id,booth_id,profiles(full_name),booths(name,code),companies(name),transaction_categories(name),transaction_subcategories(name)")
       .eq("status", "posted")
       .order("sold_at", { ascending: false })
       .limit(5000);
@@ -818,6 +820,34 @@ export default function AdminPage() {
     if (error) return setMessage(`Erro ao encerrar turno: ${error.message}`);
     await logAction("FORCE_CLOSE_SHIFT", "shifts", shiftId);
     setMessage("Turno encerrado pelo admin.");
+    await refreshData();
+  }
+
+  async function reopenShift(shiftId: string) {
+    const { error } = await supabase
+      .from("shifts")
+      .update({ status: "open", closed_at: null, notes: "Reaberto pelo admin" })
+      .eq("id", shiftId)
+      .eq("status", "closed");
+
+    if (error) return setMessage(`Erro ao reabrir turno: ${error.message}`);
+    await logAction("REOPEN_SHIFT", "shifts", shiftId);
+    setMessage("Turno reaberto pelo admin.");
+    await refreshData();
+  }
+
+  async function reverseTransaction(txId: string) {
+    const reason = window.prompt("Motivo do estorno/cancelamento:");
+    if (!reason) return;
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({ status: "voided", note: `ESTORNO ADMIN: ${reason}` })
+      .eq("id", txId);
+
+    if (error) return setMessage(`Erro ao estornar lançamento: ${error.message}`);
+    await logAction("REVERSE_TRANSACTION", "transactions", txId, { reason });
+    setMessage("Lançamento estornado com sucesso.");
     await refreshData();
   }
 
@@ -1541,7 +1571,7 @@ export default function AdminPage() {
           <h2 className="font-semibold mb-3">Relatório detalhado (operador/categoria/guichê)</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Data</th><th>Operador</th><th>Guichê</th><th>Categoria</th><th>Subcategoria</th><th>Valor</th></tr>
+              <tr><th className="py-2">Data</th><th>Operador</th><th>Guichê</th><th>Categoria</th><th>Subcategoria</th><th>Valor</th><th>Status</th><th>Ação</th></tr>
             </thead>
             <tbody>
               {filteredReportTxs.slice(0, 300).map((tx, idx) => {
@@ -1557,6 +1587,14 @@ export default function AdminPage() {
                     <td>{cat ?? "-"}</td>
                     <td>{sub ?? "-"}</td>
                     <td>R$ {Number(tx.amount).toFixed(2)}</td>
+                    <td>{tx.status ?? "posted"}</td>
+                    <td>
+                      {(tx.status ?? "posted") === "posted" ? (
+                        <button className="text-rose-300 hover:underline" onClick={() => reverseTransaction(tx.id)}>Estornar</button>
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -1657,7 +1695,13 @@ export default function AdminPage() {
                     <td>R$ {Number(r.total_credit).toFixed(2)}</td>
                     <td>R$ {Number(r.total_debit).toFixed(2)}</td>
                     <td>{r.missing_card_receipts}</td>
-                    <td>{r.status === "open" ? <button className="text-amber-300 hover:underline" onClick={() => forceCloseShift(r.shift_id)}>Encerrar</button> : <span className="text-slate-500">-</span>}</td>
+                    <td>
+                      {r.status === "open" ? (
+                        <button className="text-amber-300 hover:underline" onClick={() => forceCloseShift(r.shift_id)}>Encerrar</button>
+                      ) : (
+                        <button className="text-cyan-300 hover:underline" onClick={() => reopenShift(r.shift_id)}>Reabrir</button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
