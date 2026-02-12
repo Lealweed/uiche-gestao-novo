@@ -465,7 +465,22 @@ export default function AdminPage() {
           <button onClick={logout} className="btn-ghost">Sair</button>
         </header>
 
-        <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid lg:grid-cols-[240px,1fr] gap-4 items-start">
+          <aside className="glass-card p-4 sticky top-4">
+            <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
+            <nav className="space-y-2 text-sm">
+              <a href="#agenda" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Agenda</a>
+              <a href="#tarefas" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Tarefas</a>
+              <a href="#financeiro" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Financeiro</a>
+              <a href="#relatorios" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Relatórios com IA</a>
+              <a href="#portal-cliente" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Portal do Cliente</a>
+              <a href="#configuracoes" className="block px-3 py-2 rounded-lg hover:bg-slate-800/70">Configurações</a>
+            </nav>
+          </aside>
+
+          <div className="space-y-6">
+
+        <section id="financeiro" className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} />
           <Card label="Comissão estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} />
           <Card label="Turnos abertos" value={String(summary.abertos)} />
@@ -498,6 +513,11 @@ export default function AdminPage() {
             <p className="text-sm text-slate-400">Central de guichês, colaboradores e auditoria em tempo real.</p>
             <div className="mt-3 text-xs text-slate-500">Use os blocos abaixo para gerenciar cadastros, vínculos e relatórios.</div>
           </div>
+        </section>
+
+        <section id="portal-cliente" className="glass-card p-4">
+          <h2 className="font-semibold mb-2">Portal do Cliente</h2>
+          <p className="text-sm text-slate-400">Área pronta para liberar consulta de extratos e relatórios por cliente/empresa em breve.</p>
         </section>
 
         <form onSubmit={applyPeriodFilter} className="glass-card p-4 flex flex-wrap items-end gap-3">
@@ -657,7 +677,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section className="grid lg:grid-cols-2 gap-4">
+        <section id="configuracoes" className="grid lg:grid-cols-2 gap-4">
           <form onSubmit={linkOperatorToBooth} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Vincular operador ao guichê</h2>
             <select className="field" value={selectedOperatorId} onChange={(e)=>setSelectedOperatorId(e.target.value)} required>
@@ -721,7 +741,7 @@ export default function AdminPage() {
           </table>
         </section>
 
-        <section className="glass-card p-4 overflow-auto">
+        <section id="relatorios" className="glass-card p-4 overflow-auto">
           <h2 className="font-semibold mb-3">Relatório por categoria/subcategoria</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
@@ -760,7 +780,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section className="glass-card p-4 overflow-auto">
+        <section id="agenda" className="glass-card p-4 overflow-auto">
           <h2 className="font-semibold mb-3">Timeline operacional (auditoria)</h2>
           <ul className="space-y-2 text-sm">
             {auditLogs.map((log) => {
@@ -808,7 +828,7 @@ export default function AdminPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
+        <section id="tarefas" className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
           <h2 className="font-semibold mb-3">Últimos turnos</h2>
           {loading ? <p className="text-slate-400">Carregando...</p> : (
             <table className="w-full text-sm">
@@ -834,6 +854,8 @@ export default function AdminPage() {
             </table>
           )}
         </section>
+          </div>
+        </div>
       </div>
     </main>
   );
