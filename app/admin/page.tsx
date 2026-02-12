@@ -623,6 +623,11 @@ export default function AdminPage() {
     e.preventDefault();
     setMessage(null);
 
+    if (clientEmail && !/^\S+@\S+\.\S+$/.test(clientEmail.trim())) {
+      setMessage("E-mail do cliente inválido.");
+      return;
+    }
+
     const payload = {
       name: clientName.trim(),
       document: clientDocument.trim() || null,
@@ -855,6 +860,11 @@ export default function AdminPage() {
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
     setMessage(null);
+
+    if (newProfileCpf && newProfileCpf.replace(/\D/g, "").length !== 11) {
+      setMessage("CPF inválido. Informe 11 dígitos.");
+      return;
+    }
 
     const { error } = await supabase.from("profiles").upsert({
       user_id: newProfileUserId.trim(),
