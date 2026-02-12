@@ -262,6 +262,14 @@ export default function AdminPage() {
     return { totalDia, totalComissao, pendencias, abertos };
   }, [rows]);
 
+  const adminHealth = useMemo(() => {
+    const inactiveUsers = profiles.filter((p) => !p.active).length;
+    const inactiveBooths = booths.filter((b) => !b.active).length;
+    const inactiveCompanies = companies.filter((c) => !c.active).length;
+    const pendingAdjustments = adjustments.length;
+    return { inactiveUsers, inactiveBooths, inactiveCompanies, pendingAdjustments };
+  }, [profiles, booths, companies, adjustments]);
+
   const reportByCategory = useMemo(() => {
     const map = new Map<string, { category: string; subcategory: string; total: number; qty: number }>();
 
@@ -379,6 +387,26 @@ export default function AdminPage() {
       ];
     });
     downloadCsv(`relatorio-ponto-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
+  }
+
+  function exportAdminBackupJson() {
+    const payload = {
+      exported_at: new Date().toISOString(),
+      summary,
+      companies,
+      booths,
+      categories,
+      subcategories,
+      profiles,
+      operatorBoothLinks,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `backup-admin-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   async function createCompany(e: FormEvent) {
@@ -635,6 +663,27 @@ export default function AdminPage() {
           </aside>
 
           <div className="space-y-6">
+
+        <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
+          <div className="glass-card p-4">
+            <h2 className="font-semibold mb-3">Painel administrativo</h2>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <MiniStat label="Usuários inativos" value={String(adminHealth.inactiveUsers)} />
+              <MiniStat label="Guichês inativos" value={String(adminHealth.inactiveBooths)} />
+              <MiniStat label="Empresas inativas" value={String(adminHealth.inactiveCompanies)} />
+              <MiniStat label="Ajustes pendentes" value={String(adminHealth.pendingAdjustments)} />
+            </div>
+          </div>
+
+          <div className="glass-card p-4">
+            <h2 className="font-semibold mb-3">Ações rápidas</h2>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-primary" type="button" onClick={refreshData}>Atualizar dados</button>
+              <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>Backup JSON</button>
+              <button className="btn-ghost" type="button" onClick={() => booths[0] && openBoothDetail(booths[0])}>Abrir 1º guichê</button>
+            </div>
+          </div>
+        </section>
 
         <section id="financeiro" className={`${menu === "financeiro" ? "grid" : "hidden"} sm:grid-cols-2 lg:grid-cols-4 gap-4`}>
           <Card label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} />
