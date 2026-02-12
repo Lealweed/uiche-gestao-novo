@@ -679,7 +679,7 @@ export default function AdminPage() {
           <aside className="glass-card p-4 sticky top-4 no-print">
             <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
             <nav className="space-y-2 text-sm">
-              <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Agenda</button>
+              <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Operador</button>
               <button onClick={() => setMenu("tarefas")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="tarefas" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Tarefas</button>
               <button onClick={() => setMenu("financeiro")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="financeiro" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Financeiro</button>
               <button onClick={() => setMenu("relatorios")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="relatorios" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Relatórios com IA</button>
@@ -1126,7 +1126,7 @@ export default function AdminPage() {
         </section>
 
         <section id="agenda" className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">Timeline operacional (auditoria)</h2>
+          <h2 className="font-semibold mb-3">Operador - timeline operacional (auditoria)</h2>
           <ul className="space-y-2 text-sm">
             {auditLogs.map((log) => {
               const who = Array.isArray(log.profiles) ? log.profiles[0]?.full_name : log.profiles?.full_name;
