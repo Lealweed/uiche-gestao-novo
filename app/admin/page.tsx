@@ -848,7 +848,7 @@ export default function AdminPage() {
         </header>
 
         <div className="grid lg:grid-cols-[240px,1fr] gap-4 items-start">
-          <aside className="glass-card p-4 sticky top-4 no-print">
+          <aside className="glass-card p-4 no-print">
             <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
             <nav className="space-y-2 text-sm">
               <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Operador</button>
