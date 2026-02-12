@@ -119,6 +119,16 @@ create table if not exists public.audit_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.time_punches (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(user_id),
+  booth_id uuid references public.booths(id),
+  shift_id uuid references public.shifts(id),
+  punch_type text not null check (punch_type in ('entrada','saida','pausa_inicio','pausa_fim')),
+  note text,
+  punched_at timestamptz not null default now()
+);
+
 -- Helper functions
 create or replace function public.is_admin(uid uuid)
 returns boolean
@@ -309,6 +319,7 @@ alter table public.transactions enable row level security;
 alter table public.transaction_receipts enable row level security;
 alter table public.adjustment_requests enable row level security;
 alter table public.audit_logs enable row level security;
+alter table public.time_punches enable row level security;
 
 -- profiles
 create policy profiles_self_or_admin_select on public.profiles
@@ -415,6 +426,13 @@ for select using (created_by = auth.uid() or public.is_admin(auth.uid()));
 
 create policy audit_insert_authenticated on public.audit_logs
 for insert with check (created_by = auth.uid());
+
+-- time punches
+create policy time_punch_self_or_admin_select on public.time_punches
+for select using (user_id = auth.uid() or public.is_admin(auth.uid()));
+
+create policy time_punch_self_insert on public.time_punches
+for insert with check (user_id = auth.uid());
 
 -- Grants for RPCs
 grant execute on function public.open_shift(uuid, text) to authenticated;

@@ -19,6 +19,13 @@ type Tx = {
   transaction_receipts?: { id: string }[];
 };
 
+type Punch = {
+  id: string;
+  punch_type: "entrada" | "saida" | "pausa_inicio" | "pausa_fim";
+  punched_at: string;
+  note: string | null;
+};
+
 export default function OperatorPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -37,6 +44,7 @@ export default function OperatorPage() {
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [txs, setTxs] = useState<Tx[]>([]);
+  const [punches, setPunches] = useState<Punch[]>([]);
   const [uploadingTxId, setUploadingTxId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,6 +84,7 @@ export default function OperatorPage() {
         setShift(sData as Shift);
         await loadTxs((sData as Shift).id);
       }
+      await loadPunches(authData.user.id);
       if (!sData && bData?.[0]) setBoothId((bData[0] as any).booth_id);
     })();
   }, [router]);
@@ -90,6 +99,17 @@ export default function OperatorPage() {
       .limit(100);
 
     setTxs(((data ?? []) as unknown) as Tx[]);
+  }
+
+  async function loadPunches(uid: string) {
+    const { data } = await supabase
+      .from("time_punches")
+      .select("id,punch_type,punched_at,note")
+      .eq("user_id", uid)
+      .order("punched_at", { ascending: false })
+      .limit(20);
+
+    setPunches(((data ?? []) as unknown) as Punch[]);
   }
 
   async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string, unknown>) {
@@ -131,6 +151,25 @@ export default function OperatorPage() {
     setShift(null);
     setTxs([]);
     setMessage("Turno encerrado.");
+  }
+
+  async function registerPunch(type: Punch["punch_type"]) {
+    if (!userId) return;
+
+    const note = type === "entrada" ? "Entrada" : type === "saida" ? "Saída" : type === "pausa_inicio" ? "Início de pausa" : "Fim de pausa";
+
+    const { error } = await supabase.from("time_punches").insert({
+      user_id: userId,
+      booth_id: (shift?.booth_id ?? boothId) || null,
+      shift_id: shift?.id ?? null,
+      punch_type: type,
+      note,
+    });
+
+    if (error) return setMessage(`Erro ao bater ponto: ${error.message}`);
+    await logAction("TIME_PUNCH", "time_punches", undefined, { type, shift_id: shift?.id ?? null });
+    await loadPunches(userId);
+    setMessage(`Ponto registrado: ${note}.`);
   }
 
   async function submitTx(e: FormEvent) {
@@ -260,6 +299,25 @@ export default function OperatorPage() {
           <MiniCard label="Crédito" value={totals.credit} />
           <MiniCard label="Débito" value={totals.debit} />
           <MiniCard label="Dinheiro" value={totals.cash} />
+        </section>
+
+        <section className="glass-card p-4 space-y-3">
+          <h2 className="font-semibold">Bater ponto</h2>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary" type="button" onClick={() => registerPunch("entrada")}>Entrada</button>
+            <button className="btn-ghost" type="button" onClick={() => registerPunch("pausa_inicio")}>Início pausa</button>
+            <button className="btn-ghost" type="button" onClick={() => registerPunch("pausa_fim")}>Fim pausa</button>
+            <button className="btn-ghost" type="button" onClick={() => registerPunch("saida")}>Saída</button>
+          </div>
+          <div className="text-xs text-slate-400">Últimos registros de ponto</div>
+          <ul className="space-y-1 text-sm">
+            {punches.map((p) => (
+              <li key={p.id} className="flex justify-between border-b border-slate-800 pb-1">
+                <span className="text-slate-300">{p.note ?? p.punch_type}</span>
+                <span className="text-slate-400">{new Date(p.punched_at).toLocaleString("pt-BR")}</span>
+              </li>
+            ))}
+          </ul>
         </section>
 
         {!shift ? (
