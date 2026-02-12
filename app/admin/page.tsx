@@ -151,6 +151,7 @@ export default function AdminPage() {
   const [dateTo, setDateTo] = useState("");
   const [profileSearch, setProfileSearch] = useState("");
   const [boothSearch, setBoothSearch] = useState("");
+  const [presentationMode, setPresentationMode] = useState(false);
   const [menu, setMenu] = useState<MenuSection>("financeiro");
 
   useEffect(() => {
@@ -683,7 +684,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${presentationMode ? "presentation-mode" : ""}`}>
       <div className="app-container">
         <header className="flex items-center justify-between gap-4 no-print">
           <div>
@@ -691,7 +692,10 @@ export default function AdminPage() {
             <h1 className="text-2xl font-bold tracking-tight">Painel Admin</h1>
             <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
-          <button onClick={logout} className="btn-ghost">Sair</button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPresentationMode((v) => !v)} className="btn-ghost">{presentationMode ? "Modo normal" : "Modo apresentação"}</button>
+            <button onClick={logout} className="btn-ghost">Sair</button>
+          </div>
         </header>
 
         <div className="grid lg:grid-cols-[240px,1fr] gap-4 items-start">
@@ -740,6 +744,24 @@ export default function AdminPage() {
           <Card label="Comissão estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} />
           <Card label="Turnos abertos" value={String(summary.abertos)} />
           <Card label="Pendências" value={String(summary.pendencias)} />
+        </section>
+
+        <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-3 gap-4`}>
+          <div className="executive-card">
+            <p className="text-xs text-slate-400 uppercase">Performance</p>
+            <p className="text-2xl font-bold mt-1">R$ {summary.totalDia.toFixed(2)}</p>
+            <p className="text-xs text-cyan-300 mt-1">Receita consolidada no período</p>
+          </div>
+          <div className="executive-card">
+            <p className="text-xs text-slate-400 uppercase">Operação</p>
+            <p className="text-2xl font-bold mt-1">{summary.abertos}</p>
+            <p className="text-xs text-emerald-300 mt-1">Turnos em andamento</p>
+          </div>
+          <div className="executive-card">
+            <p className="text-xs text-slate-400 uppercase">Controle</p>
+            <p className="text-2xl font-bold mt-1">{adminHealth.pendingAdjustments}</p>
+            <p className="text-xs text-amber-300 mt-1">Ajustes aguardando decisão</p>
+          </div>
         </section>
 
         <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-3 gap-4`}>
