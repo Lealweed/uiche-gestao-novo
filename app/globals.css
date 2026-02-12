@@ -84,9 +84,18 @@ body {
     @apply rounded-2xl p-4 border border-cyan-500/20 bg-gradient-to-br from-slate-900/90 to-slate-800/60;
   }
 
+  .module-enter {
+    animation: fadeUp .35s ease;
+  }
+
   .pulse-dot {
     animation: pulseSoft 1.8s infinite;
   }
+}
+
+@keyframes fadeUp {
+  from { opacity: .72; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes pulseSoft {

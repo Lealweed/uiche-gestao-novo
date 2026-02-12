@@ -133,6 +133,7 @@ type BoothDetailPunch = {
 };
 
 type MenuSection = "agenda" | "tarefas" | "financeiro" | "relatorios" | "portal" | "configuracoes";
+const MENU_ORDER: MenuSection[] = ["financeiro", "relatorios", "agenda", "portal", "configuracoes", "tarefas"];
 
 export default function AdminPage() {
   const router = useRouter();
@@ -945,6 +946,12 @@ export default function AdminPage() {
     await refreshData();
   }
 
+  function nextMenuForDemo() {
+    const idx = MENU_ORDER.indexOf(menu);
+    const next = MENU_ORDER[(idx + 1) % MENU_ORDER.length];
+    setMenu(next);
+  }
+
   async function logout() {
     await supabase.auth.signOut();
     router.push("/login");
@@ -960,6 +967,7 @@ export default function AdminPage() {
             <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={nextMenuForDemo} className="btn-ghost">Tour demo</button>
             <button onClick={() => setPresentationMode((v) => !v)} className="btn-ghost">{presentationMode ? "Modo normal" : "Modo apresentação"}</button>
             <button onClick={logout} className="btn-ghost">Sair</button>
           </div>
@@ -968,7 +976,7 @@ export default function AdminPage() {
         <div className="grid lg:grid-cols-[240px,1fr] gap-4 items-start">
           <aside className="glass-card p-4 no-print">
             <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
-            <nav className="space-y-2 text-sm">
+            <nav className="space-y-2 text-sm max-h-[65vh] overflow-auto pr-1">
               <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Operador</button>
               <button onClick={() => setMenu("tarefas")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="tarefas" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Tarefas</button>
               <button onClick={() => setMenu("financeiro")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="financeiro" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Financeiro</button>
@@ -978,7 +986,7 @@ export default function AdminPage() {
             </nav>
           </aside>
 
-          <div className="space-y-6">
+          <div className="space-y-6 module-enter">
 
         <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4">
