@@ -20,6 +20,25 @@ body {
   border-color: rgb(30 41 59 / 1);
 }
 
+@media print {
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid #ddd !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+}
+
 @layer components {
   .app-shell {
     @apply min-h-screen p-4 md:p-8 text-slate-100;

@@ -283,6 +283,10 @@ export default function AdminPage() {
     downloadCsv(`relatorio-guiches-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
   }
 
+  function printReport() {
+    window.print();
+  }
+
   function exportPunchCsv() {
     const header = ["Data/Hora", "Operador", "Guichê", "Tipo", "Observação"];
     const lines = timePunchRows.map((p) => {
@@ -487,7 +491,7 @@ export default function AdminPage() {
   return (
     <main className="app-shell">
       <div className="app-container">
-        <header className="flex items-center justify-between gap-4">
+        <header className="flex items-center justify-between gap-4 no-print">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2">● Produção</div>
             <h1 className="text-2xl font-bold tracking-tight">Painel Admin</h1>
@@ -497,7 +501,7 @@ export default function AdminPage() {
         </header>
 
         <div className="grid lg:grid-cols-[240px,1fr] gap-4 items-start">
-          <aside className="glass-card p-4 sticky top-4">
+          <aside className="glass-card p-4 sticky top-4 no-print">
             <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
             <nav className="space-y-2 text-sm">
               <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Agenda</button>
@@ -566,6 +570,7 @@ export default function AdminPage() {
           <button className="btn-ghost" type="button" onClick={exportOperatorCsv}>CSV Operadores</button>
           <button className="btn-ghost" type="button" onClick={exportBoothCsv}>CSV Guichês</button>
           <button className="btn-ghost" type="button" onClick={exportPunchCsv}>CSV Ponto</button>
+          <button className="btn-primary no-print" type="button" onClick={printReport}>Imprimir relatório</button>
         </form>
 
         <section className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
@@ -793,7 +798,7 @@ export default function AdminPage() {
         </section>
 
         <section className={`${menu === "relatorios" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
-          <div className="glass-card p-4 overflow-auto">
+          <div className="glass-card print-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Relatório por operador</h2>
             <div className="space-y-3">
               {reportByOperator.slice(0, 8).map((r) => (
@@ -802,12 +807,30 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="glass-card p-4 overflow-auto">
+          <div className="glass-card print-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Relatório por guichê</h2>
             <div className="space-y-3">
               {reportByBooth.slice(0, 8).map((r) => (
                 <BarRow key={r.booth} label={r.booth} value={r.total} max={reportByBooth[0]?.total ?? 1} />
               ))}
+            </div>
+
+            <div className="mt-5">
+              <h3 className="text-sm font-semibold mb-2">Tabela detalhada por guichê</h3>
+              <table className="w-full text-sm">
+                <thead className="text-left text-slate-400">
+                  <tr><th className="py-2">Guichê</th><th>Qtd</th><th>Total</th></tr>
+                </thead>
+                <tbody>
+                  {reportByBooth.map((r) => (
+                    <tr key={`tbl-${r.booth}`} className="border-t border-slate-800">
+                      <td className="py-2">{r.booth}</td>
+                      <td>{r.qty}</td>
+                      <td>R$ {r.total.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </section>
