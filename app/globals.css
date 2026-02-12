@@ -49,7 +49,7 @@ body {
   }
 
   .glass-card {
-    @apply rounded-2xl border border-slate-800/80 bg-slate-900/70 backdrop-blur-sm shadow-[0_10px_35px_rgba(0,0,0,0.25)];
+    @apply rounded-2xl border border-slate-800/80 bg-slate-900/70 backdrop-blur-sm shadow-[0_10px_35px_rgba(0,0,0,0.25)] transition hover:shadow-[0_12px_42px_rgba(34,211,238,0.12)];
   }
 
   .card-title {
@@ -71,4 +71,18 @@ body {
   .muted {
     @apply text-slate-400;
   }
+
+  .kpi-value {
+    @apply text-xl font-semibold mt-2 bg-gradient-to-r from-cyan-300 to-blue-300 bg-clip-text text-transparent;
+  }
+
+  .pulse-dot {
+    animation: pulseSoft 1.8s infinite;
+  }
+}
+
+@keyframes pulseSoft {
+  0% { opacity: .45; transform: scale(.95); }
+  50% { opacity: 1; transform: scale(1); }
+  100% { opacity: .45; transform: scale(.95); }
 }

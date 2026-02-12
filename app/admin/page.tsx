@@ -571,7 +571,7 @@ export default function AdminPage() {
       <div className="app-container">
         <header className="flex items-center justify-between gap-4 no-print">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2">● Produção</div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2"><span className="pulse-dot">●</span> Produção</div>
             <h1 className="text-2xl font-bold tracking-tight">Painel Admin</h1>
             <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
@@ -608,6 +608,14 @@ export default function AdminPage() {
               <div className="flex justify-between"><span className="text-slate-400">Crédito</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_credit||0),0).toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-slate-400">Débito</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_debit||0),0).toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-slate-400">Dinheiro</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_cash||0),0).toFixed(2)}</span></div>
+            </div>
+            <div className="mt-4 flex justify-center">
+              <FinanceDonut
+                pix={rows.reduce((a,r)=>a+Number(r.total_pix||0),0)}
+                credit={rows.reduce((a,r)=>a+Number(r.total_credit||0),0)}
+                debit={rows.reduce((a,r)=>a+Number(r.total_debit||0),0)}
+                cash={rows.reduce((a,r)=>a+Number(r.total_cash||0),0)}
+              />
             </div>
           </div>
 
@@ -1092,7 +1100,31 @@ function Card({ label, value }: { label: string; value: string }) {
   return (
     <div className="glass-card p-4">
       <p className="text-sm text-slate-400">{label}</p>
-      <p className="text-xl font-semibold mt-2">{value}</p>
+      <p className="kpi-value">{value}</p>
+    </div>
+  );
+}
+
+function FinanceDonut({ pix, credit, debit, cash }: { pix: number; credit: number; debit: number; cash: number }) {
+  const total = Math.max(1, pix + credit + debit + cash);
+  const pPix = (pix / total) * 100;
+  const pCredit = (credit / total) * 100;
+  const pDebit = (debit / total) * 100;
+  const pCash = (cash / total) * 100;
+
+  const bg = `conic-gradient(#22d3ee 0 ${pPix}%, #3b82f6 ${pPix}% ${pPix + pCredit}%, #8b5cf6 ${pPix + pCredit}% ${pPix + pCredit + pDebit}%, #10b981 ${pPix + pCredit + pDebit}% 100%)`;
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className="w-24 h-24 rounded-full" style={{ background: bg }}>
+        <div className="w-14 h-14 rounded-full bg-slate-900 mx-auto mt-5" />
+      </div>
+      <div className="text-xs space-y-1">
+        <div><span className="inline-block w-2 h-2 rounded-full bg-cyan-400 mr-2" />PIX</div>
+        <div><span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-2" />Crédito</div>
+        <div><span className="inline-block w-2 h-2 rounded-full bg-violet-500 mr-2" />Débito</div>
+        <div><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-2" />Dinheiro</div>
+      </div>
     </div>
   );
 }
