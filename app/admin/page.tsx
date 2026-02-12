@@ -57,6 +57,8 @@ export default function AdminPage() {
   const [categoryName, setCategoryName] = useState("");
   const [subcategoryName, setSubcategoryName] = useState("");
   const [subcategoryCategoryId, setSubcategoryCategoryId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -77,18 +79,33 @@ export default function AdminPage() {
   }, [router]);
 
   async function refreshData() {
+    const startIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : null;
+    const endIso = dateTo ? `${dateTo}T23:59:59.999Z` : null;
+
+    let shiftQuery = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
+    let txQuery = supabase
+      .from("transactions")
+      .select("amount,transaction_categories(name),transaction_subcategories(name),sold_at")
+      .eq("status", "posted")
+      .order("sold_at", { ascending: false })
+      .limit(5000);
+
+    if (startIso) {
+      shiftQuery = shiftQuery.gte("opened_at", startIso);
+      txQuery = txQuery.gte("sold_at", startIso);
+    }
+    if (endIso) {
+      shiftQuery = shiftQuery.lte("opened_at", endIso);
+      txQuery = txQuery.lte("sold_at", endIso);
+    }
+
     const [shiftRes, companyRes, boothRes, catRes, subRes, txRes, adjRes] = await Promise.all([
-      supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(30),
+      shiftQuery,
       supabase.from("companies").select("id,name,commission_percent,active").order("name"),
       supabase.from("booths").select("id,code,name,active").order("name"),
       supabase.from("transaction_categories").select("id,name,active").order("name"),
       supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
-      supabase
-        .from("transactions")
-        .select("amount,transaction_categories(name),transaction_subcategories(name)")
-        .eq("status", "posted")
-        .order("sold_at", { ascending: false })
-        .limit(1000),
+      txQuery,
       supabase
         .from("adjustment_requests")
         .select("id,transaction_id,reason,status,created_at,profiles(full_name),transactions(amount,payment_method,companies(name))")
@@ -132,6 +149,41 @@ export default function AdminPage() {
 
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [reportTxs]);
+
+  async function applyPeriodFilter(e: FormEvent) {
+    e.preventDefault();
+    await refreshData();
+  }
+
+  async function clearPeriodFilter() {
+    setDateFrom("");
+    setDateTo("");
+    setTimeout(() => {
+      refreshData();
+    }, 0);
+  }
+
+  function exportCategoryCsv() {
+    const header = ["Categoria", "Subcategoria", "Quantidade", "Total"];
+    const lines = reportByCategory.map((r) => [
+      r.category,
+      r.subcategory,
+      String(r.qty),
+      r.total.toFixed(2),
+    ]);
+
+    const csv = [header, ...lines]
+      .map((row) => row.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(";"))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `relatorio-categorias-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function createCompany(e: FormEvent) {
     e.preventDefault();
@@ -258,6 +310,20 @@ export default function AdminPage() {
           <Card label="Turnos abertos" value={String(summary.abertos)} />
           <Card label="Pendências" value={String(summary.pendencias)} />
         </section>
+
+        <form onSubmit={applyPeriodFilter} className="glass-card p-4 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-xs text-slate-400">Data inicial</label>
+            <input type="date" value={dateFrom} onChange={(e)=>setDateFrom(e.target.value)} className="field mt-1" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400">Data final</label>
+            <input type="date" value={dateTo} onChange={(e)=>setDateTo(e.target.value)} className="field mt-1" />
+          </div>
+          <button className="btn-primary" type="submit">Aplicar filtro</button>
+          <button className="btn-ghost" type="button" onClick={clearPeriodFilter}>Limpar</button>
+          <button className="btn-ghost" type="button" onClick={exportCategoryCsv}>Exportar CSV</button>
+        </form>
 
         <section className="grid lg:grid-cols-2 gap-4">
           <form onSubmit={createCompany} className="glass-card p-4 space-y-3">
