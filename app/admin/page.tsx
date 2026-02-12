@@ -38,6 +38,14 @@ type TxForReport = {
   transaction_subcategories: { name: string } | { name: string }[] | null;
 };
 
+type Profile = { user_id: string; full_name: string; role: "admin" | "operator"; active: boolean };
+type OperatorBoothLink = {
+  id: string;
+  active: boolean;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+  booths: { name: string; code: string } | { name: string; code: string }[] | null;
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const [rows, setRows] = useState<ShiftTotal[]>([]);
@@ -45,6 +53,8 @@ export default function AdminPage() {
   const [booths, setBooths] = useState<Booth[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [operatorBoothLinks, setOperatorBoothLinks] = useState<OperatorBoothLink[]>([]);
   const [reportTxs, setReportTxs] = useState<TxForReport[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +67,8 @@ export default function AdminPage() {
   const [categoryName, setCategoryName] = useState("");
   const [subcategoryName, setSubcategoryName] = useState("");
   const [subcategoryCategoryId, setSubcategoryCategoryId] = useState("");
+  const [selectedOperatorId, setSelectedOperatorId] = useState("");
+  const [selectedBoothId, setSelectedBoothId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -99,12 +111,14 @@ export default function AdminPage() {
       txQuery = txQuery.lte("sold_at", endIso);
     }
 
-    const [shiftRes, companyRes, boothRes, catRes, subRes, txRes, adjRes] = await Promise.all([
+    const [shiftRes, companyRes, boothRes, catRes, subRes, profileRes, linkRes, txRes, adjRes] = await Promise.all([
       shiftQuery,
       supabase.from("companies").select("id,name,commission_percent,active").order("name"),
       supabase.from("booths").select("id,code,name,active").order("name"),
       supabase.from("transaction_categories").select("id,name,active").order("name"),
       supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
+      supabase.from("profiles").select("user_id,full_name,role,active").order("full_name"),
+      supabase.from("operator_booths").select("id,active,profiles(full_name),booths(name,code)").order("created_at", { ascending: false }).limit(200),
       txQuery,
       supabase
         .from("adjustment_requests")
@@ -119,6 +133,8 @@ export default function AdminPage() {
     setBooths((boothRes.data as Booth[]) ?? []);
     setCategories((catRes.data as Category[]) ?? []);
     setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
+    setProfiles((profileRes.data as Profile[]) ?? []);
+    setOperatorBoothLinks(((linkRes.data ?? []) as unknown as OperatorBoothLink[]) ?? []);
     setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
     setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
   }
@@ -248,6 +264,33 @@ export default function AdminPage() {
     setSubcategoryName("");
     setSubcategoryCategoryId("");
     setMessage("Subcategoria cadastrada com sucesso.");
+    await refreshData();
+  }
+
+  async function linkOperatorToBooth(e: FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+
+    const { error } = await supabase.from("operator_booths").upsert({
+      operator_id: selectedOperatorId,
+      booth_id: selectedBoothId,
+      active: true,
+    });
+
+    if (error) return setMessage(`Erro ao vincular operador: ${error.message}`);
+    setMessage("Operador vinculado ao guichê com sucesso.");
+    await refreshData();
+  }
+
+  async function toggleProfileActive(profile: Profile) {
+    setMessage(null);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ active: !profile.active })
+      .eq("user_id", profile.user_id);
+
+    if (error) return setMessage(`Erro ao atualizar usuário: ${error.message}`);
+    setMessage("Status do usuário atualizado.");
     await refreshData();
   }
 
@@ -441,6 +484,70 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="grid lg:grid-cols-2 gap-4">
+          <form onSubmit={linkOperatorToBooth} className="glass-card p-4 space-y-3">
+            <h2 className="font-semibold">Vincular operador ao guichê</h2>
+            <select className="field" value={selectedOperatorId} onChange={(e)=>setSelectedOperatorId(e.target.value)} required>
+              <option value="">Selecione operador</option>
+              {profiles.filter((p)=>p.role === "operator").map((p)=>(
+                <option key={p.user_id} value={p.user_id}>{p.full_name} {p.active ? "" : "(inativo)"}</option>
+              ))}
+            </select>
+            <select className="field" value={selectedBoothId} onChange={(e)=>setSelectedBoothId(e.target.value)} required>
+              <option value="">Selecione guichê</option>
+              {booths.filter((b)=>b.active).map((b)=>(
+                <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
+              ))}
+            </select>
+            <button className="btn-primary">Vincular</button>
+          </form>
+
+          <div className="glass-card p-4 overflow-auto">
+            <h2 className="font-semibold mb-3">Usuários</h2>
+            <table className="w-full text-sm">
+              <thead className="text-left text-slate-400">
+                <tr><th className="py-2">Nome</th><th>Perfil</th><th>Status</th><th>Ação</th></tr>
+              </thead>
+              <tbody>
+                {profiles.map((p) => (
+                  <tr key={p.user_id} className="border-t border-slate-800">
+                    <td className="py-2">{p.full_name}</td>
+                    <td>{p.role}</td>
+                    <td>{p.active ? "Ativo" : "Inativo"}</td>
+                    <td>
+                      <button className="text-blue-300 hover:underline" onClick={() => toggleProfileActive(p)}>
+                        {p.active ? "Inativar" : "Ativar"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="glass-card p-4 overflow-auto">
+          <h2 className="font-semibold mb-3">Vínculos operador ↔ guichê</h2>
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-400">
+              <tr><th className="py-2">Operador</th><th>Guichê</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {operatorBoothLinks.map((l) => {
+                const op = Array.isArray(l.profiles) ? l.profiles[0]?.full_name : l.profiles?.full_name;
+                const booth = Array.isArray(l.booths) ? l.booths[0] : l.booths;
+                return (
+                  <tr key={l.id} className="border-t border-slate-800">
+                    <td className="py-2">{op ?? "-"}</td>
+                    <td>{booth ? `${booth.code} - ${booth.name}` : "-"}</td>
+                    <td>{l.active ? "Ativo" : "Inativo"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </section>
 
         <section className="glass-card p-4 overflow-auto">
