@@ -149,6 +149,8 @@ export default function AdminPage() {
   const [resetEmail, setResetEmail] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [profileSearch, setProfileSearch] = useState("");
+  const [boothSearch, setBoothSearch] = useState("");
   const [menu, setMenu] = useState<MenuSection>("financeiro");
 
   useEffect(() => {
@@ -282,6 +284,23 @@ export default function AdminPage() {
     const pendingAdjustments = adjustments.length;
     return { inactiveUsers, inactiveBooths, inactiveCompanies, pendingAdjustments };
   }, [profiles, booths, companies, adjustments]);
+
+  const filteredProfiles = useMemo(() => {
+    const term = profileSearch.trim().toLowerCase();
+    if (!term) return profiles;
+    return profiles.filter((p) =>
+      [p.full_name, p.cpf ?? "", p.phone ?? "", p.role]
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [profiles, profileSearch]);
+
+  const filteredBooths = useMemo(() => {
+    const term = boothSearch.trim().toLowerCase();
+    if (!term) return booths;
+    return booths.filter((b) => `${b.code} ${b.name}`.toLowerCase().includes(term));
+  }, [booths, boothSearch]);
 
   const reportByCategory = useMemo(() => {
     const map = new Map<string, { category: string; subcategory: string; total: number; qty: number }>();
@@ -708,6 +727,11 @@ export default function AdminPage() {
               <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>Backup JSON</button>
               <button className="btn-ghost" type="button" onClick={() => booths[0] && openBoothDetail(booths[0])}>Abrir 1º guichê</button>
             </div>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              <span className={`px-2 py-1 rounded-full border ${summary.abertos > 0 ? "border-emerald-500/40 text-emerald-300" : "border-slate-600 text-slate-400"}`}>Turnos abertos: {summary.abertos}</span>
+              <span className={`px-2 py-1 rounded-full border ${summary.pendencias > 0 ? "border-amber-500/40 text-amber-300" : "border-slate-600 text-slate-400"}`}>Pendências: {summary.pendencias}</span>
+              <span className={`px-2 py-1 rounded-full border ${adminHealth.pendingAdjustments > 0 ? "border-rose-500/40 text-rose-300" : "border-slate-600 text-slate-400"}`}>Ajustes pendentes: {adminHealth.pendingAdjustments}</span>
+            </div>
           </div>
         </section>
 
@@ -866,12 +890,13 @@ export default function AdminPage() {
 
           <div className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Guichês</h2>
+            <input value={boothSearch} onChange={(e)=>setBoothSearch(e.target.value)} placeholder="Buscar guichê por código ou nome" className="field mb-3" />
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
                 <tr><th className="py-2">Código</th><th>Nome</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
-                {booths.map((b) => (
+                {filteredBooths.map((b) => (
                   <tr key={b.id} className="border-t border-slate-800">
                     <td className="py-2">
                       <button className="text-cyan-300 hover:underline" onClick={() => openBoothDetail(b)}>{b.code}</button>
@@ -1016,12 +1041,13 @@ export default function AdminPage() {
 
           <div className="glass-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Usuários</h2>
+            <input value={profileSearch} onChange={(e)=>setProfileSearch(e.target.value)} placeholder="Buscar por nome, CPF, telefone ou perfil" className="field mb-3" />
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
                 <tr><th className="py-2">Nome</th><th>CPF</th><th>Telefone</th><th>Perfil</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
-                {profiles.map((p) => (
+                {filteredProfiles.map((p) => (
                   <tr key={p.user_id} className="border-t border-slate-800">
                     <td className="py-2">
                       <div className="flex items-center gap-2">
