@@ -40,6 +40,7 @@ type TxForReport = {
   booth_id?: string;
   profiles?: { full_name: string } | { full_name: string }[] | null;
   booths?: { name: string; code: string } | { name: string; code: string }[] | null;
+  companies?: { name: string } | { name: string }[] | null;
   transaction_categories: { name: string } | { name: string }[] | null;
   transaction_subcategories: { name: string } | { name: string }[] | null;
 };
@@ -190,7 +191,7 @@ export default function AdminPage() {
     let shiftQuery = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
     let txQuery = supabase
       .from("transactions")
-      .select("amount,sold_at,operator_id,booth_id,profiles(full_name),booths(name,code),transaction_categories(name),transaction_subcategories(name)")
+      .select("amount,sold_at,operator_id,booth_id,profiles(full_name),booths(name,code),companies(name),transaction_categories(name),transaction_subcategories(name)")
       .eq("status", "posted")
       .order("sold_at", { ascending: false })
       .limit(5000);
@@ -360,6 +361,26 @@ export default function AdminPage() {
     }
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [reportTxs]);
+
+  const companyCommissionReport = useMemo(() => {
+    const map = new Map<string, { company: string; gross: number; commission: number; pct: number }>();
+
+    for (const c of companies) {
+      map.set(c.name, { company: c.name, gross: 0, commission: 0, pct: Number(c.commission_percent || 0) });
+    }
+
+    for (const tx of reportTxs) {
+      const comp = Array.isArray(tx.companies) ? tx.companies[0]?.name : tx.companies?.name;
+      const company = comp ?? "Sem empresa";
+      const prev = map.get(company) ?? { company, gross: 0, commission: 0, pct: 0 };
+      const amount = Number(tx.amount || 0);
+      prev.gross += amount;
+      prev.commission += amount * (prev.pct / 100);
+      map.set(company, prev);
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.commission - a.commission);
+  }, [companies, reportTxs]);
 
   const filteredReportTxs = useMemo(() => {
     const opTerm = reportOperatorFilter.trim().toLowerCase();
@@ -849,6 +870,25 @@ export default function AdminPage() {
             <p className="text-2xl font-bold mt-1">{adminHealth.pendingAdjustments}</p>
             <p className="text-xs text-amber-300 mt-1">Ajustes aguardando decisão</p>
           </div>
+        </section>
+
+        <section className={`${menu === "financeiro" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+          <h2 className="font-semibold mb-3">Comissão por empresa (período filtrado)</h2>
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-400">
+              <tr><th className="py-2">Empresa</th><th>% Comissão</th><th>Faturamento</th><th>Valor Comissão</th></tr>
+            </thead>
+            <tbody>
+              {companyCommissionReport.map((r) => (
+                <tr key={r.company} className="border-t border-slate-800">
+                  <td className="py-2">{r.company}</td>
+                  <td>{r.pct.toFixed(3)}%</td>
+                  <td>R$ {r.gross.toFixed(2)}</td>
+                  <td className="text-emerald-300 font-semibold">R$ {r.commission.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
 
         <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-3 gap-4`}>
