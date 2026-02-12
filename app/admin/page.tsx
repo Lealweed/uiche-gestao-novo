@@ -186,6 +186,8 @@ export default function AdminPage() {
   const [reportOperatorFilter, setReportOperatorFilter] = useState("");
   const [reportBoothFilter, setReportBoothFilter] = useState("");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("");
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientsPage, setClientsPage] = useState(1);
   const [presentationMode, setPresentationMode] = useState(false);
   const [menu, setMenu] = useState<MenuSection>("financeiro");
 
@@ -343,6 +345,20 @@ export default function AdminPage() {
     if (!term) return booths;
     return booths.filter((b) => `${b.code} ${b.name}`.toLowerCase().includes(term));
   }, [booths, boothSearch]);
+
+  const filteredClients = useMemo(() => {
+    const term = clientSearch.trim().toLowerCase();
+    if (!term) return clients;
+    return clients.filter((c) => [c.name, c.document ?? "", c.phone ?? "", c.email ?? ""].join(" ").toLowerCase().includes(term));
+  }, [clients, clientSearch]);
+
+  const clientsPageSize = 8;
+  const clientsPageCount = Math.max(1, Math.ceil(filteredClients.length / clientsPageSize));
+  const pagedClients = filteredClients.slice((clientsPage - 1) * clientsPageSize, clientsPage * clientsPageSize);
+
+  useEffect(() => {
+    if (clientsPage > clientsPageCount) setClientsPage(clientsPageCount);
+  }, [clientsPage, clientsPageCount]);
 
   const reportByCategory = useMemo(() => {
     const map = new Map<string, { category: string; subcategory: string; total: number; qty: number }>();
@@ -535,6 +551,32 @@ export default function AdminPage() {
     downloadCsv(`relatorio-ponto-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
   }
 
+  function exportClientsCsv() {
+    const header = ["Nome", "Documento", "Telefone", "E-mail", "Status"];
+    const lines = clients.map((c) => [c.name, c.document ?? "", c.phone ?? "", c.email ?? "", c.active ? "Ativo" : "Inativo"]);
+    downloadCsv(`clientes-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
+  }
+
+  function exportCashMovementsCsv() {
+    const header = ["Data", "Operador", "Guichê", "Tipo", "Valor", "Obs"];
+    const lines = cashMovementRows.map((m) => {
+      const op = Array.isArray(m.profiles) ? m.profiles[0]?.full_name : m.profiles?.full_name;
+      const b = Array.isArray(m.booths) ? m.booths[0] : m.booths;
+      return [new Date(m.created_at).toLocaleString("pt-BR"), op ?? "-", b ? `${b.code} - ${b.name}` : "-", m.movement_type, Number(m.amount).toFixed(2), m.note ?? ""];
+    });
+    downloadCsv(`movimentos-caixa-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
+  }
+
+  function exportCashClosingCsv() {
+    const header = ["Data", "Operador", "Guichê", "Esperado", "Declarado", "Diferença", "Obs"];
+    const lines = shiftCashClosingRows.map((r) => {
+      const op = Array.isArray(r.profiles) ? r.profiles[0]?.full_name : r.profiles?.full_name;
+      const b = Array.isArray(r.booths) ? r.booths[0] : r.booths;
+      return [new Date(r.created_at).toLocaleString("pt-BR"), op ?? "-", b ? `${b.code} - ${b.name}` : "-", Number(r.expected_cash).toFixed(2), Number(r.declared_cash).toFixed(2), Number(r.difference).toFixed(2), r.note ?? ""];
+    });
+    downloadCsv(`fechamento-caixa-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
+  }
+
   function exportAdminBackupJson() {
     const payload = {
       exported_at: new Date().toISOString(),
@@ -617,6 +659,52 @@ export default function AdminPage() {
     setBoothName("");
     await logAction("CREATE_BOOTH", "booths", undefined, { code: boothCode.trim().toUpperCase(), name: boothName.trim() });
     setMessage("Guichê cadastrado com sucesso.");
+    await refreshData();
+  }
+
+  async function editCompany(company: Company) {
+    const name = window.prompt("Nome da empresa:", company.name);
+    if (!name) return;
+    const pctRaw = window.prompt("Comissão %:", String(company.commission_percent));
+    if (!pctRaw) return;
+    const pct = Number(pctRaw.replace(",", "."));
+    if (Number.isNaN(pct)) return setMessage("Comissão inválida.");
+
+    const { error } = await supabase.from("companies").update({ name: name.trim(), commission_percent: pct }).eq("id", company.id);
+    if (error) return setMessage(`Erro ao editar empresa: ${error.message}`);
+    await logAction("EDIT_COMPANY", "companies", company.id, { name: name.trim(), pct });
+    await refreshData();
+  }
+
+  async function editClient(client: Client) {
+    const name = window.prompt("Nome do cliente:", client.name);
+    if (!name) return;
+    const phone = window.prompt("Telefone:", client.phone ?? "") ?? "";
+    const email = window.prompt("E-mail:", client.email ?? "") ?? "";
+
+    const { error } = await supabase
+      .from("clients")
+      .update({ name: name.trim(), phone: phone.trim() || null, email: email.trim() || null, updated_at: new Date().toISOString() })
+      .eq("id", client.id);
+
+    if (error) return setMessage(`Erro ao editar cliente: ${error.message}`);
+    await logAction("EDIT_CLIENT", "clients", client.id, { name: name.trim(), phone, email });
+    await refreshData();
+  }
+
+  async function editProfile(profile: Profile) {
+    const fullName = window.prompt("Nome completo:", profile.full_name);
+    if (!fullName) return;
+    const phone = window.prompt("Telefone:", profile.phone ?? "") ?? "";
+    const address = window.prompt("Endereço:", profile.address ?? "") ?? "";
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ full_name: fullName.trim(), phone: phone.trim() || null, address: address.trim() || null, updated_at: new Date().toISOString() })
+      .eq("user_id", profile.user_id);
+
+    if (error) return setMessage(`Erro ao editar operador: ${error.message}`);
+    await logAction("EDIT_PROFILE", "profiles", profile.user_id, { full_name: fullName, phone, address });
     await refreshData();
   }
 
@@ -1044,22 +1132,30 @@ export default function AdminPage() {
 
           <div className="glass-card p-4 overflow-auto">
             <h2 className="font-semibold mb-3">Clientes cadastrados</h2>
+            <input value={clientSearch} onChange={(e)=>{setClientSearch(e.target.value); setClientsPage(1);}} placeholder="Buscar cliente por nome/documento/contato" className="field mb-3" />
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
                 <tr><th className="py-2">Nome</th><th>Contato</th><th>Documento</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
-                {clients.map((c) => (
+                {pagedClients.map((c) => (
                   <tr key={c.id} className="border-t border-slate-800">
                     <td className="py-2">{c.name}</td>
                     <td>{c.phone ?? c.email ?? "-"}</td>
                     <td>{c.document ?? "-"}</td>
                     <td>{c.active ? "Ativo" : "Inativo"}</td>
-                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleClientActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
+                    <td className="space-x-2"><button className="text-cyan-300 hover:underline" onClick={() => editClient(c)}>Editar</button><button className="text-blue-300 hover:underline" onClick={() => toggleClientActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+              <span>Página {clientsPage} de {clientsPageCount}</span>
+              <div className="space-x-2">
+                <button type="button" className="btn-ghost" disabled={clientsPage <= 1} onClick={() => setClientsPage((p) => Math.max(1, p - 1))}>Anterior</button>
+                <button type="button" className="btn-ghost" disabled={clientsPage >= clientsPageCount} onClick={() => setClientsPage((p) => Math.min(clientsPageCount, p + 1))}>Próxima</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1078,6 +1174,9 @@ export default function AdminPage() {
           <button className="btn-ghost" type="button" onClick={exportOperatorCsv}>CSV Operadores</button>
           <button className="btn-ghost" type="button" onClick={exportBoothCsv}>CSV Guichês</button>
           <button className="btn-ghost" type="button" onClick={exportPunchCsv}>CSV Ponto</button>
+          <button className="btn-ghost" type="button" onClick={exportClientsCsv}>CSV Clientes</button>
+          <button className="btn-ghost" type="button" onClick={exportCashMovementsCsv}>CSV Mov. Caixa</button>
+          <button className="btn-ghost" type="button" onClick={exportCashClosingCsv}>CSV Fech. Caixa</button>
           <button className="btn-primary no-print" type="button" onClick={printReport}>Imprimir relatório</button>
         </form>
 
@@ -1161,7 +1260,7 @@ export default function AdminPage() {
                     <td className="py-2">{c.name}</td>
                     <td>{Number(c.commission_percent).toFixed(3)}%</td>
                     <td>{c.active ? "Ativa" : "Inativa"}</td>
-                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleCompanyActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
+                    <td className="space-x-2"><button className="text-cyan-300 hover:underline" onClick={() => editCompany(c)}>Editar</button><button className="text-blue-300 hover:underline" onClick={() => toggleCompanyActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1339,7 +1438,8 @@ export default function AdminPage() {
                     <td>{p.phone ?? "-"}</td>
                     <td>{p.role}</td>
                     <td>{p.active ? "Ativo" : "Inativo"}</td>
-                    <td>
+                    <td className="space-x-2">
+                      <button className="text-cyan-300 hover:underline" onClick={() => editProfile(p)}>Editar</button>
                       <button className="text-blue-300 hover:underline" onClick={() => toggleProfileActive(p)}>
                         {p.active ? "Inativar" : "Ativar"}
                       </button>
