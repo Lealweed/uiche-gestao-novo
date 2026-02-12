@@ -80,6 +80,16 @@ type TimePunchRow = {
   booths: { code: string; name: string } | { code: string; name: string }[] | null;
 };
 
+type CashMovementRow = {
+  id: string;
+  movement_type: "suprimento" | "sangria" | "ajuste";
+  amount: number;
+  note: string | null;
+  created_at: string;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+  booths: { code: string; name: string } | { code: string; name: string }[] | null;
+};
+
 type BoothDetailTx = {
   id: string;
   sold_at: string;
@@ -123,6 +133,7 @@ export default function AdminPage() {
   const [operatorBoothLinks, setOperatorBoothLinks] = useState<OperatorBoothLink[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [timePunchRows, setTimePunchRows] = useState<TimePunchRow[]>([]);
+  const [cashMovementRows, setCashMovementRows] = useState<CashMovementRow[]>([]);
   const [reportTxs, setReportTxs] = useState<TxForReport[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [selectedBooth, setSelectedBooth] = useState<Booth | null>(null);
@@ -205,7 +216,7 @@ export default function AdminPage() {
       txQuery = txQuery.lte("sold_at", endIso);
     }
 
-    const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, txRes, adjRes] = await Promise.all([
+    const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, cashRes, txRes, adjRes] = await Promise.all([
       shiftQuery,
       supabase.from("companies").select("id,name,commission_percent,active").order("name"),
       supabase.from("clients").select("id,name,document,phone,email,address,notes,active").order("name"),
@@ -216,6 +227,7 @@ export default function AdminPage() {
       supabase.from("operator_booths").select("id,active,profiles(full_name),booths(name,code)").order("created_at", { ascending: false }).limit(200),
       supabase.from("audit_logs").select("id,action,entity,details,created_at,profiles(full_name)").order("created_at", { ascending: false }).limit(50),
       supabase.from("time_punches").select("id,punch_type,punched_at,note,profiles(full_name),booths(code,name)").order("punched_at", { ascending: false }).limit(200),
+      supabase.from("cash_movements").select("id,movement_type,amount,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
       txQuery,
       supabase
         .from("adjustment_requests")
@@ -235,6 +247,7 @@ export default function AdminPage() {
     setOperatorBoothLinks(((linkRes.data ?? []) as unknown as OperatorBoothLink[]) ?? []);
     setAuditLogs(((auditRes.data ?? []) as unknown as AuditLog[]) ?? []);
     setTimePunchRows(((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
+    setCashMovementRows(((cashRes.data ?? []) as unknown as CashMovementRow[]) ?? []);
     setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
     setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
   }
@@ -381,6 +394,13 @@ export default function AdminPage() {
 
     return Array.from(map.values()).sort((a, b) => b.commission - a.commission);
   }, [companies, reportTxs]);
+
+  const cashMovementTotals = useMemo(() => {
+    const suprimento = cashMovementRows.filter((m) => m.movement_type === "suprimento").reduce((a, m) => a + Number(m.amount || 0), 0);
+    const sangria = cashMovementRows.filter((m) => m.movement_type === "sangria").reduce((a, m) => a + Number(m.amount || 0), 0);
+    const ajuste = cashMovementRows.filter((m) => m.movement_type === "ajuste").reduce((a, m) => a + Number(m.amount || 0), 0);
+    return { suprimento, sangria, ajuste, saldo: suprimento - sangria + ajuste };
+  }, [cashMovementRows]);
 
   const filteredReportTxs = useMemo(() => {
     const opTerm = reportOperatorFilter.trim().toLowerCase();
@@ -887,6 +907,37 @@ export default function AdminPage() {
                   <td className="text-emerald-300 font-semibold">R$ {r.commission.toFixed(2)}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </section>
+
+        <section className={`${menu === "financeiro" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+          <h2 className="font-semibold mb-3">Caixa PDV (movimentos)</h2>
+          <div className="grid md:grid-cols-4 gap-2 text-sm mb-3">
+            <div className="rounded-lg border border-slate-800 p-2">Suprimento: <b>R$ {cashMovementTotals.suprimento.toFixed(2)}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Sangria: <b>R$ {cashMovementTotals.sangria.toFixed(2)}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Ajuste: <b>R$ {cashMovementTotals.ajuste.toFixed(2)}</b></div>
+            <div className="rounded-lg border border-emerald-700/60 p-2">Saldo caixa: <b>R$ {cashMovementTotals.saldo.toFixed(2)}</b></div>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-400">
+              <tr><th className="py-2">Data</th><th>Operador</th><th>Guichê</th><th>Tipo</th><th>Valor</th><th>Obs</th></tr>
+            </thead>
+            <tbody>
+              {cashMovementRows.slice(0, 150).map((m) => {
+                const op = Array.isArray(m.profiles) ? m.profiles[0]?.full_name : m.profiles?.full_name;
+                const b = Array.isArray(m.booths) ? m.booths[0] : m.booths;
+                return (
+                  <tr key={m.id} className="border-t border-slate-800">
+                    <td className="py-2">{new Date(m.created_at).toLocaleString("pt-BR")}</td>
+                    <td>{op ?? "-"}</td>
+                    <td>{b ? `${b.code} - ${b.name}` : "-"}</td>
+                    <td>{m.movement_type}</td>
+                    <td>R$ {Number(m.amount).toFixed(2)}</td>
+                    <td>{m.note ?? ""}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </section>

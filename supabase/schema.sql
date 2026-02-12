@@ -148,6 +148,21 @@ create table if not exists public.time_punches (
   punched_at timestamptz not null default now()
 );
 
+create table if not exists public.cash_movements (
+  id uuid primary key default gen_random_uuid(),
+  shift_id uuid not null references public.shifts(id) on delete cascade,
+  booth_id uuid not null references public.booths(id),
+  user_id uuid not null references public.profiles(user_id),
+  movement_type text not null check (movement_type in ('suprimento','sangria','ajuste')),
+  amount numeric(12,2) not null check (amount > 0),
+  note text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists cash_movements_shift_idx on public.cash_movements(shift_id);
+create index if not exists cash_movements_booth_idx on public.cash_movements(booth_id);
+create index if not exists cash_movements_user_idx on public.cash_movements(user_id);
+
 -- Helper functions
 create or replace function public.is_admin(uid uuid)
 returns boolean
@@ -340,6 +355,7 @@ alter table public.transaction_receipts enable row level security;
 alter table public.adjustment_requests enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.time_punches enable row level security;
+alter table public.cash_movements enable row level security;
 
 -- profiles
 create policy profiles_self_or_admin_select on public.profiles
@@ -459,6 +475,24 @@ for select using (user_id = auth.uid() or public.is_admin(auth.uid()));
 
 create policy time_punch_self_insert on public.time_punches
 for insert with check (user_id = auth.uid());
+
+-- cash movements
+create policy cash_movements_self_or_admin_select on public.cash_movements
+for select using (user_id = auth.uid() or public.is_admin(auth.uid()));
+
+create policy cash_movements_self_insert on public.cash_movements
+for insert with check (
+  user_id = auth.uid()
+  and exists (
+    select 1 from public.shifts s
+    where s.id = cash_movements.shift_id
+      and s.operator_id = auth.uid()
+      and s.status = 'open'
+  )
+);
+
+create policy cash_movements_admin_update on public.cash_movements
+for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
 -- Grants for RPCs
 grant execute on function public.open_shift(uuid, text) to authenticated;

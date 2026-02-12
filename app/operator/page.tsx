@@ -26,6 +26,14 @@ type Punch = {
   note: string | null;
 };
 
+type CashMovement = {
+  id: string;
+  movement_type: "suprimento" | "sangria" | "ajuste";
+  amount: number;
+  note: string | null;
+  created_at: string;
+};
+
 export default function OperatorPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -45,6 +53,10 @@ export default function OperatorPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
+  const [cashType, setCashType] = useState<"suprimento" | "sangria" | "ajuste">("suprimento");
+  const [cashAmount, setCashAmount] = useState("");
+  const [cashNote, setCashNote] = useState("");
   const [uploadingTxId, setUploadingTxId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -83,6 +95,7 @@ export default function OperatorPage() {
       if (sData) {
         setShift(sData as Shift);
         await loadTxs((sData as Shift).id);
+        await loadCashMovements((sData as Shift).id);
       }
       await loadPunches(authData.user.id);
       if (!sData && bData?.[0]) setBoothId((bData[0] as any).booth_id);
@@ -112,6 +125,17 @@ export default function OperatorPage() {
     setPunches(((data ?? []) as unknown) as Punch[]);
   }
 
+  async function loadCashMovements(shiftId: string) {
+    const { data } = await supabase
+      .from("cash_movements")
+      .select("id,movement_type,amount,note,created_at")
+      .eq("shift_id", shiftId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    setCashMovements(((data ?? []) as unknown) as CashMovement[]);
+  }
+
   async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string, unknown>) {
     if (!userId) return;
     await supabase.from("audit_logs").insert({
@@ -131,6 +155,7 @@ export default function OperatorPage() {
     setShift(data as Shift);
     setMessage("Turno aberto com sucesso.");
     await loadTxs((data as Shift).id);
+    await loadCashMovements((data as Shift).id);
   }
 
   async function closeShift() {
@@ -150,6 +175,7 @@ export default function OperatorPage() {
     await logAction("CLOSE_SHIFT", "shifts", shift.id);
     setShift(null);
     setTxs([]);
+    setCashMovements([]);
     setMessage("Turno encerrado.");
   }
 
@@ -170,6 +196,33 @@ export default function OperatorPage() {
     await logAction("TIME_PUNCH", "time_punches", undefined, { type, shift_id: shift?.id ?? null });
     await loadPunches(userId);
     setMessage(`Ponto registrado: ${note}.`);
+  }
+
+  async function submitCashMovement(e: FormEvent) {
+    e.preventDefault();
+    if (!shift || !userId || !cashAmount) return;
+
+    const { error } = await supabase.from("cash_movements").insert({
+      shift_id: shift.id,
+      booth_id: shift.booth_id,
+      user_id: userId,
+      movement_type: cashType,
+      amount: Number(cashAmount),
+      note: cashNote.trim() || null,
+    });
+
+    if (error) return setMessage(`Erro no movimento de caixa: ${error.message}`);
+
+    await logAction("CASH_MOVEMENT", "cash_movements", undefined, {
+      shift_id: shift.id,
+      movement_type: cashType,
+      amount: Number(cashAmount),
+    });
+
+    setCashAmount("");
+    setCashNote("");
+    await loadCashMovements(shift.id);
+    setMessage("Movimento de caixa registrado.");
   }
 
   async function submitTx(e: FormEvent) {
@@ -257,6 +310,13 @@ export default function OperatorPage() {
     );
   }, [txs]);
 
+  const cashTotals = useMemo(() => {
+    const suprimento = cashMovements.filter((m) => m.movement_type === "suprimento").reduce((a, m) => a + Number(m.amount || 0), 0);
+    const sangria = cashMovements.filter((m) => m.movement_type === "sangria").reduce((a, m) => a + Number(m.amount || 0), 0);
+    const ajuste = cashMovements.filter((m) => m.movement_type === "ajuste").reduce((a, m) => a + Number(m.amount || 0), 0);
+    return { suprimento, sangria, ajuste, saldo: suprimento - sangria + ajuste };
+  }, [cashMovements]);
+
   const filteredSubcategories = useMemo(
     () => subcategories.filter((s) => s.category_id === categoryId),
     [subcategories, categoryId]
@@ -339,6 +399,26 @@ export default function OperatorPage() {
             </div>
           </section>
         )}
+
+        <section className="glass-card p-4 space-y-3">
+          <h2 className="font-semibold">Caixa (PDV)</h2>
+          <form onSubmit={submitCashMovement} className="grid md:grid-cols-4 gap-2 items-end">
+            <select value={cashType} onChange={(e) => setCashType(e.target.value as any)} className="field" disabled={!shift}>
+              <option value="suprimento">Suprimento</option>
+              <option value="sangria">Sangria</option>
+              <option value="ajuste">Ajuste</option>
+            </select>
+            <input value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} type="number" min="0" step="0.01" placeholder="Valor" className="field" disabled={!shift} />
+            <input value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Observação" className="field" disabled={!shift} />
+            <button className="btn-primary" disabled={!shift}>Registrar</button>
+          </form>
+          <div className="grid md:grid-cols-4 gap-2 text-sm">
+            <div className="rounded-lg border border-slate-800 p-2">Suprimento: <b>R$ {cashTotals.suprimento.toFixed(2)}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Sangria: <b>R$ {cashTotals.sangria.toFixed(2)}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Ajuste: <b>R$ {cashTotals.ajuste.toFixed(2)}</b></div>
+            <div className="rounded-lg border border-emerald-700/60 p-2">Saldo caixa: <b>R$ {cashTotals.saldo.toFixed(2)}</b></div>
+          </div>
+        </section>
 
         <form onSubmit={submitTx} className="glass-card p-4 space-y-3">
           <h2 className="font-semibold">Novo lançamento</h2>
