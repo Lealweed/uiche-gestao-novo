@@ -20,6 +20,8 @@ type ShiftTotal = {
 
 type Company = { id: string; name: string; commission_percent: number; active: boolean };
 type Booth = { id: string; code: string; name: string; active: boolean };
+type Category = { id: string; name: string; active: boolean };
+type Subcategory = { id: string; name: string; active: boolean; category_id: string; transaction_categories?: { name: string } | { name: string }[] | null };
 type Adjustment = {
   id: string;
   transaction_id: string;
@@ -30,11 +32,20 @@ type Adjustment = {
   transactions: { amount: number; payment_method: string; companies: { name: string } | { name: string }[] | null } | null;
 };
 
+type TxForReport = {
+  amount: number;
+  transaction_categories: { name: string } | { name: string }[] | null;
+  transaction_subcategories: { name: string } | { name: string }[] | null;
+};
+
 export default function AdminPage() {
   const router = useRouter();
   const [rows, setRows] = useState<ShiftTotal[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [booths, setBooths] = useState<Booth[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [reportTxs, setReportTxs] = useState<TxForReport[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -43,6 +54,9 @@ export default function AdminPage() {
   const [companyPct, setCompanyPct] = useState("6");
   const [boothCode, setBoothCode] = useState("");
   const [boothName, setBoothName] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [subcategoryName, setSubcategoryName] = useState("");
+  const [subcategoryCategoryId, setSubcategoryCategoryId] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -63,10 +77,18 @@ export default function AdminPage() {
   }, [router]);
 
   async function refreshData() {
-    const [shiftRes, companyRes, boothRes, adjRes] = await Promise.all([
+    const [shiftRes, companyRes, boothRes, catRes, subRes, txRes, adjRes] = await Promise.all([
       supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(30),
       supabase.from("companies").select("id,name,commission_percent,active").order("name"),
       supabase.from("booths").select("id,code,name,active").order("name"),
+      supabase.from("transaction_categories").select("id,name,active").order("name"),
+      supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
+      supabase
+        .from("transactions")
+        .select("amount,transaction_categories(name),transaction_subcategories(name)")
+        .eq("status", "posted")
+        .order("sold_at", { ascending: false })
+        .limit(1000),
       supabase
         .from("adjustment_requests")
         .select("id,transaction_id,reason,status,created_at,profiles(full_name),transactions(amount,payment_method,companies(name))")
@@ -78,6 +100,9 @@ export default function AdminPage() {
     setRows((shiftRes.data as ShiftTotal[]) ?? []);
     setCompanies((companyRes.data as Company[]) ?? []);
     setBooths((boothRes.data as Booth[]) ?? []);
+    setCategories((catRes.data as Category[]) ?? []);
+    setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
+    setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
     setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
   }
 
@@ -88,6 +113,25 @@ export default function AdminPage() {
     const abertos = rows.filter((r) => r.status === "open").length;
     return { totalDia, totalComissao, pendencias, abertos };
   }, [rows]);
+
+  const reportByCategory = useMemo(() => {
+    const map = new Map<string, { category: string; subcategory: string; total: number; qty: number }>();
+
+    for (const tx of reportTxs) {
+      const cat = Array.isArray(tx.transaction_categories) ? tx.transaction_categories[0]?.name : tx.transaction_categories?.name;
+      const sub = Array.isArray(tx.transaction_subcategories) ? tx.transaction_subcategories[0]?.name : tx.transaction_subcategories?.name;
+      const category = cat ?? "Sem categoria";
+      const subcategory = sub ?? "Sem subcategoria";
+      const key = `${category}::${subcategory}`;
+
+      const prev = map.get(key) ?? { category, subcategory, total: 0, qty: 0 };
+      prev.total += Number(tx.amount || 0);
+      prev.qty += 1;
+      map.set(key, prev);
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [reportTxs]);
 
   async function createCompany(e: FormEvent) {
     e.preventDefault();
@@ -120,6 +164,38 @@ export default function AdminPage() {
     setBoothCode("");
     setBoothName("");
     setMessage("Guichê cadastrado com sucesso.");
+    await refreshData();
+  }
+
+  async function createCategory(e: FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+
+    const { error } = await supabase.from("transaction_categories").insert({
+      name: categoryName.trim(),
+      active: true,
+    });
+
+    if (error) return setMessage(`Erro ao cadastrar categoria: ${error.message}`);
+    setCategoryName("");
+    setMessage("Categoria cadastrada com sucesso.");
+    await refreshData();
+  }
+
+  async function createSubcategory(e: FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+
+    const { error } = await supabase.from("transaction_subcategories").insert({
+      category_id: subcategoryCategoryId,
+      name: subcategoryName.trim(),
+      active: true,
+    });
+
+    if (error) return setMessage(`Erro ao cadastrar subcategoria: ${error.message}`);
+    setSubcategoryName("");
+    setSubcategoryCategoryId("");
+    setMessage("Subcategoria cadastrada com sucesso.");
     await refreshData();
   }
 
@@ -199,6 +275,24 @@ export default function AdminPage() {
           </form>
         </section>
 
+        <section className="grid lg:grid-cols-2 gap-4">
+          <form onSubmit={createCategory} className="glass-card p-4 space-y-3">
+            <h2 className="font-semibold">Cadastrar Categoria</h2>
+            <input value={categoryName} onChange={(e)=>setCategoryName(e.target.value)} required placeholder="Ex: Venda de Passagem" className="field" />
+            <button className="btn-primary">Salvar categoria</button>
+          </form>
+
+          <form onSubmit={createSubcategory} className="glass-card p-4 space-y-3">
+            <h2 className="font-semibold">Cadastrar Subcategoria</h2>
+            <select value={subcategoryCategoryId} onChange={(e)=>setSubcategoryCategoryId(e.target.value)} required className="field">
+              <option value="">Selecione a categoria</option>
+              {categories.map((c)=> <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <input value={subcategoryName} onChange={(e)=>setSubcategoryName(e.target.value)} required placeholder="Ex: Interestadual" className="field" />
+            <button className="btn-primary">Salvar subcategoria</button>
+          </form>
+        </section>
+
         {message && (
           <section className="rounded-xl border border-blue-800/50 bg-blue-950/20 p-3 text-blue-300 text-sm">
             {message}
@@ -241,6 +335,65 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section className="grid lg:grid-cols-2 gap-4">
+          <div className="glass-card p-4 overflow-auto">
+            <h2 className="font-semibold mb-3">Categorias</h2>
+            <table className="w-full text-sm">
+              <thead className="text-left text-slate-400">
+                <tr><th className="py-2">Categoria</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                {categories.map((c) => (
+                  <tr key={c.id} className="border-t border-slate-800">
+                    <td className="py-2">{c.name}</td>
+                    <td>{c.active ? "Ativa" : "Inativa"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="glass-card p-4 overflow-auto">
+            <h2 className="font-semibold mb-3">Subcategorias</h2>
+            <table className="w-full text-sm">
+              <thead className="text-left text-slate-400">
+                <tr><th className="py-2">Subcategoria</th><th>Categoria</th><th>Status</th></tr>
+              </thead>
+              <tbody>
+                {subcategories.map((s) => {
+                  const cName = Array.isArray(s.transaction_categories) ? s.transaction_categories[0]?.name : s.transaction_categories?.name;
+                  return (
+                    <tr key={s.id} className="border-t border-slate-800">
+                      <td className="py-2">{s.name}</td>
+                      <td>{cName ?? "-"}</td>
+                      <td>{s.active ? "Ativa" : "Inativa"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="glass-card p-4 overflow-auto">
+          <h2 className="font-semibold mb-3">Relatório por categoria/subcategoria</h2>
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-400">
+              <tr><th className="py-2">Categoria</th><th>Subcategoria</th><th>Qtd</th><th>Total</th></tr>
+            </thead>
+            <tbody>
+              {reportByCategory.map((r) => (
+                <tr key={`${r.category}-${r.subcategory}`} className="border-t border-slate-800">
+                  <td className="py-2">{r.category}</td>
+                  <td>{r.subcategory}</td>
+                  <td>{r.qty}</td>
+                  <td>R$ {r.total.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
 
         <section className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">

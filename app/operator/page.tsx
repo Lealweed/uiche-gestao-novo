@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 
 type Option = { id: string; name: string; commission_percent: number };
+type Category = { id: string; name: string };
+type Subcategory = { id: string; name: string; category_id: string };
 type Shift = { id: string; booth_id: string; status: "open" | "closed" };
 type Tx = {
   id: string;
@@ -22,9 +24,13 @@ export default function OperatorPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [shift, setShift] = useState<Shift | null>(null);
   const [companies, setCompanies] = useState<Option[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [booths, setBooths] = useState<{ booth_id: string; booths: { name: string } }[]>([]);
   const [boothId, setBoothId] = useState("");
   const [companyId, setCompanyId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [subcategoryId, setSubcategoryId] = useState("");
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit" | "debit" | "cash">("pix");
   const [ticketReference, setTicketReference] = useState("");
@@ -47,14 +53,25 @@ export default function OperatorPage() {
 
       if (profile?.role === "admin") return router.push("/admin");
 
-      const [{ data: bData }, { data: cData }, { data: sData }] = await Promise.all([
+      const [{ data: bData }, { data: cData }, { data: catData }, { data: subData }, { data: sData }] = await Promise.all([
         supabase.from("operator_booths").select("booth_id, booths(name)").eq("operator_id", authData.user.id).eq("active", true),
         supabase.from("companies").select("id, name, commission_percent").eq("active", true).order("name"),
+        supabase.from("transaction_categories").select("id, name").eq("active", true).order("name"),
+        supabase.from("transaction_subcategories").select("id, name, category_id").eq("active", true).order("name"),
         supabase.from("shifts").select("id, booth_id, status").eq("operator_id", authData.user.id).eq("status", "open").maybeSingle(),
       ]);
 
       setBooths((bData as any) ?? []);
       setCompanies((cData as Option[]) ?? []);
+      const cats = (catData as Category[]) ?? [];
+      const subs = (subData as Subcategory[]) ?? [];
+      setCategories(cats);
+      setSubcategories(subs);
+      if (cats[0]) {
+        setCategoryId(cats[0].id);
+        const firstSub = subs.find((s) => s.category_id === cats[0].id);
+        if (firstSub) setSubcategoryId(firstSub.id);
+      }
       if (sData) {
         setShift(sData as Shift);
         await loadTxs((sData as Shift).id);
@@ -105,13 +122,15 @@ export default function OperatorPage() {
 
   async function submitTx(e: FormEvent) {
     e.preventDefault();
-    if (!shift || !companyId || !amount || !userId) return;
+    if (!shift || !companyId || !categoryId || !subcategoryId || !amount || !userId) return;
 
     const payload = {
       shift_id: shift.id,
       booth_id: shift.booth_id,
       operator_id: userId,
       company_id: companyId,
+      category_id: categoryId,
+      subcategory_id: subcategoryId,
       amount: Number(amount),
       payment_method: paymentMethod,
       commission_percent: null,
@@ -178,6 +197,11 @@ export default function OperatorPage() {
     );
   }, [txs]);
 
+  const filteredSubcategories = useMemo(
+    () => subcategories.filter((s) => s.category_id === categoryId),
+    [subcategories, categoryId]
+  );
+
   async function requestAdjustment(txId: string) {
     const reason = window.prompt("Descreva o motivo do ajuste:");
     if (!reason || !userId) return;
@@ -219,7 +243,7 @@ export default function OperatorPage() {
         {!shift ? (
           <section className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Abrir turno</h2>
-            <select value={boothId} onChange={(e) => setBoothId(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
+            <select value={boothId} onChange={(e) => setBoothId(e.target.value)} className="field">
               <option value="">Selecione o guichê</option>
               {booths.map((b: any) => (
                 <option key={b.booth_id} value={b.booth_id}>{b.booths?.name ?? b.booth_id}</option>
@@ -238,19 +262,37 @@ export default function OperatorPage() {
 
         <form onSubmit={submitTx} className="glass-card p-4 space-y-3">
           <h2 className="font-semibold">Novo lançamento</h2>
-          <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" required>
+          <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="field" required>
             <option value="">Selecione a empresa</option>
             {companies.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.commission_percent}%)</option>)}
           </select>
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" step="0.01" min="0" placeholder="Valor" className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" required />
-          <input value={ticketReference} onChange={(e) => setTicketReference(e.target.value)} placeholder="Referência da passagem (opcional)" className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" />
-          <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as any)} className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2">
+          <select
+            value={categoryId}
+            onChange={(e) => {
+              const next = e.target.value;
+              setCategoryId(next);
+              const firstSub = subcategories.find((s) => s.category_id === next);
+              setSubcategoryId(firstSub?.id ?? "");
+            }}
+            className="field"
+            required
+          >
+            <option value="">Selecione a categoria</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)} className="field" required>
+            <option value="">Selecione a subcategoria</option>
+            {filteredSubcategories.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" step="0.01" min="0" placeholder="Valor" className="field" required />
+          <input value={ticketReference} onChange={(e) => setTicketReference(e.target.value)} placeholder="Referência da passagem (opcional)" className="field" />
+          <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as any)} className="field">
             <option value="pix">PIX</option>
             <option value="credit">Crédito</option>
             <option value="debit">Débito</option>
             <option value="cash">Dinheiro</option>
           </select>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2" placeholder="Observação (opcional)" />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} className="field" placeholder="Observação (opcional)" />
           <button disabled={!shift} className="btn-primary disabled:opacity-50">Salvar lançamento</button>
           {message && <p className="text-sm text-blue-300">{message}</p>}
         </form>

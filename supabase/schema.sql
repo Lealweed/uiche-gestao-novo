@@ -401,3 +401,41 @@ for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.
 -- Grants for RPCs
 grant execute on function public.open_shift(uuid, text) to authenticated;
 grant execute on function public.close_shift(uuid, text, text) to authenticated;
+
+-- ===== Block 1: Categories / Subcategories =====
+create table if not exists public.transaction_categories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.transaction_subcategories (
+  id uuid primary key default gen_random_uuid(),
+  category_id uuid not null references public.transaction_categories(id) on delete cascade,
+  name text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique(category_id, name)
+);
+
+alter table public.transactions add column if not exists category_id uuid references public.transaction_categories(id);
+alter table public.transactions add column if not exists subcategory_id uuid references public.transaction_subcategories(id);
+
+create index if not exists transactions_category_idx on public.transactions(category_id);
+create index if not exists transactions_subcategory_idx on public.transactions(subcategory_id);
+
+alter table public.transaction_categories enable row level security;
+alter table public.transaction_subcategories enable row level security;
+
+create policy tx_categories_read_authenticated on public.transaction_categories
+for select using (auth.uid() is not null);
+
+create policy tx_categories_admin_write on public.transaction_categories
+for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+create policy tx_subcategories_read_authenticated on public.transaction_subcategories
+for select using (auth.uid() is not null);
+
+create policy tx_subcategories_admin_write on public.transaction_subcategories
+for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
