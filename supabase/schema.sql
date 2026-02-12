@@ -13,6 +13,10 @@ create type public.tx_status as enum ('posted', 'voided');
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
+  cpf text,
+  address text,
+  phone text,
+  avatar_url text,
   role public.app_role not null default 'operator',
   active boolean not null default true,
   created_at timestamptz not null default now(),

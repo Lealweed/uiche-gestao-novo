@@ -43,7 +43,16 @@ type TxForReport = {
   transaction_subcategories: { name: string } | { name: string }[] | null;
 };
 
-type Profile = { user_id: string; full_name: string; role: "admin" | "operator"; active: boolean };
+type Profile = {
+  user_id: string;
+  full_name: string;
+  cpf: string | null;
+  address: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  role: "admin" | "operator";
+  active: boolean;
+};
 type OperatorBoothLink = {
   id: string;
   active: boolean;
@@ -132,6 +141,10 @@ export default function AdminPage() {
   const [newProfileUserId, setNewProfileUserId] = useState("");
   const [newProfileName, setNewProfileName] = useState("");
   const [newProfileRole, setNewProfileRole] = useState<"admin" | "operator">("operator");
+  const [newProfileCpf, setNewProfileCpf] = useState("");
+  const [newProfileAddress, setNewProfileAddress] = useState("");
+  const [newProfilePhone, setNewProfilePhone] = useState("");
+  const [newProfileAvatarUrl, setNewProfileAvatarUrl] = useState("");
   const [newProfileActive, setNewProfileActive] = useState(true);
   const [resetEmail, setResetEmail] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -183,7 +196,7 @@ export default function AdminPage() {
       supabase.from("booths").select("id,code,name,active").order("name"),
       supabase.from("transaction_categories").select("id,name,active").order("name"),
       supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
-      supabase.from("profiles").select("user_id,full_name,role,active").order("full_name"),
+      supabase.from("profiles").select("user_id,full_name,cpf,address,phone,avatar_url,role,active").order("full_name"),
       supabase.from("operator_booths").select("id,active,profiles(full_name),booths(name,code)").order("created_at", { ascending: false }).limit(200),
       supabase.from("audit_logs").select("id,action,entity,details,created_at,profiles(full_name)").order("created_at", { ascending: false }).limit(50),
       supabase.from("time_punches").select("id,punch_type,punched_at,note,profiles(full_name),booths(code,name)").order("punched_at", { ascending: false }).limit(200),
@@ -558,15 +571,28 @@ export default function AdminPage() {
     const { error } = await supabase.from("profiles").upsert({
       user_id: newProfileUserId.trim(),
       full_name: newProfileName.trim(),
+      cpf: newProfileCpf.trim() || null,
+      address: newProfileAddress.trim() || null,
+      phone: newProfilePhone.trim() || null,
+      avatar_url: newProfileAvatarUrl.trim() || null,
       role: newProfileRole,
       active: newProfileActive,
     });
 
     if (error) return setMessage(`Erro ao salvar usuário: ${error.message}`);
-    await logAction("UPSERT_PROFILE", "profiles", newProfileUserId.trim(), { role: newProfileRole, active: newProfileActive });
+    await logAction("UPSERT_PROFILE", "profiles", newProfileUserId.trim(), {
+      role: newProfileRole,
+      active: newProfileActive,
+      cpf: newProfileCpf,
+      phone: newProfilePhone,
+    });
     setMessage("Usuário salvo com sucesso (perfil).\nObs: login/auth deve existir no Supabase Auth.");
     setNewProfileUserId("");
     setNewProfileName("");
+    setNewProfileCpf("");
+    setNewProfileAddress("");
+    setNewProfilePhone("");
+    setNewProfileAvatarUrl("");
     setNewProfileRole("operator");
     setNewProfileActive(true);
     await refreshData();
@@ -756,6 +782,10 @@ export default function AdminPage() {
             <h2 className="font-semibold">Cadastrar/Atualizar usuário (perfil)</h2>
             <input value={newProfileUserId} onChange={(e)=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuário (auth.users.id)" className="field" />
             <input value={newProfileName} onChange={(e)=>setNewProfileName(e.target.value)} required placeholder="Nome completo" className="field" />
+            <input value={newProfileCpf} onChange={(e)=>setNewProfileCpf(e.target.value)} placeholder="CPF" className="field" />
+            <input value={newProfilePhone} onChange={(e)=>setNewProfilePhone(e.target.value)} placeholder="Telefone" className="field" />
+            <input value={newProfileAddress} onChange={(e)=>setNewProfileAddress(e.target.value)} placeholder="Endereço" className="field" />
+            <input value={newProfileAvatarUrl} onChange={(e)=>setNewProfileAvatarUrl(e.target.value)} placeholder="URL da foto de perfil" className="field" />
             <select value={newProfileRole} onChange={(e)=>setNewProfileRole(e.target.value as "admin"|"operator")} className="field">
               <option value="operator">Operator</option>
               <option value="admin">Admin</option>
@@ -988,12 +1018,19 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Usuários</h2>
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Nome</th><th>Perfil</th><th>Status</th><th>Ação</th></tr>
+                <tr><th className="py-2">Nome</th><th>CPF</th><th>Telefone</th><th>Perfil</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {profiles.map((p) => (
                   <tr key={p.user_id} className="border-t border-slate-800">
-                    <td className="py-2">{p.full_name}</td>
+                    <td className="py-2">
+                      <div className="flex items-center gap-2">
+                        {p.avatar_url ? <img src={p.avatar_url} alt={p.full_name} className="w-6 h-6 rounded-full object-cover" /> : <span className="w-6 h-6 rounded-full bg-slate-700 inline-block" />}
+                        <span>{p.full_name}</span>
+                      </div>
+                    </td>
+                    <td>{p.cpf ?? "-"}</td>
+                    <td>{p.phone ?? "-"}</td>
                     <td>{p.role}</td>
                     <td>{p.active ? "Ativo" : "Inativo"}</td>
                     <td>
