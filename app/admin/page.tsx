@@ -1265,6 +1265,30 @@ export default function AdminPage() {
           </div>
         </section>
 
+        <section className={`${menu === "tarefas" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
+          <div className="glass-card p-4">
+            <h2 className="font-semibold mb-3">Organização do que falta</h2>
+            <ul className="text-sm space-y-2 text-slate-300">
+              <li>• Cadastro e edição guiada de operador (form completo sem prompt)</li>
+              <li>• Regras de permissão por ação crítica (estorno/reabertura com motivo obrigatório)</li>
+              <li>• Dashboard executivo final com metas por dia e comparação diária</li>
+              <li>• Impressão dedicada de fechamento de caixa por turno</li>
+              <li>• Validação adicional de telefone e CPF/CNPJ com máscara</li>
+            </ul>
+          </div>
+
+          <div className="glass-card p-4">
+            <h2 className="font-semibold mb-3">Status atual dos módulos</h2>
+            <ul className="text-sm space-y-2">
+              <li className="text-emerald-300">✅ Operador PDV (turno, lançamentos, comprovante, caixa, fechamento)</li>
+              <li className="text-emerald-300">✅ Admin financeiro (comissão por empresa, fluxo de operadores, alertas)</li>
+              <li className="text-emerald-300">✅ Clientes (cadastro, listagem, ativação/inativação)</li>
+              <li className="text-emerald-300">✅ Auditoria e ponto</li>
+              <li className="text-amber-300">⚠️ Pendências finais de polimento e UX</li>
+            </ul>
+          </div>
+        </section>
+
         <form onSubmit={applyPeriodFilter} className={`${menu === "financeiro" ? "flex" : "hidden"} glass-card p-4 flex-wrap items-end gap-3`}>
           <div>
             <label className="text-xs text-slate-400">Data inicial</label>
