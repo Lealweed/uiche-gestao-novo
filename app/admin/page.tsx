@@ -475,6 +475,25 @@ export default function AdminPage() {
     return Array.from(map.values()).sort((a, b) => b.txCount - a.txCount);
   }, [rows, reportTxs, cashMovementRows, timePunchRows]);
 
+  const operatorAlerts = useMemo(() => {
+    const alerts: { level: "warn" | "danger"; text: string }[] = [];
+
+    for (const r of rows) {
+      if (r.status === "open" && Number(r.missing_card_receipts || 0) > 0) {
+        alerts.push({ level: "warn", text: `${r.operator_name} (${r.booth_name}) com ${r.missing_card_receipts} pendência(s) de comprovante.` });
+      }
+    }
+
+    for (const c of shiftCashClosingRows) {
+      if (Math.abs(Number(c.difference || 0)) > 0) {
+        const op = Array.isArray(c.profiles) ? c.profiles[0]?.full_name : c.profiles?.full_name;
+        alerts.push({ level: "danger", text: `Diferença de caixa em fechamento de ${op ?? "operador"}: R$ ${Number(c.difference).toFixed(2)}.` });
+      }
+    }
+
+    return alerts.slice(0, 12);
+  }, [rows, shiftCashClosingRows]);
+
   const filteredReportTxs = useMemo(() => {
     const opTerm = reportOperatorFilter.trim().toLowerCase();
     const boothTerm = reportBoothFilter.trim().toLowerCase();
@@ -1023,6 +1042,19 @@ export default function AdminPage() {
           </aside>
 
           <div className="space-y-6 module-enter">
+
+        <section className={`${menu === "financeiro" ? "block" : "hidden"} glass-card p-4`}>
+          <h2 className="font-semibold mb-3">Alertas operacionais</h2>
+          {operatorAlerts.length === 0 ? (
+            <p className="text-sm text-emerald-300">Sem alertas críticos no momento.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {operatorAlerts.map((a, i) => (
+                <li key={i} className={`rounded-lg border p-2 ${a.level === "danger" ? "border-rose-700/60 text-rose-300" : "border-amber-700/60 text-amber-300"}`}>{a.text}</li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4">
