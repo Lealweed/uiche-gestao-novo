@@ -354,6 +354,13 @@ export default function OperatorPage() {
     [subcategories, categoryId]
   );
 
+  const operatorFlow = useMemo(() => {
+    const cardPending = txs.filter((t) => (t.payment_method === "credit" || t.payment_method === "debit") && !t.transaction_receipts?.length).length;
+    const totalTx = txs.length;
+    const lastTxAt = txs[0]?.sold_at ?? null;
+    return { cardPending, totalTx, lastTxAt };
+  }, [txs]);
+
   async function requestAdjustment(txId: string) {
     const reason = window.prompt("Descreva o motivo do ajuste:");
     if (!reason || !userId) return;
@@ -391,6 +398,16 @@ export default function OperatorPage() {
           <MiniCard label="Crédito" value={totals.credit} />
           <MiniCard label="Débito" value={totals.debit} />
           <MiniCard label="Dinheiro" value={totals.cash} />
+        </section>
+
+        <section className="glass-card p-4">
+          <h2 className="font-semibold mb-2">Fluxo do operador</h2>
+          <div className="grid md:grid-cols-4 gap-2 text-sm">
+            <div className="rounded-lg border border-slate-800 p-2">Turno: <b>{shift ? "Aberto" : "Fechado"}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Lançamentos: <b>{operatorFlow.totalTx}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Pend. cartão: <b>{operatorFlow.cardPending}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Último lançamento: <b>{operatorFlow.lastTxAt ? new Date(operatorFlow.lastTxAt).toLocaleTimeString("pt-BR") : "-"}</b></div>
+          </div>
         </section>
 
         <section className="glass-card p-4 space-y-3">

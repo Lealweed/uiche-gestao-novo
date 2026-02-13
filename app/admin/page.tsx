@@ -441,6 +441,40 @@ export default function AdminPage() {
     return { expected, declared, difference };
   }, [shiftCashClosingRows]);
 
+  const operatorFlowRows = useMemo(() => {
+    const map = new Map<string, { operator: string; openShifts: number; txCount: number; cashMoves: number; punches: number }>();
+
+    for (const r of rows) {
+      const operator = r.operator_name ?? "Sem operador";
+      const prev = map.get(operator) ?? { operator, openShifts: 0, txCount: 0, cashMoves: 0, punches: 0 };
+      if (r.status === "open") prev.openShifts += 1;
+      map.set(operator, prev);
+    }
+
+    for (const tx of reportTxs) {
+      const operator = (Array.isArray(tx.profiles) ? tx.profiles[0]?.full_name : tx.profiles?.full_name) ?? "Sem operador";
+      const prev = map.get(operator) ?? { operator, openShifts: 0, txCount: 0, cashMoves: 0, punches: 0 };
+      prev.txCount += 1;
+      map.set(operator, prev);
+    }
+
+    for (const m of cashMovementRows) {
+      const operator = (Array.isArray(m.profiles) ? m.profiles[0]?.full_name : m.profiles?.full_name) ?? "Sem operador";
+      const prev = map.get(operator) ?? { operator, openShifts: 0, txCount: 0, cashMoves: 0, punches: 0 };
+      prev.cashMoves += 1;
+      map.set(operator, prev);
+    }
+
+    for (const p of timePunchRows) {
+      const operator = (Array.isArray(p.profiles) ? p.profiles[0]?.full_name : p.profiles?.full_name) ?? "Sem operador";
+      const prev = map.get(operator) ?? { operator, openShifts: 0, txCount: 0, cashMoves: 0, punches: 0 };
+      prev.punches += 1;
+      map.set(operator, prev);
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.txCount - a.txCount);
+  }, [rows, reportTxs, cashMovementRows, timePunchRows]);
+
   const filteredReportTxs = useMemo(() => {
     const opTerm = reportOperatorFilter.trim().toLowerCase();
     const boothTerm = reportBoothFilter.trim().toLowerCase();
@@ -1611,6 +1645,26 @@ export default function AdminPage() {
             </tbody>
           </table>
           <p className="text-xs text-slate-500 mt-2">Exibindo até 300 linhas na tela para manter performance.</p>
+        </section>
+
+        <section className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+          <h2 className="font-semibold mb-3">Fluxo dos operadores</h2>
+          <table className="w-full text-sm">
+            <thead className="text-left text-slate-400">
+              <tr><th className="py-2">Operador</th><th>Turnos abertos</th><th>Lançamentos</th><th>Mov. caixa</th><th>Pontos</th></tr>
+            </thead>
+            <tbody>
+              {operatorFlowRows.map((r) => (
+                <tr key={r.operator} className="border-t border-slate-800">
+                  <td className="py-2">{r.operator}</td>
+                  <td>{r.openShifts}</td>
+                  <td>{r.txCount}</td>
+                  <td>{r.cashMoves}</td>
+                  <td>{r.punches}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
 
         <section id="agenda" className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
