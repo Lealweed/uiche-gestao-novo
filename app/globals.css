@@ -37,6 +37,70 @@ body {
 }
 
 @layer components {
+  .cv2-shell {
+    @apply min-h-screen bg-slate-50 text-slate-900 p-4 md:p-8;
+  }
+
+  .cv2-container {
+    @apply max-w-7xl mx-auto space-y-5;
+  }
+
+  .cv2-header {
+    @apply rounded-2xl border border-slate-200 bg-white p-5 md:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4;
+  }
+
+  .cv2-eyebrow {
+    @apply text-xs uppercase tracking-[0.16em] text-slate-500;
+  }
+
+  .cv2-title {
+    @apply text-2xl md:text-3xl font-bold tracking-tight text-slate-900 mt-1;
+  }
+
+  .cv2-subtitle {
+    @apply text-sm md:text-base text-slate-600 mt-1;
+  }
+
+  .cv2-card {
+    @apply rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-[0_6px_18px_rgba(15,23,42,0.06)];
+  }
+
+  .cv2-grid-4 {
+    @apply grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3;
+  }
+
+  .cv2-grid-2 {
+    @apply grid grid-cols-1 xl:grid-cols-2 gap-4;
+  }
+
+  .cv2-label {
+    @apply text-sm text-slate-500;
+  }
+
+  .cv2-value {
+    @apply text-xl md:text-2xl font-semibold text-slate-900 mt-1;
+  }
+
+  .cv2-section-title {
+    @apply text-base font-semibold text-slate-900 mb-3;
+  }
+
+  .cv2-chips {
+    @apply flex flex-wrap gap-2;
+  }
+
+  .cv2-chip {
+    @apply text-xs px-3 py-1.5 rounded-full border border-slate-300 bg-slate-50 text-slate-700;
+  }
+
+  .cv2-list {
+    @apply text-sm text-slate-700 space-y-1;
+  }
+
+  .cv2-btn-primary {
+    @apply px-4 py-2.5 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-500 transition;
+  }
+
   .app-shell {
     @apply min-h-screen p-4 md:p-8 text-slate-900;
   }
