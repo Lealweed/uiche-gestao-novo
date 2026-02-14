@@ -410,10 +410,10 @@ export default function OperatorPage() {
 
         <section>
           <HeroGeometric
-            badge="Portal do Operador"
-            title1="PDV e caixa"
-            title2="com fluxo guiado"
-            subtitle="Abra turno, registre vendas, controle caixa e acompanhe seu status operacional em tempo real."
+            badge="PORTAL DO OPERADOR • GUICHÊ"
+            title1="Guichê Operação"
+            subtitle="Abra turno, registre vendas, controle caixa e acompanhe o fluxo operacional em tempo real."
+            chips={["Turno", "PDV", "Caixa"]}
           />
           <div className="mt-3 text-sm text-slate-300 text-right">
             <div>Status do turno: <b>{shift ? "Aberto" : "Fechado"}</b></div>

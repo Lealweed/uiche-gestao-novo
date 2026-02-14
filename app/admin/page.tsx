@@ -1040,10 +1040,10 @@ export default function AdminPage() {
 
         <section className="no-print">
           <HeroGeometric
-            badge="Plataforma Profissional"
-            title1="Centro de comando"
-            title2="do guichê"
-            subtitle="Gestão central de guichês, empresas, comissões, auditoria e ponto em um único painel executivo."
+            badge="PROJETO GUICHÊ • PAINEL DE GESTÃO"
+            title1="Guichê Gestão"
+            subtitle="Controle administrativo de turnos, financeiro, operadores, comprovantes e fechamento com auditoria."
+            chips={["Tempo real", "Comprovantes", "Fechamento diário"]}
           />
           <div className="mt-3 flex gap-2 justify-end">
             <button className="btn-primary" type="button" onClick={refreshData}>Atualizar agora</button>
