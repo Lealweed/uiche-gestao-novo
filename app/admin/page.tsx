@@ -1019,7 +1019,7 @@ export default function AdminPage() {
         <header className="flex items-center justify-between gap-4 no-print">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2"><span className="pulse-dot">●</span> Produção</div>
-            <h1 className="text-2xl font-bold tracking-tight">Painel Admin</h1>
+            <h1 className="text-2xl font-bold tracking-tight gradient-title">Painel Admin</h1>
             <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
           <div className="flex items-center gap-2">
@@ -1027,6 +1027,20 @@ export default function AdminPage() {
             <button onClick={logout} className="btn-ghost">Sair</button>
           </div>
         </header>
+
+        <section className="hero-premium no-print">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80 mb-2">Sistema Premium</p>
+              <h2 className="text-2xl md:text-3xl font-extrabold gradient-title">Centro de comando do guichê</h2>
+              <p className="text-slate-300/90 mt-2">Operação, caixa, auditoria e fluxo dos operadores em um único painel executivo.</p>
+            </div>
+            <div className="flex gap-2">
+              <button className="btn-primary" type="button" onClick={refreshData}>Atualizar agora</button>
+              <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
+            </div>
+          </div>
+        </section>
 
         <div className="grid lg:grid-cols-[240px,1fr] gap-4 items-start">
           <aside className="glass-card p-4 no-print">

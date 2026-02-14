@@ -89,6 +89,34 @@ body {
     animation: fadeUp .35s ease;
   }
 
+  .hero-premium {
+    @apply relative overflow-hidden rounded-3xl border border-violet-400/20 bg-gradient-to-br from-[#131a34] via-[#11162d] to-[#0b1024] p-6 md:p-8 shadow-[0_22px_65px_rgba(20,20,45,0.55)];
+  }
+
+  .hero-premium::before {
+    content: "";
+    position: absolute;
+    inset: -30% auto auto -10%;
+    width: 320px;
+    height: 320px;
+    background: radial-gradient(circle, rgba(99,102,241,0.35), transparent 62%);
+    pointer-events: none;
+  }
+
+  .hero-premium::after {
+    content: "";
+    position: absolute;
+    inset: auto -10% -35% auto;
+    width: 340px;
+    height: 340px;
+    background: radial-gradient(circle, rgba(34,211,238,0.24), transparent 60%);
+    pointer-events: none;
+  }
+
+  .gradient-title {
+    @apply bg-gradient-to-r from-violet-200 via-cyan-200 to-blue-200 bg-clip-text text-transparent;
+  }
+
   .pulse-dot {
     animation: pulseSoft 1.8s infinite;
   }

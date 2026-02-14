@@ -401,11 +401,25 @@ export default function OperatorPage() {
               <span>●</span>
               {operatorActive === false ? "Operador inativo" : "Operador ativo"}
             </div>
-            <h1 className="text-2xl font-bold tracking-tight">Operador de Guichê</h1>
+            <h1 className="text-2xl font-bold tracking-tight gradient-title">Operador de Guichê</h1>
             <p className="muted">Turno e lançamentos.</p>
           </div>
           <button onClick={logout} className="btn-ghost">Sair</button>
         </header>
+
+        <section className="hero-premium">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80 mb-2">Portal do Operador</p>
+              <h2 className="text-2xl md:text-3xl font-extrabold gradient-title">PDV e caixa com fluxo guiado</h2>
+              <p className="text-slate-300/90 mt-2">Abra turno, registre vendas, controle caixa e acompanhe seu status operacional em tempo real.</p>
+            </div>
+            <div className="text-sm text-slate-300">
+              <div>Status do turno: <b>{shift ? "Aberto" : "Fechado"}</b></div>
+              <div>Pendências de cartão: <b>{operatorFlow.cardPending}</b></div>
+            </div>
+          </div>
+        </section>
 
         <section className="grid md:grid-cols-4 gap-3">
           <MiniCard label="PIX" value={totals.pix} />
