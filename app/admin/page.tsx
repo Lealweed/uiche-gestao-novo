@@ -38,6 +38,7 @@ type TxForReport = {
   status?: string;
   amount: number;
   sold_at?: string;
+  payment_method?: "pix" | "credit" | "debit" | "cash" | string;
   operator_id?: string;
   booth_id?: string;
   profiles?: { full_name: string } | { full_name: string }[] | null;
@@ -258,7 +259,7 @@ export default function AdminPage() {
       let shiftQuery = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
       let txQuery = supabase
         .from("transactions")
-        .select("id,status,amount,sold_at,operator_id,booth_id,profiles(full_name),booths(name,code),companies(name),transaction_categories(name),transaction_subcategories(name)")
+        .select("id,status,amount,sold_at,payment_method,operator_id,booth_id,profiles(full_name),booths(name,code),companies(name),transaction_categories(name),transaction_subcategories(name)")
         .eq("status", "posted")
         .order("sold_at", { ascending: false })
         .limit(5000);
@@ -653,6 +654,42 @@ export default function AdminPage() {
     summary.abertos,
     summary.pendencias,
   ]);
+
+  const dailyTrend = useMemo(() => {
+    const map = new Map<string, { label: string; value: number }>();
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      map.set(key, { label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), value: 0 });
+    }
+
+    for (const tx of reportTxs) {
+      if (!tx.sold_at) continue;
+      const key = new Date(tx.sold_at).toISOString().slice(0, 10);
+      const item = map.get(key);
+      if (!item) continue;
+      item.value += Number(tx.amount || 0);
+      map.set(key, item);
+    }
+
+    return Array.from(map.values());
+  }, [reportTxs]);
+
+  const paymentSeries = useMemo(() => {
+    const base = { pix: 0, credit: 0, debit: 0, cash: 0 };
+    for (const tx of reportTxs) {
+      const method = tx.payment_method as keyof typeof base;
+      if (method in base) base[method] += Number(tx.amount || 0);
+    }
+    return [
+      { label: "PIX", value: base.pix, color: "#0ea5e9" },
+      { label: "Crédito", value: base.credit, color: "#6366f1" },
+      { label: "Débito", value: base.debit, color: "#14b8a6" },
+      { label: "Dinheiro", value: base.cash, color: "#f59e0b" },
+    ];
+  }, [reportTxs]);
 
   const filteredReportTxs = useMemo(() => {
     const opTerm = reportOperatorFilter.trim().toLowerCase();
@@ -1242,24 +1279,29 @@ export default function AdminPage() {
           ) : dashboardError ? (
             <DashboardStateCard title="Falha na leitura do dashboard" text={dashboardError} tone="error" />
           ) : !hasDashboardData ? (
-            <DashboardStateCard title="Sem dados para o periodo" text="Aplique um intervalo maior ou aguarde novos lancamentos para exibir os KPIs." tone="empty" />
+            <DashboardStateCard title="Sem dados para o período" text="Aplique um intervalo maior ou aguarde novos lançamentos para exibir os KPIs." tone="empty" />
           ) : (
             <>
               <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <KpiCard label="Receita do periodo" value={`R$ ${summary.totalDia.toFixed(2)}`} hint={`${totalTransactions} transacoes`} tone="base" />
-                <KpiCard label="Comissao estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} hint="Base nas regras por empresa" tone="base" />
-                <KpiCard label="Ticket medio" value={`R$ ${avgTicket.toFixed(2)}`} hint="Valor medio por venda" tone="base" />
-                <KpiCard label="Turnos abertos" value={String(summary.abertos)} hint={`${summary.pendencias} pendencia(s) de comprovante`} tone={summary.abertos > 0 ? "warn" : "good"} />
+                <KpiCard label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} hint={`${totalTransactions} transações`} tone="base" />
+                <KpiCard label="Comissão estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} hint="Base nas regras por empresa" tone="base" />
+                <KpiCard label="Ticket médio" value={`R$ ${avgTicket.toFixed(2)}`} hint="Valor médio por venda" tone="base" />
+                <KpiCard label="Turnos abertos" value={String(summary.abertos)} hint={`${summary.pendencias} pendência(s) de comprovante`} tone={summary.abertos > 0 ? "warn" : "good"} />
+              </section>
+
+              <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <WaveLineChart title="Tendência de receita (7 dias)" data={dailyTrend} />
+                <WaveBarsChart title="Composição por método" data={paymentSeries} />
               </section>
 
               <section className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-4">
                 <div className="glass-card p-4">
                   <div className="flex items-center justify-between gap-3 mb-3">
-                    <h2 className="font-semibold">Alertas operacionais</h2>
-                    <span className="text-xs text-slate-400">Prioridade executiva</span>
+                    <h2 className="font-semibold text-slate-900">Alertas operacionais</h2>
+                    <span className="text-xs text-slate-500">Prioridade executiva</span>
                   </div>
                   {dashboardAlerts.length === 0 ? (
-                    <p className="text-sm text-emerald-300">Sem alertas ativos neste momento.</p>
+                    <p className="text-sm text-emerald-700">Sem alertas ativos neste momento.</p>
                   ) : (
                     <div className="space-y-2">
                       {dashboardAlerts.map((alert) => (
@@ -1267,17 +1309,17 @@ export default function AdminPage() {
                           key={alert.id}
                           type="button"
                           onClick={() => setMenu(alert.targetMenu)}
-                          className={`w-full rounded-xl border px-3 py-2.5 text-left transition hover:bg-white/[0.06] ${
+                          className={`w-full rounded-xl border px-3 py-2.5 text-left transition hover:bg-slate-50 ${
                             alert.priority === "alta"
-                              ? "border-rose-600/60 bg-rose-900/20"
+                              ? "border-rose-200 bg-rose-50"
                               : alert.priority === "media"
-                                ? "border-amber-600/60 bg-amber-900/15"
-                                : "border-slate-700 bg-slate-950/70"
+                                ? "border-amber-200 bg-amber-50"
+                                : "border-slate-200 bg-white"
                           }`}
                         >
-                          <p className="text-xs uppercase tracking-[0.14em] text-slate-400">{alert.priority}</p>
-                          <p className="text-sm font-semibold text-slate-100 mt-1">{alert.title}</p>
-                          <p className="text-xs text-slate-300 mt-1">{alert.text}</p>
+                          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{alert.priority}</p>
+                          <p className="text-sm font-semibold text-slate-900 mt-1">{alert.title}</p>
+                          <p className="text-xs text-slate-600 mt-1">{alert.text}</p>
                         </button>
                       ))}
                     </div>
@@ -1285,37 +1327,37 @@ export default function AdminPage() {
                 </div>
 
                 <div className="glass-card p-4">
-                  <h2 className="font-semibold mb-3">Fila de acao</h2>
+                  <h2 className="font-semibold mb-3 text-slate-900">Fila de ação</h2>
                   <div className="space-y-2">
                     {actionQueue.map((task) => (
                       <button
                         key={task.id}
                         type="button"
                         onClick={() => setMenu(task.targetMenu)}
-                        className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2.5 text-left transition hover:border-white/20"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-slate-300"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-medium text-slate-100">{task.title}</p>
-                          <span className={`text-[10px] uppercase tracking-[0.12em] ${task.priority === "alta" ? "text-rose-300" : task.priority === "media" ? "text-amber-300" : "text-slate-400"}`}>
+                          <p className="text-sm font-medium text-slate-900">{task.title}</p>
+                          <span className={`text-[10px] uppercase tracking-[0.12em] ${task.priority === "alta" ? "text-rose-600" : task.priority === "media" ? "text-amber-600" : "text-slate-500"}`}>
                             {task.priority}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-400 mt-1">{task.detail}</p>
+                        <p className="text-xs text-slate-500 mt-1">{task.detail}</p>
                       </button>
                     ))}
                   </div>
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button className="btn-primary" type="button" onClick={refreshData}>Atualizar dados</button>
                     <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>Backup JSON</button>
-                    <button className="btn-ghost" type="button" onClick={() => booths[0] && openBoothDetail(booths[0])}>Abrir 1o guiche</button>
+                    <button className="btn-ghost" type="button" onClick={() => booths[0] && openBoothDetail(booths[0])}>Abrir 1º guichê</button>
                     <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
                   </div>
                 </div>
               </section>
 
               <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <MiniStat label="Usuarios inativos" value={String(adminHealth.inactiveUsers)} />
-                <MiniStat label="Guiches inativos" value={String(adminHealth.inactiveBooths)} />
+                <MiniStat label="Usuários inativos" value={String(adminHealth.inactiveUsers)} />
+                <MiniStat label="Guichês inativos" value={String(adminHealth.inactiveBooths)} />
                 <MiniStat label="Empresas inativas" value={String(adminHealth.inactiveCompanies)} />
                 <MiniStat label="Ajustes pendentes" value={String(adminHealth.pendingAdjustments)} />
               </section>
@@ -2052,22 +2094,83 @@ export default function AdminPage() {
 }
 
 function KpiCard({ label, value, hint, tone }: { label: string; value: string; hint: string; tone: "base" | "warn" | "good" }) {
-  const toneClass = tone === "warn" ? "border-amber-600/40" : tone === "good" ? "border-emerald-600/40" : "border-white/10";
+  const toneClass = tone === "warn" ? "border-amber-200 bg-amber-50" : tone === "good" ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white";
   return (
     <div className={`glass-card p-4 ${toneClass}`}>
-      <p className="text-sm text-slate-400">{label}</p>
+      <p className="text-sm text-slate-500">{label}</p>
       <p className="kpi-value">{value}</p>
-      <p className="text-xs text-slate-400 mt-2">{hint}</p>
+      <p className="text-xs text-slate-500 mt-2">{hint}</p>
     </div>
   );
 }
 
 function DashboardStateCard({ title, text, tone }: { title: string; text: string; tone: "loading" | "empty" | "error" }) {
-  const toneClass = tone === "error" ? "border-rose-700/60 bg-rose-950/30" : tone === "empty" ? "border-slate-700 bg-slate-950/70" : "border-sky-700/50 bg-sky-950/20";
+  const toneClass = tone === "error" ? "border-rose-200 bg-rose-50" : tone === "empty" ? "border-slate-200 bg-white" : "border-sky-200 bg-sky-50";
   return (
     <div className={`glass-card p-5 ${toneClass}`}>
-      <p className="text-sm font-semibold text-slate-100">{title}</p>
-      <p className="text-sm text-slate-300 mt-1">{text}</p>
+      <p className="text-sm font-semibold text-slate-900">{title}</p>
+      <p className="text-sm text-slate-600 mt-1">{text}</p>
+    </div>
+  );
+}
+
+function WaveLineChart({ title, data }: { title: string; data: Array<{ label: string; value: number }> }) {
+  const width = 620;
+  const height = 220;
+  const pad = 24;
+  const max = Math.max(1, ...data.map((d) => d.value));
+  const points = data.map((d, i) => {
+    const x = pad + (i * (width - pad * 2)) / Math.max(1, data.length - 1);
+    const y = height - pad - (d.value / max) * (height - pad * 2);
+    return { ...d, x, y };
+  });
+  const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
+  const area = `${line} L ${width - pad} ${height - pad} L ${pad} ${height - pad} Z`;
+
+  return (
+    <div className="glass-card p-4">
+      <h2 className="font-semibold text-slate-900 mb-3">{title}</h2>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-52 rounded-xl bg-slate-50 border border-slate-200">
+        <defs>
+          <linearGradient id="waveFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#60a5fa" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#60a5fa" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill="url(#waveFill)" />
+        <path d={line} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" />
+        {points.map((p) => (
+          <circle key={p.label} cx={p.x} cy={p.y} r="3.5" fill="#1d4ed8" />
+        ))}
+      </svg>
+      <div className="mt-2 grid grid-cols-7 gap-1 text-[11px] text-slate-500">
+        {data.map((d) => <span key={d.label} className="text-center">{d.label}</span>)}
+      </div>
+    </div>
+  );
+}
+
+function WaveBarsChart({ title, data }: { title: string; data: Array<{ label: string; value: number; color: string }> }) {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  return (
+    <div className="glass-card p-4">
+      <h2 className="font-semibold text-slate-900 mb-3">{title}</h2>
+      <div className="space-y-3">
+        {data.map((d) => {
+          const pct = Math.round((d.value / max) * 100);
+          return (
+            <div key={d.label}>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="text-slate-700">{d.label}</span>
+                <span className="text-slate-500">R$ {d.value.toFixed(2)}</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-slate-100 border border-slate-200 overflow-hidden">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: d.color }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -2084,7 +2187,7 @@ function FinanceDonut({ pix, credit, debit, cash }: { pix: number; credit: numbe
   return (
     <div className="flex items-center gap-4">
       <div className="w-24 h-24 rounded-full" style={{ background: bg }}>
-        <div className="w-14 h-14 rounded-full bg-slate-900 mx-auto mt-5" />
+        <div className="w-14 h-14 rounded-full bg-white border border-slate-200 mx-auto mt-5" />
       </div>
       <div className="text-xs space-y-1">
         <div><span className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-2" />PIX</div>
@@ -2098,9 +2201,9 @@ function FinanceDonut({ pix, credit, debit, cash }: { pix: number; credit: numbe
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-      <p className="text-slate-400">{label}</p>
-      <p className="text-lg font-semibold mt-1">{value}</p>
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <p className="text-slate-500">{label}</p>
+      <p className="text-lg font-semibold mt-1 text-slate-900">{value}</p>
     </div>
   );
 }
@@ -2110,11 +2213,11 @@ function BarRow({ label, value, max }: { label: string; value: number; max: numb
   return (
     <div>
       <div className="flex justify-between text-xs mb-1">
-        <span className="text-slate-300 truncate max-w-[70%]">{label}</span>
-        <span className="text-slate-400">R$ {value.toFixed(2)}</span>
+        <span className="text-slate-600 truncate max-w-[70%]">{label}</span>
+        <span className="text-slate-500">R$ {value.toFixed(2)}</span>
       </div>
-      <div className="h-2 rounded-full bg-slate-800">
-        <div className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-amber-500" style={{ width: `${pct}%` }} />
+      <div className="h-2 rounded-full bg-slate-100 border border-slate-200">
+        <div className="h-2 rounded-full bg-gradient-to-r from-sky-500 to-indigo-500" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
