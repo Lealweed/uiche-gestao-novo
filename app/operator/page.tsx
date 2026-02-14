@@ -37,6 +37,7 @@ type CashMovement = {
 export default function OperatorPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
+  const [operatorActive, setOperatorActive] = useState<boolean | null>(null);
   const [shift, setShift] = useState<Shift | null>(null);
   const [companies, setCompanies] = useState<Option[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -67,10 +68,11 @@ export default function OperatorPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role,active")
         .eq("user_id", authData.user.id)
         .single();
 
+      setOperatorActive(profile?.active ?? null);
       if (profile?.role === "admin") return router.push("/admin");
 
       const [{ data: bData }, { data: cData }, { data: catData }, { data: subData }, { data: sData }] = await Promise.all([
@@ -395,6 +397,10 @@ export default function OperatorPage() {
         <header className="flex items-center justify-between">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-xs mb-2">● Operação ativa</div>
+            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs mb-2 ml-2 ${operatorActive === false ? "border-rose-500/40 bg-rose-500/10 text-rose-300" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"}`}>
+              <span>●</span>
+              {operatorActive === false ? "Operador inativo" : "Operador ativo"}
+            </div>
             <h1 className="text-2xl font-bold tracking-tight">Operador de Guichê</h1>
             <p className="muted">Turno e lançamentos.</p>
           </div>
