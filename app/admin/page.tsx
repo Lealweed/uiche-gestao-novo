@@ -133,6 +133,26 @@ type BoothDetailPunch = {
 };
 
 type MenuSection = "dashboard" | "operadores" | "gestao" | "financeiro" | "relatorios" | "configuracoes";
+type AlertPriority = "alta" | "media" | "baixa";
+type DashboardAlert = {
+  id: string;
+  priority: AlertPriority;
+  title: string;
+  text: string;
+  targetMenu: MenuSection;
+};
+type QueueAction = {
+  id: string;
+  priority: AlertPriority;
+  title: string;
+  detail: string;
+  targetMenu: MenuSection;
+};
+const priorityWeight: Record<AlertPriority, number> = {
+  alta: 3,
+  media: 2,
+  baixa: 1,
+};
 
 export default function AdminPage() {
   const router = useRouter();
@@ -155,6 +175,7 @@ export default function AdminPage() {
   const [boothDetailShifts, setBoothDetailShifts] = useState<BoothDetailShift[]>([]);
   const [boothDetailPunches, setBoothDetailPunches] = useState<BoothDetailPunch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const [companyName, setCompanyName] = useState("");
@@ -225,67 +246,94 @@ export default function AdminPage() {
       if (profile?.role !== "admin") return router.push("/operator");
 
       await refreshData();
-      setLoading(false);
     })();
   }, [router]);
 
   async function refreshData() {
+    setLoading(true);
+    setDashboardError(null);
     const startIso = dateFrom ? `${dateFrom}T00:00:00.000Z` : null;
     const endIso = dateTo ? `${dateTo}T23:59:59.999Z` : null;
+    try {
+      let shiftQuery = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
+      let txQuery = supabase
+        .from("transactions")
+        .select("id,status,amount,sold_at,operator_id,booth_id,profiles(full_name),booths(name,code),companies(name),transaction_categories(name),transaction_subcategories(name)")
+        .eq("status", "posted")
+        .order("sold_at", { ascending: false })
+        .limit(5000);
 
-    let shiftQuery = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
-    let txQuery = supabase
-      .from("transactions")
-      .select("id,status,amount,sold_at,operator_id,booth_id,profiles(full_name),booths(name,code),companies(name),transaction_categories(name),transaction_subcategories(name)")
-      .eq("status", "posted")
-      .order("sold_at", { ascending: false })
-      .limit(5000);
+      if (startIso) {
+        shiftQuery = shiftQuery.gte("opened_at", startIso);
+        txQuery = txQuery.gte("sold_at", startIso);
+      }
+      if (endIso) {
+        shiftQuery = shiftQuery.lte("opened_at", endIso);
+        txQuery = txQuery.lte("sold_at", endIso);
+      }
 
-    if (startIso) {
-      shiftQuery = shiftQuery.gte("opened_at", startIso);
-      txQuery = txQuery.gte("sold_at", startIso);
+      const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, cashRes, cashCloseRes, txRes, adjRes] = await Promise.all([
+        shiftQuery,
+        supabase.from("companies").select("id,name,commission_percent,active").order("name"),
+        supabase.from("clients").select("id,name,document,phone,email,address,notes,active").order("name"),
+        supabase.from("booths").select("id,code,name,active").order("name"),
+        supabase.from("transaction_categories").select("id,name,active").order("name"),
+        supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
+        supabase.from("profiles").select("user_id,full_name,cpf,address,phone,avatar_url,role,active").order("full_name"),
+        supabase.from("operator_booths").select("id,active,profiles(full_name),booths(name,code)").order("created_at", { ascending: false }).limit(200),
+        supabase.from("audit_logs").select("id,action,entity,details,created_at,profiles(full_name)").order("created_at", { ascending: false }).limit(50),
+        supabase.from("time_punches").select("id,punch_type,punched_at,note,profiles(full_name),booths(code,name)").order("punched_at", { ascending: false }).limit(200),
+        supabase.from("cash_movements").select("id,movement_type,amount,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
+        supabase.from("shift_cash_closings").select("id,expected_cash,declared_cash,difference,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
+        txQuery,
+        supabase
+          .from("adjustment_requests")
+          .select("id,transaction_id,reason,status,created_at,profiles(full_name),transactions(amount,payment_method,companies(name))")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(40),
+      ]);
+
+      const firstError = [
+        shiftRes.error,
+        companyRes.error,
+        clientRes.error,
+        boothRes.error,
+        catRes.error,
+        subRes.error,
+        profileRes.error,
+        linkRes.error,
+        auditRes.error,
+        punchRes.error,
+        cashRes.error,
+        cashCloseRes.error,
+        txRes.error,
+        adjRes.error,
+      ].find(Boolean);
+
+      if (firstError) {
+        setDashboardError(`Falha ao atualizar dashboard: ${firstError.message}`);
+      }
+
+      setRows((shiftRes.data as ShiftTotal[]) ?? []);
+      setCompanies((companyRes.data as Company[]) ?? []);
+      setClients((clientRes.data as Client[]) ?? []);
+      setBooths((boothRes.data as Booth[]) ?? []);
+      setCategories((catRes.data as Category[]) ?? []);
+      setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
+      setProfiles((profileRes.data as Profile[]) ?? []);
+      setOperatorBoothLinks(((linkRes.data ?? []) as unknown as OperatorBoothLink[]) ?? []);
+      setAuditLogs(((auditRes.data ?? []) as unknown as AuditLog[]) ?? []);
+      setTimePunchRows(((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
+      setCashMovementRows(((cashRes.data ?? []) as unknown as CashMovementRow[]) ?? []);
+      setShiftCashClosingRows(((cashCloseRes.data ?? []) as unknown as ShiftCashClosingRow[]) ?? []);
+      setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
+      setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
+    } catch (error) {
+      setDashboardError(`Falha ao atualizar dashboard: ${error instanceof Error ? error.message : "erro inesperado"}`);
+    } finally {
+      setLoading(false);
     }
-    if (endIso) {
-      shiftQuery = shiftQuery.lte("opened_at", endIso);
-      txQuery = txQuery.lte("sold_at", endIso);
-    }
-
-    const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, cashRes, cashCloseRes, txRes, adjRes] = await Promise.all([
-      shiftQuery,
-      supabase.from("companies").select("id,name,commission_percent,active").order("name"),
-      supabase.from("clients").select("id,name,document,phone,email,address,notes,active").order("name"),
-      supabase.from("booths").select("id,code,name,active").order("name"),
-      supabase.from("transaction_categories").select("id,name,active").order("name"),
-      supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
-      supabase.from("profiles").select("user_id,full_name,cpf,address,phone,avatar_url,role,active").order("full_name"),
-      supabase.from("operator_booths").select("id,active,profiles(full_name),booths(name,code)").order("created_at", { ascending: false }).limit(200),
-      supabase.from("audit_logs").select("id,action,entity,details,created_at,profiles(full_name)").order("created_at", { ascending: false }).limit(50),
-      supabase.from("time_punches").select("id,punch_type,punched_at,note,profiles(full_name),booths(code,name)").order("punched_at", { ascending: false }).limit(200),
-      supabase.from("cash_movements").select("id,movement_type,amount,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
-      supabase.from("shift_cash_closings").select("id,expected_cash,declared_cash,difference,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
-      txQuery,
-      supabase
-        .from("adjustment_requests")
-        .select("id,transaction_id,reason,status,created_at,profiles(full_name),transactions(amount,payment_method,companies(name))")
-        .eq("status", "pending")
-        .order("created_at", { ascending: false })
-        .limit(40),
-    ]);
-
-    setRows((shiftRes.data as ShiftTotal[]) ?? []);
-    setCompanies((companyRes.data as Company[]) ?? []);
-    setClients((clientRes.data as Client[]) ?? []);
-    setBooths((boothRes.data as Booth[]) ?? []);
-    setCategories((catRes.data as Category[]) ?? []);
-    setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
-    setProfiles((profileRes.data as Profile[]) ?? []);
-    setOperatorBoothLinks(((linkRes.data ?? []) as unknown as OperatorBoothLink[]) ?? []);
-    setAuditLogs(((auditRes.data ?? []) as unknown as AuditLog[]) ?? []);
-    setTimePunchRows(((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
-    setCashMovementRows(((cashRes.data ?? []) as unknown as CashMovementRow[]) ?? []);
-    setShiftCashClosingRows(((cashCloseRes.data ?? []) as unknown as ShiftCashClosingRow[]) ?? []);
-    setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
-    setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
   }
 
   async function openBoothDetail(booth: Booth) {
@@ -511,6 +559,100 @@ export default function AdminPage() {
 
     return alerts.slice(0, 12);
   }, [rows, shiftCashClosingRows]);
+
+  const totalTransactions = reportTxs.length;
+  const avgTicket = totalTransactions > 0 ? summary.totalDia / totalTransactions : 0;
+  const hasDashboardData = rows.length > 0 || reportTxs.length > 0 || cashMovementRows.length > 0 || adjustments.length > 0;
+
+  const dashboardAlerts = useMemo<DashboardAlert[]>(() => {
+    const alerts: DashboardAlert[] = [];
+
+    if (summary.pendencias > 0) {
+      alerts.push({
+        id: "receipts",
+        priority: summary.pendencias >= 5 ? "alta" : "media",
+        title: "Comprovantes pendentes",
+        text: `${summary.pendencias} pendencia(s) de cartao precisam de tratativa.`,
+        targetMenu: "gestao",
+      });
+    }
+
+    if (adminHealth.pendingAdjustments > 0) {
+      alerts.push({
+        id: "adjustments",
+        priority: "alta",
+        title: "Ajustes aguardando decisao",
+        text: `${adminHealth.pendingAdjustments} solicitacao(oes) em fila de aprovacao.`,
+        targetMenu: "financeiro",
+      });
+    }
+
+    if (summary.abertos > 0) {
+      alerts.push({
+        id: "open-shifts",
+        priority: "media",
+        title: "Turnos em andamento",
+        text: `${summary.abertos} turno(s) aberto(s) exigem monitoramento ativo.`,
+        targetMenu: "operadores",
+      });
+    }
+
+    for (const [idx, item] of operatorAlerts.entries()) {
+      alerts.push({
+        id: `operator-alert-${idx}`,
+        priority: item.level === "danger" ? "alta" : "media",
+        title: item.level === "danger" ? "Divergencia critica de caixa" : "Pendencia operacional",
+        text: item.text,
+        targetMenu: "operadores",
+      });
+    }
+
+    return alerts
+      .sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority])
+      .slice(0, 6);
+  }, [summary.pendencias, summary.abertos, adminHealth.pendingAdjustments, operatorAlerts]);
+
+  const actionQueue = useMemo<QueueAction[]>(() => {
+    const queue: QueueAction[] = [
+      {
+        id: "review-adjustments",
+        priority: adminHealth.pendingAdjustments > 0 ? "alta" : "baixa",
+        title: "Revisar ajustes",
+        detail: `${adminHealth.pendingAdjustments} item(ns) para aprovar ou rejeitar`,
+        targetMenu: "financeiro",
+      },
+      {
+        id: "check-open-shifts",
+        priority: summary.abertos > 0 ? "media" : "baixa",
+        title: "Monitorar turnos abertos",
+        detail: `${summary.abertos} turno(s) aberto(s) no momento`,
+        targetMenu: "operadores",
+      },
+      {
+        id: "resolve-receipts",
+        priority: summary.pendencias > 0 ? "alta" : "baixa",
+        title: "Resolver comprovantes pendentes",
+        detail: `${summary.pendencias} pendencia(s) de cartao`,
+        targetMenu: "gestao",
+      },
+      {
+        id: "cadastro-health",
+        priority: adminHealth.inactiveUsers + adminHealth.inactiveBooths + adminHealth.inactiveCompanies > 0 ? "media" : "baixa",
+        title: "Normalizar cadastros inativos",
+        detail: `${adminHealth.inactiveUsers + adminHealth.inactiveBooths + adminHealth.inactiveCompanies} registro(s) inativo(s)`,
+        targetMenu: "configuracoes",
+      },
+    ];
+
+    return queue.sort((a, b) => priorityWeight[b.priority] - priorityWeight[a.priority]);
+  }, [
+    adminHealth.pendingAdjustments,
+    adminHealth.inactiveUsers,
+    adminHealth.inactiveBooths,
+    adminHealth.inactiveCompanies,
+    summary.abertos,
+    summary.pendencias,
+  ]);
 
   const filteredReportTxs = useMemo(() => {
     const opTerm = reportOperatorFilter.trim().toLowerCase();
@@ -1094,72 +1236,92 @@ export default function AdminPage() {
           <h2 className="text-xl font-bold gradient-title">{moduleLabel[menu]}</h2>
         </section>
 
-        <section className={`${menu === "dashboard" ? "block" : "hidden"} glass-card p-4`}>
-          <h2 className="font-semibold mb-3">Alertas operacionais</h2>
+        <section id="dashboard" className={`${menu === "dashboard" ? "block" : "hidden"} space-y-4`}>
           {loading ? (
-            <p className="text-sm text-slate-400">Carregando alertas...</p>
-          ) : operatorAlerts.length === 0 ? (
-            <p className="text-sm text-emerald-300">Sem alertas críticos no momento.</p>
+            <DashboardStateCard title="Atualizando dashboard" text="Coletando indicadores operacionais e financeiros..." tone="loading" />
+          ) : dashboardError ? (
+            <DashboardStateCard title="Falha na leitura do dashboard" text={dashboardError} tone="error" />
+          ) : !hasDashboardData ? (
+            <DashboardStateCard title="Sem dados para o periodo" text="Aplique um intervalo maior ou aguarde novos lancamentos para exibir os KPIs." tone="empty" />
           ) : (
-            <ul className="space-y-2 text-sm">
-              {operatorAlerts.map((a, i) => (
-                <li key={i} className={`rounded-lg border p-2 ${a.level === "danger" ? "border-rose-700/60 text-rose-300" : "border-amber-700/60 text-amber-300"}`}>{a.text}</li>
-              ))}
-            </ul>
+            <>
+              <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                <KpiCard label="Receita do periodo" value={`R$ ${summary.totalDia.toFixed(2)}`} hint={`${totalTransactions} transacoes`} tone="base" />
+                <KpiCard label="Comissao estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} hint="Base nas regras por empresa" tone="base" />
+                <KpiCard label="Ticket medio" value={`R$ ${avgTicket.toFixed(2)}`} hint="Valor medio por venda" tone="base" />
+                <KpiCard label="Turnos abertos" value={String(summary.abertos)} hint={`${summary.pendencias} pendencia(s) de comprovante`} tone={summary.abertos > 0 ? "warn" : "good"} />
+              </section>
+
+              <section className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-4">
+                <div className="glass-card p-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <h2 className="font-semibold">Alertas operacionais</h2>
+                    <span className="text-xs text-slate-400">Prioridade executiva</span>
+                  </div>
+                  {dashboardAlerts.length === 0 ? (
+                    <p className="text-sm text-emerald-300">Sem alertas ativos neste momento.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {dashboardAlerts.map((alert) => (
+                        <button
+                          key={alert.id}
+                          type="button"
+                          onClick={() => setMenu(alert.targetMenu)}
+                          className={`w-full rounded-xl border px-3 py-2.5 text-left transition hover:bg-white/[0.06] ${
+                            alert.priority === "alta"
+                              ? "border-rose-600/60 bg-rose-900/20"
+                              : alert.priority === "media"
+                                ? "border-amber-600/60 bg-amber-900/15"
+                                : "border-slate-700 bg-slate-950/70"
+                          }`}
+                        >
+                          <p className="text-xs uppercase tracking-[0.14em] text-slate-400">{alert.priority}</p>
+                          <p className="text-sm font-semibold text-slate-100 mt-1">{alert.title}</p>
+                          <p className="text-xs text-slate-300 mt-1">{alert.text}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="glass-card p-4">
+                  <h2 className="font-semibold mb-3">Fila de acao</h2>
+                  <div className="space-y-2">
+                    {actionQueue.map((task) => (
+                      <button
+                        key={task.id}
+                        type="button"
+                        onClick={() => setMenu(task.targetMenu)}
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2.5 text-left transition hover:border-white/20"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-slate-100">{task.title}</p>
+                          <span className={`text-[10px] uppercase tracking-[0.12em] ${task.priority === "alta" ? "text-rose-300" : task.priority === "media" ? "text-amber-300" : "text-slate-400"}`}>
+                            {task.priority}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">{task.detail}</p>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button className="btn-primary" type="button" onClick={refreshData}>Atualizar dados</button>
+                    <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>Backup JSON</button>
+                    <button className="btn-ghost" type="button" onClick={() => booths[0] && openBoothDetail(booths[0])}>Abrir 1o guiche</button>
+                    <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <MiniStat label="Usuarios inativos" value={String(adminHealth.inactiveUsers)} />
+                <MiniStat label="Guiches inativos" value={String(adminHealth.inactiveBooths)} />
+                <MiniStat label="Empresas inativas" value={String(adminHealth.inactiveCompanies)} />
+                <MiniStat label="Ajustes pendentes" value={String(adminHealth.pendingAdjustments)} />
+              </section>
+            </>
           )}
         </section>
-
-        <section className={`${menu === "dashboard" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
-          <div className="glass-card p-4">
-            <h2 className="font-semibold mb-3">Painel administrativo</h2>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <MiniStat label="Usuários inativos" value={String(adminHealth.inactiveUsers)} />
-              <MiniStat label="Guichês inativos" value={String(adminHealth.inactiveBooths)} />
-              <MiniStat label="Empresas inativas" value={String(adminHealth.inactiveCompanies)} />
-              <MiniStat label="Ajustes pendentes" value={String(adminHealth.pendingAdjustments)} />
-            </div>
-          </div>
-
-          <div className="glass-card p-4">
-            <h2 className="font-semibold mb-3">Ações rápidas</h2>
-            <div className="flex flex-wrap gap-2">
-              <button className="btn-primary" type="button" onClick={refreshData}>Atualizar dados</button>
-              <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>Backup JSON</button>
-              <button className="btn-ghost" type="button" onClick={() => booths[0] && openBoothDetail(booths[0])}>Abrir 1º guichê</button>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className={`px-2 py-1 rounded-full border ${summary.abertos > 0 ? "border-emerald-500/40 text-emerald-300" : "border-slate-600 text-slate-400"}`}>Turnos abertos: {summary.abertos}</span>
-              <span className={`px-2 py-1 rounded-full border ${summary.pendencias > 0 ? "border-amber-500/40 text-amber-300" : "border-slate-600 text-slate-400"}`}>Pendências: {summary.pendencias}</span>
-              <span className={`px-2 py-1 rounded-full border ${adminHealth.pendingAdjustments > 0 ? "border-rose-500/40 text-rose-300" : "border-slate-600 text-slate-400"}`}>Ajustes pendentes: {adminHealth.pendingAdjustments}</span>
-            </div>
-          </div>
-        </section>
-
-        <section id="dashboard" className={`${menu === "dashboard" ? "grid" : "hidden"} sm:grid-cols-2 lg:grid-cols-4 gap-4`}>
-          <Card label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} />
-          <Card label="Comissão estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} />
-          <Card label="Turnos abertos" value={String(summary.abertos)} />
-          <Card label="Pendências" value={String(summary.pendencias)} />
-        </section>
-
-        <section className={`${menu === "dashboard" ? "grid" : "hidden"} lg:grid-cols-3 gap-4`}>
-          <div className="executive-card">
-            <p className="text-xs text-slate-400 uppercase">Performance</p>
-            <p className="text-2xl font-bold mt-1">R$ {summary.totalDia.toFixed(2)}</p>
-            <p className="text-xs text-slate-200 mt-1">Receita consolidada no período</p>
-          </div>
-          <div className="executive-card">
-            <p className="text-xs text-slate-400 uppercase">Operação</p>
-            <p className="text-2xl font-bold mt-1">{summary.abertos}</p>
-            <p className="text-xs text-emerald-300 mt-1">Turnos em andamento</p>
-          </div>
-          <div className="executive-card">
-            <p className="text-xs text-slate-400 uppercase">Controle</p>
-            <p className="text-2xl font-bold mt-1">{adminHealth.pendingAdjustments}</p>
-            <p className="text-xs text-amber-300 mt-1">Ajustes aguardando decisão</p>
-          </div>
-        </section>
-
         <section className={`${menu === "financeiro" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Comissão por empresa (período filtrado)</h2>
           <table className="w-full text-sm">
@@ -1889,11 +2051,23 @@ export default function AdminPage() {
   );
 }
 
-function Card({ label, value }: { label: string; value: string }) {
+function KpiCard({ label, value, hint, tone }: { label: string; value: string; hint: string; tone: "base" | "warn" | "good" }) {
+  const toneClass = tone === "warn" ? "border-amber-600/40" : tone === "good" ? "border-emerald-600/40" : "border-white/10";
   return (
-    <div className="glass-card p-4">
+    <div className={`glass-card p-4 ${toneClass}`}>
       <p className="text-sm text-slate-400">{label}</p>
       <p className="kpi-value">{value}</p>
+      <p className="text-xs text-slate-400 mt-2">{hint}</p>
+    </div>
+  );
+}
+
+function DashboardStateCard({ title, text, tone }: { title: string; text: string; tone: "loading" | "empty" | "error" }) {
+  const toneClass = tone === "error" ? "border-rose-700/60 bg-rose-950/30" : tone === "empty" ? "border-slate-700 bg-slate-950/70" : "border-sky-700/50 bg-sky-950/20";
+  return (
+    <div className={`glass-card p-5 ${toneClass}`}>
+      <p className="text-sm font-semibold text-slate-100">{title}</p>
+      <p className="text-sm text-slate-300 mt-1">{text}</p>
     </div>
   );
 }
@@ -1945,3 +2119,4 @@ function BarRow({ label, value, max }: { label: string; value: number; max: numb
     </div>
   );
 }
+
