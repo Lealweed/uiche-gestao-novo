@@ -3,7 +3,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
-import { HeroGeometric } from "@/components/ui/shape-landing-hero";
 
 type ShiftTotal = {
   shift_id: string;
@@ -133,7 +132,7 @@ type BoothDetailPunch = {
   profiles: { full_name: string } | { full_name: string }[] | null;
 };
 
-type MenuSection = "agenda" | "tarefas" | "financeiro" | "relatorios" | "portal" | "configuracoes";
+type MenuSection = "dashboard" | "operadores" | "gestao" | "financeiro" | "relatorios" | "configuracoes";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -192,15 +191,15 @@ export default function AdminPage() {
   const [clientSearch, setClientSearch] = useState("");
   const [clientsPage, setClientsPage] = useState(1);
   const [presentationMode, setPresentationMode] = useState(false);
-  const [menu, setMenu] = useState<MenuSection>("financeiro");
+  const [menu, setMenu] = useState<MenuSection>("dashboard");
 
   const moduleLabel: Record<MenuSection, string> = {
+    dashboard: "Dashboard",
+    operadores: "Operadores",
+    gestao: "Gestão",
     financeiro: "Financeiro",
     relatorios: "Relatórios",
-    agenda: "Operadores",
-    portal: "Clientes",
     configuracoes: "Configurações",
-    tarefas: "Gestão",
   };
 
   useEffect(() => {
@@ -1038,14 +1037,11 @@ export default function AdminPage() {
           </div>
         </header>
 
-        <section className="no-print">
-          <HeroGeometric
-            badge="CENTRAL VIAGEM • PAINEL DE GESTÃO"
-            title1="CENTRAL VIAGEM"
-            subtitle="Controle administrativo de turnos, financeiro, operadores, comprovantes e fechamento com auditoria."
-            chips={["Tempo real", "Comprovantes", "Fechamento diário"]}
-          />
-          <div className="mt-3 flex gap-2 justify-end">
+        <section className="no-print hero-premium">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">CENTRAL VIAGEM • Painel Admin</p>
+          <h2 className="text-2xl font-semibold mt-2">Visão geral operacional e financeira</h2>
+          <p className="text-sm text-slate-400 mt-2">Acompanhe turnos, operadores, caixa, ajustes e auditoria em um único painel.</p>
+          <div className="mt-4 flex gap-2 justify-end">
             <button className="btn-primary" type="button" onClick={refreshData}>Atualizar agora</button>
             <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
           </div>
@@ -1055,11 +1051,11 @@ export default function AdminPage() {
           <aside className="glass-card p-4 no-print">
             <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
             <nav className="space-y-2 text-sm max-h-[65vh] overflow-auto pr-1">
-              <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Operadores</button>
-              <button onClick={() => setMenu("tarefas")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="tarefas" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Gestão</button>
+              <button onClick={() => setMenu("dashboard")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="dashboard" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Dashboard</button>
+              <button onClick={() => setMenu("operadores")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="operadores" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Operadores</button>
+              <button onClick={() => setMenu("gestao")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="gestao" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Gestão</button>
               <button onClick={() => setMenu("financeiro")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="financeiro" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Financeiro</button>
               <button onClick={() => setMenu("relatorios")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="relatorios" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Relatórios</button>
-              <button onClick={() => setMenu("portal")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="portal" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Clientes</button>
               <button onClick={() => setMenu("configuracoes")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="configuracoes" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Configurações</button>
             </nav>
           </aside>
@@ -1071,9 +1067,11 @@ export default function AdminPage() {
           <h2 className="text-xl font-bold gradient-title">{moduleLabel[menu]}</h2>
         </section>
 
-        <section className={`${menu === "financeiro" ? "block" : "hidden"} glass-card p-4`}>
+        <section className={`${menu === "dashboard" ? "block" : "hidden"} glass-card p-4`}>
           <h2 className="font-semibold mb-3">Alertas operacionais</h2>
-          {operatorAlerts.length === 0 ? (
+          {loading ? (
+            <p className="text-sm text-slate-400">Carregando alertas...</p>
+          ) : operatorAlerts.length === 0 ? (
             <p className="text-sm text-emerald-300">Sem alertas críticos no momento.</p>
           ) : (
             <ul className="space-y-2 text-sm">
@@ -1084,7 +1082,7 @@ export default function AdminPage() {
           )}
         </section>
 
-        <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
+        <section className={`${menu === "dashboard" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4">
             <h2 className="font-semibold mb-3">Painel administrativo</h2>
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -1110,18 +1108,18 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section id="financeiro" className={`${menu === "financeiro" ? "grid" : "hidden"} sm:grid-cols-2 lg:grid-cols-4 gap-4`}>
+        <section id="dashboard" className={`${menu === "dashboard" ? "grid" : "hidden"} sm:grid-cols-2 lg:grid-cols-4 gap-4`}>
           <Card label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} />
           <Card label="Comissão estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} />
           <Card label="Turnos abertos" value={String(summary.abertos)} />
           <Card label="Pendências" value={String(summary.pendencias)} />
         </section>
 
-        <section className={`${menu === "financeiro" ? "grid" : "hidden"} lg:grid-cols-3 gap-4`}>
+        <section className={`${menu === "dashboard" ? "grid" : "hidden"} lg:grid-cols-3 gap-4`}>
           <div className="executive-card">
             <p className="text-xs text-slate-400 uppercase">Performance</p>
             <p className="text-2xl font-bold mt-1">R$ {summary.totalDia.toFixed(2)}</p>
-            <p className="text-xs text-cyan-300 mt-1">Receita consolidada no período</p>
+            <p className="text-xs text-slate-200 mt-1">Receita consolidada no período</p>
           </div>
           <div className="executive-card">
             <p className="text-xs text-slate-400 uppercase">Operação</p>
@@ -1252,7 +1250,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section id="clientes" className={`${menu === "portal" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
+        <section id="clientes" className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <form onSubmit={createClient} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Cadastro de cliente</h2>
             <input value={clientName} onChange={(e)=>setClientName(e.target.value)} required placeholder="Nome do cliente" className="field" />
@@ -1278,7 +1276,7 @@ export default function AdminPage() {
                     <td>{c.phone ?? c.email ?? "-"}</td>
                     <td>{c.document ?? "-"}</td>
                     <td>{c.active ? "Ativo" : "Inativo"}</td>
-                    <td className="space-x-2"><button className="text-cyan-300 hover:underline" onClick={() => editClient(c)}>Editar</button><button className="text-blue-300 hover:underline" onClick={() => toggleClientActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
+                    <td className="space-x-2"><button className="text-slate-200 hover:underline" onClick={() => editClient(c)}>Editar</button><button className="text-slate-300 hover:underline" onClick={() => toggleClientActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1293,7 +1291,7 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section className={`${menu === "tarefas" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
+        <section className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4">
             <h2 className="font-semibold mb-3">Organização do que falta</h2>
             <ul className="text-sm space-y-2 text-slate-300">
@@ -1400,7 +1398,7 @@ export default function AdminPage() {
         </section>
 
         {message && (
-          <section className="rounded-xl border border-blue-800/50 bg-blue-950/20 p-3 text-blue-300 text-sm">
+          <section className="rounded-xl border border-blue-800/50 bg-blue-950/20 p-3 text-slate-300 text-sm">
             {message}
           </section>
         )}
@@ -1418,7 +1416,7 @@ export default function AdminPage() {
                     <td className="py-2">{c.name}</td>
                     <td>{Number(c.commission_percent).toFixed(3)}%</td>
                     <td>{c.active ? "Ativa" : "Inativa"}</td>
-                    <td className="space-x-2"><button className="text-cyan-300 hover:underline" onClick={() => editCompany(c)}>Editar</button><button className="text-blue-300 hover:underline" onClick={() => toggleCompanyActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
+                    <td className="space-x-2"><button className="text-slate-200 hover:underline" onClick={() => editCompany(c)}>Editar</button><button className="text-slate-300 hover:underline" onClick={() => toggleCompanyActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1436,11 +1434,11 @@ export default function AdminPage() {
                 {filteredBooths.map((b) => (
                   <tr key={b.id} className="border-t border-slate-800">
                     <td className="py-2">
-                      <button className="text-cyan-300 hover:underline" onClick={() => openBoothDetail(b)}>{b.code}</button>
+                      <button className="text-slate-200 hover:underline" onClick={() => openBoothDetail(b)}>{b.code}</button>
                     </td>
                     <td>{b.name}</td>
                     <td>{b.active ? "Ativo" : "Inativo"}</td>
-                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleBoothActive(b)}>{b.active ? "Inativar" : "Ativar"}</button></td>
+                    <td><button className="text-slate-300 hover:underline" onClick={() => toggleBoothActive(b)}>{b.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1528,7 +1526,7 @@ export default function AdminPage() {
                   <tr key={c.id} className="border-t border-slate-800">
                     <td className="py-2">{c.name}</td>
                     <td>{c.active ? "Ativa" : "Inativa"}</td>
-                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleCategoryActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
+                    <td><button className="text-slate-300 hover:underline" onClick={() => toggleCategoryActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -1549,7 +1547,7 @@ export default function AdminPage() {
                       <td className="py-2">{s.name}</td>
                       <td>{cName ?? "-"}</td>
                       <td>{s.active ? "Ativa" : "Inativa"}</td>
-                      <td><button className="text-blue-300 hover:underline" onClick={() => toggleSubcategoryActive(s)}>{s.active ? "Inativar" : "Ativar"}</button></td>
+                      <td><button className="text-slate-300 hover:underline" onClick={() => toggleSubcategoryActive(s)}>{s.active ? "Inativar" : "Ativar"}</button></td>
                     </tr>
                   );
                 })}
@@ -1597,8 +1595,8 @@ export default function AdminPage() {
                     <td>{p.role}</td>
                     <td>{p.active ? "Ativo" : "Inativo"}</td>
                     <td className="space-x-2">
-                      <button className="text-cyan-300 hover:underline" onClick={() => editProfile(p)}>Editar</button>
-                      <button className="text-blue-300 hover:underline" onClick={() => toggleProfileActive(p)}>
+                      <button className="text-slate-200 hover:underline" onClick={() => editProfile(p)}>Editar</button>
+                      <button className="text-slate-300 hover:underline" onClick={() => toggleProfileActive(p)}>
                         {p.active ? "Inativar" : "Ativar"}
                       </button>
                     </td>
@@ -1624,7 +1622,7 @@ export default function AdminPage() {
                     <td className="py-2">{op ?? "-"}</td>
                     <td>{booth ? `${booth.code} - ${booth.name}` : "-"}</td>
                     <td>{l.active ? "Ativo" : "Inativo"}</td>
-                    <td><button className="text-blue-300 hover:underline" onClick={() => toggleOperatorBoothLink(l)}>{l.active ? "Inativar" : "Ativar"}</button></td>
+                    <td><button className="text-slate-300 hover:underline" onClick={() => toggleOperatorBoothLink(l)}>{l.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
                 );
               })}
@@ -1731,7 +1729,7 @@ export default function AdminPage() {
           <p className="text-xs text-slate-500 mt-2">Exibindo até 300 linhas na tela para manter performance.</p>
         </section>
 
-        <section className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+        <section className={`${menu === "operadores" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Fluxo dos operadores</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
@@ -1751,12 +1749,12 @@ export default function AdminPage() {
           </table>
         </section>
 
-        <section id="agenda" className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+        <section id="operadores" className={`${menu === "operadores" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <div className="flex items-center justify-between gap-3 mb-3">
             <h2 className="font-semibold">Operador - timeline operacional (auditoria)</h2>
             <div className="flex flex-wrap gap-2">
               {booths.slice(0, 8).map((b) => (
-                <button key={b.id} type="button" className={`px-2 py-1 rounded-lg text-xs border ${selectedBooth?.id === b.id ? "border-cyan-400 text-cyan-300" : "border-slate-700 text-slate-300"}`} onClick={() => openBoothDetail(b)}>
+                <button key={b.id} type="button" className={`px-2 py-1 rounded-lg text-xs border ${selectedBooth?.id === b.id ? "border-cyan-400 text-slate-200" : "border-slate-700 text-slate-300"}`} onClick={() => openBoothDetail(b)}>
                   {b.code}
                 </button>
               ))}
@@ -1771,7 +1769,7 @@ export default function AdminPage() {
                 const who = Array.isArray(s.profiles) ? s.profiles[0]?.full_name : s.profiles?.full_name;
                 return (
                   <li key={s.id} className="border-b border-slate-800 pb-2">
-                    <span className="text-cyan-300">{s.status === "open" ? "TURNO_ABERTO" : "TURNO_FECHADO"}</span>
+                    <span className="text-slate-200">{s.status === "open" ? "TURNO_ABERTO" : "TURNO_FECHADO"}</span>
                     <span className="text-slate-300"> — {who ?? "Usuário"} • {new Date(s.opened_at).toLocaleString("pt-BR")}</span>
                   </li>
                 );
@@ -1780,7 +1778,7 @@ export default function AdminPage() {
           )}
         </section>
 
-        <section className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
+        <section className={`${menu === "operadores" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Controle de ponto (últimos registros) {selectedBooth ? `• ${selectedBooth.code}` : ""}</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
@@ -1835,7 +1833,7 @@ export default function AdminPage() {
           )}
         </section>
 
-        <section id="tarefas" className={`${menu === "tarefas" ? "block" : "hidden"} rounded-xl border border-slate-800 bg-card p-4 overflow-auto`}>
+        <section id="gestao" className={`${menu === "gestao" ? "block" : "hidden"} rounded-xl border border-slate-800 bg-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Últimos turnos</h2>
           {loading ? <p className="text-slate-400">Carregando...</p> : (
             <table className="w-full text-sm">
@@ -1859,7 +1857,7 @@ export default function AdminPage() {
                       {r.status === "open" ? (
                         <button className="text-amber-300 hover:underline" onClick={() => forceCloseShift(r.shift_id)}>Encerrar</button>
                       ) : (
-                        <button className="text-cyan-300 hover:underline" onClick={() => reopenShift(r.shift_id)}>Reabrir</button>
+                        <button className="text-slate-200 hover:underline" onClick={() => reopenShift(r.shift_id)}>Reabrir</button>
                       )}
                     </td>
                   </tr>
@@ -1891,7 +1889,7 @@ function FinanceDonut({ pix, credit, debit, cash }: { pix: number; credit: numbe
   const pDebit = (debit / total) * 100;
   const pCash = (cash / total) * 100;
 
-  const bg = `conic-gradient(#22d3ee 0 ${pPix}%, #3b82f6 ${pPix}% ${pPix + pCredit}%, #8b5cf6 ${pPix + pCredit}% ${pPix + pCredit + pDebit}%, #10b981 ${pPix + pCredit + pDebit}% 100%)`;
+  const bg = `conic-gradient(#34d399 0 ${pPix}%, #f59e0b ${pPix}% ${pPix + pCredit}%, #f97316 ${pPix + pCredit}% ${pPix + pCredit + pDebit}%, #10b981 ${pPix + pCredit + pDebit}% 100%)`;
 
   return (
     <div className="flex items-center gap-4">
@@ -1899,9 +1897,9 @@ function FinanceDonut({ pix, credit, debit, cash }: { pix: number; credit: numbe
         <div className="w-14 h-14 rounded-full bg-slate-900 mx-auto mt-5" />
       </div>
       <div className="text-xs space-y-1">
-        <div><span className="inline-block w-2 h-2 rounded-full bg-cyan-400 mr-2" />PIX</div>
-        <div><span className="inline-block w-2 h-2 rounded-full bg-blue-500 mr-2" />Crédito</div>
-        <div><span className="inline-block w-2 h-2 rounded-full bg-violet-500 mr-2" />Débito</div>
+        <div><span className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-2" />PIX</div>
+        <div><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-2" />Crédito</div>
+        <div><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-2" />Débito</div>
         <div><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-2" />Dinheiro</div>
       </div>
     </div>
@@ -1926,7 +1924,7 @@ function BarRow({ label, value, max }: { label: string; value: number; max: numb
         <span className="text-slate-400">R$ {value.toFixed(2)}</span>
       </div>
       <div className="h-2 rounded-full bg-slate-800">
-        <div className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: `${pct}%` }} />
+        <div className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-amber-500" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
