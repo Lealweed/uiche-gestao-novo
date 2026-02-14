@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
-import { ShapeLandingHero } from "@/components/ui/shape-landing-hero";
+import { HeroGeometric } from "@/components/ui/shape-landing-hero";
 
 type ShiftTotal = {
   shift_id: string;
@@ -1039,18 +1039,16 @@ export default function AdminPage() {
         </header>
 
         <section className="no-print">
-          <ShapeLandingHero
+          <HeroGeometric
             badge="Plataforma Profissional"
-            title1="Centro de comando do guichê"
-            title2="Operação, caixa e fluxo dos operadores"
+            title1="Centro de comando"
+            title2="do guichê"
             subtitle="Gestão central de guichês, empresas, comissões, auditoria e ponto em um único painel executivo."
-            actions={
-              <>
-                <button className="btn-primary" type="button" onClick={refreshData}>Atualizar agora</button>
-                <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
-              </>
-            }
           />
+          <div className="mt-3 flex gap-2 justify-end">
+            <button className="btn-primary" type="button" onClick={refreshData}>Atualizar agora</button>
+            <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
+          </div>
         </section>
 
         <div className="grid lg:grid-cols-[240px,1fr] gap-4 items-start">

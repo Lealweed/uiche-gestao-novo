@@ -3,7 +3,7 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
-import { ShapeLandingHero } from "@/components/ui/shape-landing-hero";
+import { HeroGeometric } from "@/components/ui/shape-landing-hero";
 
 type Option = { id: string; name: string; commission_percent: number };
 type Category = { id: string; name: string };
@@ -409,18 +409,16 @@ export default function OperatorPage() {
         </header>
 
         <section>
-          <ShapeLandingHero
+          <HeroGeometric
             badge="Portal do Operador"
-            title1="PDV e caixa com fluxo guiado"
-            title2="Operação rápida e confiável no guichê"
+            title1="PDV e caixa"
+            title2="com fluxo guiado"
             subtitle="Abra turno, registre vendas, controle caixa e acompanhe seu status operacional em tempo real."
-            actions={
-              <div className="text-sm text-slate-200">
-                <div>Status do turno: <b>{shift ? "Aberto" : "Fechado"}</b></div>
-                <div>Pendências de cartão: <b>{operatorFlow.cardPending}</b></div>
-              </div>
-            }
           />
+          <div className="mt-3 text-sm text-slate-300 text-right">
+            <div>Status do turno: <b>{shift ? "Aberto" : "Fechado"}</b></div>
+            <div>Pendências de cartão: <b>{operatorFlow.cardPending}</b></div>
+          </div>
         </section>
 
         <section className="grid md:grid-cols-4 gap-3">
