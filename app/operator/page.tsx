@@ -148,9 +148,17 @@ export default function OperatorPage() {
   }
 
   async function openShift() {
-    if (!boothId) return;
+    if (!boothId) {
+      setMessage("Selecione um guichê para abrir o turno.");
+      return;
+    }
+
     const { data, error } = await supabase.rpc("open_shift", { p_booth_id: boothId, p_ip: null });
-    if (error) return setMessage(error.message);
+    if (error) {
+      setMessage(`Não foi possível abrir turno: ${error.message}`);
+      return;
+    }
+
     await logAction("OPEN_SHIFT", "shifts", (data as Shift).id, { booth_id: boothId });
     setShift(data as Shift);
     setMessage("Turno aberto com sucesso.");
@@ -438,6 +446,9 @@ export default function OperatorPage() {
                 <option key={b.booth_id} value={b.booth_id}>{b.booths?.name ?? b.booth_id}</option>
               ))}
             </select>
+            {booths.length === 0 && (
+              <p className="text-amber-300 text-sm">Seu usuário não está vinculado a nenhum guichê ativo. Peça ao admin para vincular em Configurações.</p>
+            )}
             <button onClick={openShift} className="btn-primary">Abrir turno</button>
           </section>
         ) : (
