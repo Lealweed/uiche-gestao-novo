@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 
 function HeroGeometric({
-  badge = "PROJETO GUICHÊ • PAINEL DE GESTÃO",
-  title1 = "Guichê Gestão",
+  badge = "CENTRAL VIAGEM • PAINEL DE GESTÃO",
+  title1 = "CENTRAL VIAGEM",
   title2,
   subtitle = "Controle de turnos, lançamentos por forma de pagamento, comprovantes e fechamento diário com auditoria.",
   chips = ["Tempo real", "Comprovantes", "Fechamento diário"],

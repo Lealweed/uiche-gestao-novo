@@ -402,7 +402,7 @@ export default function OperatorPage() {
               <span>●</span>
               {operatorActive === false ? "Operador inativo" : "Operador ativo"}
             </div>
-            <h1 className="text-2xl font-bold tracking-tight gradient-title">Operador de Guichê</h1>
+            <h1 className="text-2xl font-bold tracking-tight gradient-title">CENTRAL VIAGEM • Operador</h1>
             <p className="muted">Turno e lançamentos.</p>
           </div>
           <button onClick={logout} className="btn-ghost">Sair</button>
@@ -410,8 +410,8 @@ export default function OperatorPage() {
 
         <section>
           <HeroGeometric
-            badge="PORTAL DO OPERADOR • GUICHÊ"
-            title1="Guichê Operação"
+            badge="CENTRAL VIAGEM • PORTAL DO OPERADOR"
+            title1="CENTRAL VIAGEM"
             subtitle="Abra turno, registre vendas, controle caixa e acompanhe o fluxo operacional em tempo real."
             chips={["Turno", "PDV", "Caixa"]}
           />

@@ -44,7 +44,7 @@ export default function LoginPage() {
     <main className="app-shell flex items-center justify-center">
       <form onSubmit={onSubmit} className="w-full max-w-md glass-card p-6 space-y-4">
         <h1 className="text-2xl font-bold tracking-tight">Entrar</h1>
-        <p className="muted text-sm">Acesse o sistema de gestão dos guichês.</p>
+        <p className="muted text-sm">Acesse a plataforma CENTRAL VIAGEM.</p>
 
         <div>
           <label className="text-sm">E-mail</label>

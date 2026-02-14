@@ -1029,7 +1029,7 @@ export default function AdminPage() {
         <header className="flex items-center justify-between gap-4 no-print">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2"><span className="pulse-dot">●</span> Produção</div>
-            <h1 className="text-2xl font-bold tracking-tight gradient-title">Painel Admin</h1>
+            <h1 className="text-2xl font-bold tracking-tight gradient-title">CENTRAL VIAGEM • Admin</h1>
             <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
           <div className="flex items-center gap-2">
@@ -1040,8 +1040,8 @@ export default function AdminPage() {
 
         <section className="no-print">
           <HeroGeometric
-            badge="PROJETO GUICHÊ • PAINEL DE GESTÃO"
-            title1="Guichê Gestão"
+            badge="CENTRAL VIAGEM • PAINEL DE GESTÃO"
+            title1="CENTRAL VIAGEM"
             subtitle="Controle administrativo de turnos, financeiro, operadores, comprovantes e fechamento com auditoria."
             chips={["Tempo real", "Comprovantes", "Fechamento diário"]}
           />

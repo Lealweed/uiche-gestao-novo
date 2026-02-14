@@ -8,8 +8,8 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Guichê Gestão",
-  description: "Gestão de guichês e fechamento de caixa",
+  title: "CENTRAL VIAGEM",
+  description: "Gestão operacional, financeira e fechamento de caixa",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
