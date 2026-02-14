@@ -202,6 +202,15 @@ export default function AdminPage() {
     configuracoes: "Configurações",
   };
 
+  const navItems: Array<{ key: MenuSection; label: string }> = [
+    { key: "dashboard", label: "Dashboard" },
+    { key: "operadores", label: "Operadores" },
+    { key: "gestao", label: "Gestão" },
+    { key: "financeiro", label: "Financeiro" },
+    { key: "relatorios", label: "Relatórios" },
+    { key: "configuracoes", label: "Configurações" },
+  ];
+
   useEffect(() => {
     (async () => {
       const { data: authData } = await supabase.auth.getUser();
@@ -1051,16 +1060,34 @@ export default function AdminPage() {
           <aside className="glass-card p-4 no-print">
             <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
             <nav className="space-y-2 text-sm max-h-[65vh] overflow-auto pr-1">
-              <button onClick={() => setMenu("dashboard")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="dashboard" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Dashboard</button>
-              <button onClick={() => setMenu("operadores")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="operadores" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Operadores</button>
-              <button onClick={() => setMenu("gestao")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="gestao" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Gestão</button>
-              <button onClick={() => setMenu("financeiro")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="financeiro" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Financeiro</button>
-              <button onClick={() => setMenu("relatorios")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="relatorios" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Relatórios</button>
-              <button onClick={() => setMenu("configuracoes")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="configuracoes" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Configurações</button>
+              {navItems.map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => setMenu(item.key)}
+                  className={`w-full text-left px-3 py-2 rounded-lg ${menu===item.key ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}
+                >
+                  {item.label}
+                </button>
+              ))}
             </nav>
           </aside>
 
           <div className="space-y-6 module-enter">
+
+        <section className="glass-card p-3 lg:hidden no-print">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">Navegação rápida</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setMenu(item.key)}
+                className={`shrink-0 px-3 py-2 rounded-lg text-sm ${menu===item.key ? "bg-slate-700 text-white" : "bg-slate-900/60 text-slate-300 border border-white/10"}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </section>
 
         <section className="glass-card p-4">
           <p className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-1">Módulo atual</p>
