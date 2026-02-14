@@ -1752,35 +1752,47 @@ export default function AdminPage() {
         </section>
 
         <section id="agenda" className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">Operador - timeline operacional (auditoria)</h2>
-          <ul className="space-y-2 text-sm">
-            {auditLogs.map((log) => {
-              const who = Array.isArray(log.profiles) ? log.profiles[0]?.full_name : log.profiles?.full_name;
-              return (
-                <li key={log.id} className="border-b border-slate-800 pb-2">
-                  <span className="text-cyan-300">{log.action}</span>
-                  <span className="text-slate-300"> — {who ?? "Usuário"} • {new Date(log.created_at).toLocaleString("pt-BR")}</span>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h2 className="font-semibold">Operador - timeline operacional (auditoria)</h2>
+            <div className="flex flex-wrap gap-2">
+              {booths.slice(0, 8).map((b) => (
+                <button key={b.id} type="button" className={`px-2 py-1 rounded-lg text-xs border ${selectedBooth?.id === b.id ? "border-cyan-400 text-cyan-300" : "border-slate-700 text-slate-300"}`} onClick={() => openBoothDetail(b)}>
+                  {b.code}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {!selectedBooth ? (
+            <p className="text-sm text-slate-400">Selecione um guichê para visualizar a timeline e os pontos específicos.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {boothDetailShifts.map((s) => {
+                const who = Array.isArray(s.profiles) ? s.profiles[0]?.full_name : s.profiles?.full_name;
+                return (
+                  <li key={s.id} className="border-b border-slate-800 pb-2">
+                    <span className="text-cyan-300">{s.status === "open" ? "TURNO_ABERTO" : "TURNO_FECHADO"}</span>
+                    <span className="text-slate-300"> — {who ?? "Usuário"} • {new Date(s.opened_at).toLocaleString("pt-BR")}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
 
         <section className={`${menu === "agenda" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">Controle de ponto (últimos registros)</h2>
+          <h2 className="font-semibold mb-3">Controle de ponto (últimos registros) {selectedBooth ? `• ${selectedBooth.code}` : ""}</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Data/Hora</th><th>Operador</th><th>Guichê</th><th>Tipo</th><th>Obs</th></tr>
+              <tr><th className="py-2">Data/Hora</th><th>Operador</th><th>Tipo</th><th>Obs</th></tr>
             </thead>
             <tbody>
-              {timePunchRows.map((p) => {
+              {(selectedBooth ? boothDetailPunches : []).map((p) => {
                 const op = Array.isArray(p.profiles) ? p.profiles[0]?.full_name : p.profiles?.full_name;
-                const b = Array.isArray(p.booths) ? p.booths[0] : p.booths;
                 return (
                   <tr key={p.id} className="border-t border-slate-800">
                     <td className="py-2">{new Date(p.punched_at).toLocaleString("pt-BR")}</td>
                     <td>{op ?? "-"}</td>
-                    <td>{b ? `${b.code} - ${b.name}` : "-"}</td>
                     <td>{p.punch_type}</td>
                     <td>{p.note ?? ""}</td>
                   </tr>
