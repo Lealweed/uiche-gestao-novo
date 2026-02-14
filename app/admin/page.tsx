@@ -193,6 +193,15 @@ export default function AdminPage() {
   const [presentationMode, setPresentationMode] = useState(false);
   const [menu, setMenu] = useState<MenuSection>("financeiro");
 
+  const moduleLabel: Record<MenuSection, string> = {
+    financeiro: "Financeiro",
+    relatorios: "Relatórios",
+    agenda: "Operadores",
+    portal: "Clientes",
+    configuracoes: "Configurações",
+    tarefas: "Gestão",
+  };
+
   useEffect(() => {
     (async () => {
       const { data: authData } = await supabase.auth.getUser();
@@ -1046,16 +1055,21 @@ export default function AdminPage() {
           <aside className="glass-card p-4 no-print">
             <h3 className="text-sm uppercase tracking-wider text-slate-400 mb-3">Menu</h3>
             <nav className="space-y-2 text-sm max-h-[65vh] overflow-auto pr-1">
-              <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Operador</button>
-              <button onClick={() => setMenu("tarefas")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="tarefas" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Tarefas</button>
+              <button onClick={() => setMenu("agenda")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="agenda" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Operadores</button>
+              <button onClick={() => setMenu("tarefas")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="tarefas" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Gestão</button>
               <button onClick={() => setMenu("financeiro")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="financeiro" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Financeiro</button>
-              <button onClick={() => setMenu("relatorios")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="relatorios" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Relatórios com IA</button>
+              <button onClick={() => setMenu("relatorios")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="relatorios" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Relatórios</button>
               <button onClick={() => setMenu("portal")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="portal" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Clientes</button>
               <button onClick={() => setMenu("configuracoes")} className={`w-full text-left px-3 py-2 rounded-lg ${menu==="configuracoes" ? "bg-slate-700 text-white" : "hover:bg-slate-800/70"}`}>Configurações</button>
             </nav>
           </aside>
 
           <div className="space-y-6 module-enter">
+
+        <section className="glass-card p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-1">Módulo atual</p>
+          <h2 className="text-xl font-bold gradient-title">{moduleLabel[menu]}</h2>
+        </section>
 
         <section className={`${menu === "financeiro" ? "block" : "hidden"} glass-card p-4`}>
           <h2 className="font-semibold mb-3">Alertas operacionais</h2>
@@ -1776,7 +1790,7 @@ export default function AdminPage() {
           </table>
         </section>
 
-        <section className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
+        <section className={`${menu === "financeiro" ? "block" : "hidden"} rounded-xl border border-slate-800 bg-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Solicitações de ajuste</h2>
           {adjustments.length === 0 ? (
             <p className="text-slate-400 text-sm">Nenhuma solicitação pendente.</p>
