@@ -1,4 +1,4 @@
-# Central Viagens — UI Spec (ShoppingCell-like)
+# Central Viagens — UI Spec (Dark Premium)
 
 ## Paleta
 - Background: `#020617` (slate-950)
