@@ -1032,7 +1032,7 @@ export default function AdminPage() {
             <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setPresentationMode((v) => !v)} className="btn-ghost">{presentationMode ? "Modo normal" : "Modo apresentação"}</button>
+            <button onClick={() => setPresentationMode((v) => !v)} className="btn-ghost">{presentationMode ? "Visão padrão" : "Visão executiva"}</button>
             <button onClick={logout} className="btn-ghost">Sair</button>
           </div>
         </header>
@@ -1040,7 +1040,7 @@ export default function AdminPage() {
         <section className="hero-premium no-print">
           <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80 mb-2">Sistema Premium</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80 mb-2">Plataforma Profissional</p>
               <h2 className="text-2xl md:text-3xl font-extrabold gradient-title">Centro de comando do guichê</h2>
               <p className="text-slate-300/90 mt-2">Operação, caixa, auditoria e fluxo dos operadores em um único painel executivo.</p>
             </div>
