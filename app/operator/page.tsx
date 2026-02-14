@@ -353,6 +353,11 @@ export default function OperatorPage() {
     );
   }, [txs]);
 
+  const totalGeral = useMemo(
+    () => totals.pix + totals.credit + totals.debit + totals.cash,
+    [totals]
+  );
+
   const cashTotals = useMemo(() => {
     const suprimento = cashMovements.filter((m) => m.movement_type === "suprimento").reduce((a, m) => a + Number(m.amount || 0), 0);
     const sangria = cashMovements.filter((m) => m.movement_type === "sangria").reduce((a, m) => a + Number(m.amount || 0), 0);
@@ -397,7 +402,7 @@ export default function OperatorPage() {
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="flex items-center justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-xs mb-2">● Operação ativa</div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2">● Operação ativa</div>
             <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs mb-2 ml-2 ${operatorActive === false ? "border-rose-500/40 bg-rose-500/10 text-rose-300" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"}`}>
               <span>●</span>
               {operatorActive === false ? "Operador inativo" : "Operador ativo"}
@@ -421,11 +426,15 @@ export default function OperatorPage() {
           </div>
         </section>
 
-        <section className="grid md:grid-cols-4 gap-3">
+        <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <MiniCard label="PIX" value={totals.pix} />
           <MiniCard label="Crédito" value={totals.credit} />
           <MiniCard label="Débito" value={totals.debit} />
           <MiniCard label="Dinheiro" value={totals.cash} />
+          <div className="glass-card p-4 border-amber-400/40">
+            <p className="text-sm text-amber-300">Total geral</p>
+            <p className="text-lg font-semibold mt-1 text-amber-200">R$ {totalGeral.toFixed(2)}</p>
+          </div>
         </section>
 
         <section className="glass-card p-4">
@@ -500,90 +509,135 @@ export default function OperatorPage() {
           </div>
         </section>
 
-        <form onSubmit={submitTx} className="glass-card p-4 space-y-3">
-          <h2 className="font-semibold">Novo lançamento</h2>
-          <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="field" required>
-            <option value="">Selecione a empresa</option>
-            {companies.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.commission_percent}%)</option>)}
-          </select>
-          <select
-            value={categoryId}
-            onChange={(e) => {
-              const next = e.target.value;
-              setCategoryId(next);
-              const firstSub = subcategories.find((s) => s.category_id === next);
-              setSubcategoryId(firstSub?.id ?? "");
-            }}
-            className="field"
-            required
-          >
-            <option value="">Selecione a categoria</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)} className="field" required>
-            <option value="">Selecione a subcategoria</option>
-            {filteredSubcategories.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" step="0.01" min="0" placeholder="Valor" className="field" required />
-          <input value={ticketReference} onChange={(e) => setTicketReference(e.target.value)} placeholder="Referência da passagem (opcional)" className="field" />
-          <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as any)} className="field">
-            <option value="pix">PIX</option>
-            <option value="credit">Crédito</option>
-            <option value="debit">Débito</option>
-            <option value="cash">Dinheiro</option>
-          </select>
+        <form onSubmit={submitTx} className="glass-card p-4 md:p-5 space-y-4">
+          <h2 className="font-semibold text-slate-100">Novo lançamento</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="field" required>
+              <option value="">Selecione a empresa</option>
+              {companies.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.commission_percent}%)</option>)}
+            </select>
+            <select
+              value={categoryId}
+              onChange={(e) => {
+                const next = e.target.value;
+                setCategoryId(next);
+                const firstSub = subcategories.find((s) => s.category_id === next);
+                setSubcategoryId(firstSub?.id ?? "");
+              }}
+              className="field"
+              required
+            >
+              <option value="">Selecione a categoria</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <select value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)} className="field" required>
+              <option value="">Selecione a subcategoria</option>
+              {filteredSubcategories.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as any)} className="field">
+              <option value="pix">PIX</option>
+              <option value="credit">Crédito</option>
+              <option value="debit">Débito</option>
+              <option value="cash">Dinheiro</option>
+            </select>
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" step="0.01" min="0" placeholder="Valor" className="field" required />
+            <input value={ticketReference} onChange={(e) => setTicketReference(e.target.value)} placeholder="Referência da passagem (opcional)" className="field" />
+          </div>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} className="field" placeholder="Observação (opcional)" />
-          <button disabled={!shift} className="btn-primary disabled:opacity-50">Salvar lançamento</button>
-          {message && <p className="text-sm text-blue-300">{message}</p>}
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+            <button disabled={!shift} className="btn-primary disabled:opacity-50">Salvar lançamento</button>
+            {message && <p className="text-sm text-slate-300">{message}</p>}
+          </div>
         </form>
 
-        <section className="glass-card p-4 overflow-auto">
-          <h2 className="font-semibold mb-2">Lançamentos do turno</h2>
-          <table className="w-full text-sm">
-            <thead className="text-slate-400 text-left">
-              <tr>
-                <th className="py-2">Hora</th>
-                <th>Empresa</th>
-                <th>Ref</th>
-                <th>Método</th>
-                <th>Valor</th>
-                <th>Comprovante</th>
-                <th>Ajuste</th>
-              </tr>
-            </thead>
-            <tbody>
-              {txs.map((tx) => {
-                const need = tx.payment_method === "credit" || tx.payment_method === "debit";
-                const has = !!tx.transaction_receipts?.length;
-                return (
-                  <tr key={tx.id} className="border-t border-slate-800">
-                    <td className="py-2">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
-                    <td>{Array.isArray(tx.companies) ? (tx.companies[0]?.name ?? "-") : (tx.companies?.name ?? "-")}</td>
-                    <td>{tx.ticket_reference ?? "-"}</td>
-                    <td>{tx.payment_method}</td>
-                    <td>R$ {Number(tx.amount).toFixed(2)}</td>
-                    <td>
-                      {!need ? (
-                        <span className="text-slate-500">Não obrigatório</span>
-                      ) : has ? (
-                        <span className="text-green-400">OK</span>
-                      ) : (
-                        <label className="inline-flex items-center gap-2 cursor-pointer text-blue-300">
-                          <span>{uploadingTxId === tx.id ? "Enviando..." : "Anexar"}</span>
-                          <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id} onChange={(e) => handleUploadReceipt(tx.id, e)} />
-                        </label>
-                      )}
-                    </td>
-                    <td>
-                      <button onClick={() => requestAdjustment(tx.id)} className="text-amber-300 hover:underline">
-                        Solicitar
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <section className="glass-card p-4">
+          <h2 className="font-semibold mb-3">Lançamentos do turno</h2>
+
+          {txs.length === 0 ? (
+            <p className="text-sm text-slate-400">Nenhum lançamento no turno atual.</p>
+          ) : (
+            <>
+              <div className="space-y-3 md:hidden">
+                {txs.map((tx) => {
+                  const need = tx.payment_method === "credit" || tx.payment_method === "debit";
+                  const has = !!tx.transaction_receipts?.length;
+                  return (
+                    <article key={tx.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-300">{Array.isArray(tx.companies) ? (tx.companies[0]?.name ?? "-") : (tx.companies?.name ?? "-")}</span>
+                        <span className="text-amber-300 font-semibold">R$ {Number(tx.amount).toFixed(2)}</span>
+                      </div>
+                      <div className="text-xs text-slate-400">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} • {tx.payment_method.toUpperCase()}</div>
+                      <div className="text-xs text-slate-400">Ref: {tx.ticket_reference ?? "-"}</div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs">
+                          {!need ? (
+                            <span className="text-slate-500">Comprovante não obrigatório</span>
+                          ) : has ? (
+                            <span className="text-emerald-300">Comprovante OK</span>
+                          ) : (
+                            <label className="inline-flex items-center gap-2 cursor-pointer text-slate-200">
+                              <span>{uploadingTxId === tx.id ? "Enviando..." : "Anexar comprovante"}</span>
+                              <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id} onChange={(e) => handleUploadReceipt(tx.id, e)} />
+                            </label>
+                          )}
+                        </div>
+                        <button onClick={() => requestAdjustment(tx.id)} className="text-amber-300 text-xs">Solicitar ajuste</button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="hidden md:block overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-slate-400 text-left">
+                    <tr>
+                      <th className="py-2">Hora</th>
+                      <th>Empresa</th>
+                      <th>Ref</th>
+                      <th>Método</th>
+                      <th>Valor</th>
+                      <th>Comprovante</th>
+                      <th>Ajuste</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {txs.map((tx) => {
+                      const need = tx.payment_method === "credit" || tx.payment_method === "debit";
+                      const has = !!tx.transaction_receipts?.length;
+                      return (
+                        <tr key={tx.id} className="border-t border-white/10">
+                          <td className="py-2">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
+                          <td>{Array.isArray(tx.companies) ? (tx.companies[0]?.name ?? "-") : (tx.companies?.name ?? "-")}</td>
+                          <td>{tx.ticket_reference ?? "-"}</td>
+                          <td>{tx.payment_method}</td>
+                          <td className="text-amber-300">R$ {Number(tx.amount).toFixed(2)}</td>
+                          <td>
+                            {!need ? (
+                              <span className="text-slate-500">Não obrigatório</span>
+                            ) : has ? (
+                              <span className="text-emerald-300">OK</span>
+                            ) : (
+                              <label className="inline-flex items-center gap-2 cursor-pointer text-slate-200">
+                                <span>{uploadingTxId === tx.id ? "Enviando..." : "Anexar"}</span>
+                                <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id} onChange={(e) => handleUploadReceipt(tx.id, e)} />
+                              </label>
+                            )}
+                          </td>
+                          <td>
+                            <button onClick={() => requestAdjustment(tx.id)} className="text-amber-300 hover:underline">
+                              Solicitar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </section>
       </div>
     </main>
