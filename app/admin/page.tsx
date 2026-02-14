@@ -1277,43 +1277,32 @@ export default function AdminPage() {
           </div>
         </section>
 
-        <section id="clientes" className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
-          <form onSubmit={createClient} className="glass-card p-4 space-y-3">
-            <h2 className="font-semibold">Cadastro de cliente</h2>
-            <input value={clientName} onChange={(e)=>setClientName(e.target.value)} required placeholder="Nome do cliente" className="field" />
-            <input value={clientDocument} onChange={(e)=>setClientDocument(e.target.value)} placeholder="CPF/CNPJ" className="field" />
-            <input value={clientPhone} onChange={(e)=>setClientPhone(e.target.value)} placeholder="Telefone" className="field" />
-            <input value={clientEmail} onChange={(e)=>setClientEmail(e.target.value)} placeholder="E-mail" className="field" type="email" />
-            <input value={clientAddress} onChange={(e)=>setClientAddress(e.target.value)} placeholder="Endereço" className="field" />
-            <textarea value={clientNotes} onChange={(e)=>setClientNotes(e.target.value)} placeholder="Observações" className="field min-h-[80px]" />
-            <button className="btn-primary">Salvar cliente</button>
-          </form>
+        <section id="gestao-operacional" className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
+          <div className="glass-card p-4 space-y-3">
+            <h2 className="font-semibold">Backlog operacional</h2>
+            <p className="text-sm text-slate-400">Fila de pendências críticas para execução da administração.</p>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <MiniStat label="Ajustes pendentes" value={String(adjustments.filter((a) => a.status === "pending").length)} />
+              <MiniStat label="Pend. cartão" value={String(summary.pendencias)} />
+              <MiniStat label="Turnos abertos" value={String(summary.abertos)} />
+              <MiniStat label="Alertas ativos" value={String(operatorAlerts.length)} />
+            </div>
+            <ul className="space-y-2 text-sm">
+              {operatorAlerts.slice(0, 6).map((a, i) => (
+                <li key={i} className={`rounded-lg border p-2 ${a.level === "danger" ? "border-rose-700/60 text-rose-300" : "border-amber-700/60 text-amber-300"}`}>{a.text}</li>
+              ))}
+              {operatorAlerts.length === 0 && <li className="text-emerald-300">Sem pendências críticas no momento.</li>}
+            </ul>
+          </div>
 
-          <div className="glass-card p-4 overflow-auto">
-            <h2 className="font-semibold mb-3">Clientes cadastrados</h2>
-            <input value={clientSearch} onChange={(e)=>{setClientSearch(e.target.value); setClientsPage(1);}} placeholder="Buscar cliente por nome/documento/contato" className="field mb-3" />
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Nome</th><th>Contato</th><th>Documento</th><th>Status</th><th>Ação</th></tr>
-              </thead>
-              <tbody>
-                {pagedClients.map((c) => (
-                  <tr key={c.id} className="border-t border-slate-800">
-                    <td className="py-2">{c.name}</td>
-                    <td>{c.phone ?? c.email ?? "-"}</td>
-                    <td>{c.document ?? "-"}</td>
-                    <td>{c.active ? "Ativo" : "Inativo"}</td>
-                    <td className="space-x-2"><button className="text-slate-200 hover:underline" onClick={() => editClient(c)}>Editar</button><button className="text-slate-300 hover:underline" onClick={() => toggleClientActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
-              <span>Página {clientsPage} de {clientsPageCount}</span>
-              <div className="space-x-2">
-                <button type="button" className="btn-ghost" disabled={clientsPage <= 1} onClick={() => setClientsPage((p) => Math.max(1, p - 1))}>Anterior</button>
-                <button type="button" className="btn-ghost" disabled={clientsPage >= clientsPageCount} onClick={() => setClientsPage((p) => Math.min(clientsPageCount, p + 1))}>Próxima</button>
-              </div>
+          <div className="glass-card p-4 space-y-3">
+            <h2 className="font-semibold">Central de governança</h2>
+            <p className="text-sm text-slate-400">Atalhos para manutenção estrutural da operação.</p>
+            <div className="grid gap-2">
+              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("operadores")}>Ir para Operadores e Timeline</button>
+              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("financeiro")}>Ir para Financeiro e Caixa</button>
+              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("configuracoes")}>Ir para Configurações e Cadastros</button>
+              <button type="button" className="btn-primary text-left" onClick={refreshData}>Atualizar indicadores</button>
             </div>
           </div>
         </section>
@@ -1335,7 +1324,7 @@ export default function AdminPage() {
             <ul className="text-sm space-y-2">
               <li className="text-emerald-300">✅ Operador PDV (turno, lançamentos, comprovante, caixa, fechamento)</li>
               <li className="text-emerald-300">✅ Admin financeiro (comissão por empresa, fluxo de operadores, alertas)</li>
-              <li className="text-emerald-300">✅ Clientes (cadastro, listagem, ativação/inativação)</li>
+              <li className="text-emerald-300">✅ Gestão operacional (backlog, governança e execução)</li>
               <li className="text-emerald-300">✅ Auditoria e ponto</li>
               <li className="text-amber-300">⚠️ Pendências finais de polimento e UX</li>
             </ul>
@@ -1357,7 +1346,7 @@ export default function AdminPage() {
           <button className="btn-ghost" type="button" onClick={exportOperatorCsv}>CSV Operadores</button>
           <button className="btn-ghost" type="button" onClick={exportBoothCsv}>CSV Guichês</button>
           <button className="btn-ghost" type="button" onClick={exportPunchCsv}>CSV Ponto</button>
-          <button className="btn-ghost" type="button" onClick={exportClientsCsv}>CSV Clientes</button>
+          <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>JSON Operação</button>
           <button className="btn-ghost" type="button" onClick={exportCashMovementsCsv}>CSV Mov. Caixa</button>
           <button className="btn-ghost" type="button" onClick={exportCashClosingCsv}>CSV Fech. Caixa</button>
           <button className="btn-primary no-print" type="button" onClick={printReport}>Imprimir relatório</button>
