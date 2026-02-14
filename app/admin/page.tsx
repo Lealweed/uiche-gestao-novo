@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { ShapeLandingHero } from "@/components/ui/shape-landing-hero";
 
 type ShiftTotal = {
   shift_id: string;
@@ -1037,18 +1038,19 @@ export default function AdminPage() {
           </div>
         </header>
 
-        <section className="hero-premium no-print">
-          <div className="relative z-10 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-cyan-300/80 mb-2">Plataforma Profissional</p>
-              <h2 className="text-2xl md:text-3xl font-extrabold gradient-title">Centro de comando do guichê</h2>
-              <p className="text-slate-300/90 mt-2">Operação, caixa, auditoria e fluxo dos operadores em um único painel executivo.</p>
-            </div>
-            <div className="flex gap-2">
-              <button className="btn-primary" type="button" onClick={refreshData}>Atualizar agora</button>
-              <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
-            </div>
-          </div>
+        <section className="no-print">
+          <ShapeLandingHero
+            badge="Plataforma Profissional"
+            title1="Centro de comando do guichê"
+            title2="Operação, caixa e fluxo dos operadores"
+            subtitle="Gestão central de guichês, empresas, comissões, auditoria e ponto em um único painel executivo."
+            actions={
+              <>
+                <button className="btn-primary" type="button" onClick={refreshData}>Atualizar agora</button>
+                <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
+              </>
+            }
+          />
         </section>
 
         <div className="grid lg:grid-cols-[240px,1fr] gap-4 items-start">
