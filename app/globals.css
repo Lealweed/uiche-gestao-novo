@@ -192,6 +192,74 @@ body {
   .pulse-dot {
     animation: pulseSoft 1.8s infinite;
   }
+
+  .cv3-shell {
+    @apply min-h-screen bg-[#F4F7FB] text-slate-900 p-4 md:p-8;
+  }
+
+  .cv3-container {
+    @apply max-w-7xl mx-auto space-y-5;
+  }
+
+  .cv3-header {
+    @apply rounded-3xl border border-slate-200 bg-white px-6 py-6 md:px-8 md:py-7 shadow-[0_10px_30px_rgba(15,23,42,0.06)];
+  }
+
+  .cv3-eyebrow {
+    @apply text-[11px] uppercase tracking-[0.18em] text-slate-500;
+  }
+
+  .cv3-title {
+    @apply mt-1 text-3xl font-semibold tracking-tight text-slate-900;
+  }
+
+  .cv3-subtitle {
+    @apply mt-1 text-sm text-slate-600;
+  }
+
+  .cv3-layout {
+    @apply grid lg:grid-cols-[240px,1fr] gap-4;
+  }
+
+  .cv3-card {
+    @apply rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-[0_8px_24px_rgba(15,23,42,0.05)];
+  }
+
+  .cv3-nav {
+    @apply h-fit lg:sticky lg:top-4 space-y-2;
+  }
+
+  .cv3-nav-title {
+    @apply text-xs uppercase tracking-[0.16em] text-slate-500 mb-2;
+  }
+
+  .cv3-nav-item {
+    @apply block w-full text-left rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 transition;
+  }
+
+  .cv3-nav-item.active {
+    @apply bg-blue-600 text-white hover:bg-blue-600;
+  }
+
+  .cv3-kpis {
+    @apply grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3;
+  }
+
+  .cv3-label {
+    @apply text-sm text-slate-500;
+  }
+
+  .cv3-value {
+    @apply mt-1 text-2xl font-semibold text-slate-900;
+  }
+
+  .cv3-section-title {
+    @apply text-base font-semibold text-slate-900 mb-3;
+  }
+
+  .cv3-chart {
+    @apply rounded-xl border border-slate-200 bg-slate-50 p-2;
+  }
 }
 
 @keyframes fadeUp {
