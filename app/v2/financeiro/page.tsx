@@ -30,23 +30,25 @@ export default function FinanceiroV2Page() {
         <article className="cv2-card"><p className="cv2-label">Diferença</p><p className="cv2-value">R$ {totals.diff.toFixed(2)}</p></article>
       </section>
 
-      <section className="cv2-card overflow-auto">
+      <section className="cv2-card">
         <h3 className="cv2-section-title">Fechamentos</h3>
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500">
-            <tr><th className="py-2">Data</th><th>Esperado</th><th>Declarado</th><th>Diferença</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-slate-200">
-                <td className="py-2">{new Date(r.created_at).toLocaleString("pt-BR")}</td>
-                <td>R$ {Number(r.expected_cash).toFixed(2)}</td>
-                <td>R$ {Number(r.declared_cash).toFixed(2)}</td>
-                <td>{Number(r.difference).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="cv2-table-wrap">
+          <table className="cv2-table">
+            <thead>
+              <tr><th>Data</th><th>Esperado</th><th>Declarado</th><th>Diferença</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td>{new Date(r.created_at).toLocaleString("pt-BR")}</td>
+                  <td>R$ {Number(r.expected_cash).toFixed(2)}</td>
+                  <td>R$ {Number(r.declared_cash).toFixed(2)}</td>
+                  <td className={Number(r.difference) < 0 ? "text-rose-600 font-medium" : "text-emerald-700 font-medium"}>{Number(r.difference).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </AdminShell>
   );

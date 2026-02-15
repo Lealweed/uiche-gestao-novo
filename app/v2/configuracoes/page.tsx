@@ -18,22 +18,24 @@ export default function ConfiguracoesV2Page() {
 
   return (
     <AdminShell title="Configurações" subtitle="Gestão de perfis e parâmetros administrativos.">
-      <section className="cv2-card overflow-auto">
+      <section className="cv2-card">
         <h3 className="cv2-section-title">Usuários</h3>
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500">
-            <tr><th className="py-2">Nome</th><th>Perfil</th><th>Status</th></tr>
-          </thead>
-          <tbody>
-            {profiles.map((p) => (
-              <tr key={p.user_id} className="border-t border-slate-200">
-                <td className="py-2">{p.full_name}</td>
-                <td>{p.role}</td>
-                <td>{p.active ? "Ativo" : "Inativo"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="cv2-table-wrap">
+          <table className="cv2-table">
+            <thead>
+              <tr><th>Nome</th><th>Perfil</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {profiles.map((p) => (
+                <tr key={p.user_id}>
+                  <td>{p.full_name}</td>
+                  <td className="capitalize">{p.role === "admin" ? "Administrador" : "Operador"}</td>
+                  <td><span className={p.active ? "cv2-status-open" : "cv2-status-closed"}>{p.active ? "Ativo" : "Inativo"}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </AdminShell>
   );

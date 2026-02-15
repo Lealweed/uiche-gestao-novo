@@ -25,22 +25,24 @@ export default function RelatoriosV2Page() {
         <article className="cv2-card"><p className="cv2-label">Total</p><p className="cv2-value">R$ {total.toFixed(2)}</p></article>
       </section>
 
-      <section className="cv2-card overflow-auto">
+      <section className="cv2-card">
         <h3 className="cv2-section-title">Últimos lançamentos</h3>
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500">
-            <tr><th className="py-2">Data</th><th>Método</th><th>Valor</th></tr>
-          </thead>
-          <tbody>
-            {txs.map((t) => (
-              <tr key={t.id} className="border-t border-slate-200">
-                <td className="py-2">{new Date(t.sold_at).toLocaleString("pt-BR")}</td>
-                <td>{t.payment_method}</td>
-                <td>R$ {Number(t.amount).toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="cv2-table-wrap">
+          <table className="cv2-table">
+            <thead>
+              <tr><th>Data</th><th>Método</th><th>Valor</th></tr>
+            </thead>
+            <tbody>
+              {txs.map((t) => (
+                <tr key={t.id}>
+                  <td>{new Date(t.sold_at).toLocaleString("pt-BR")}</td>
+                  <td className="capitalize">{t.payment_method}</td>
+                  <td>R$ {Number(t.amount).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </AdminShell>
   );

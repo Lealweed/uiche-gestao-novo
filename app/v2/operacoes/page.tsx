@@ -28,24 +28,26 @@ export default function OperacoesV2Page() {
         <article className="cv2-card"><p className="cv2-label">Pendências</p><p className="cv2-value">{stats.pendencias}</p></article>
       </section>
 
-      <section className="cv2-card overflow-auto">
+      <section className="cv2-card">
         <h3 className="cv2-section-title">Turnos por guichê</h3>
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500">
-            <tr><th className="py-2">Guichê</th><th>Operador</th><th>Status</th><th>Total</th><th>Pendências</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.shift_id} className="border-t border-slate-200">
-                <td className="py-2">{r.booth_name}</td>
-                <td>{r.operator_name}</td>
-                <td>{r.status}</td>
-                <td>R$ {Number(r.gross_amount).toFixed(2)}</td>
-                <td>{r.missing_card_receipts}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="cv2-table-wrap">
+          <table className="cv2-table">
+            <thead>
+              <tr><th>Guichê</th><th>Operador</th><th>Status</th><th>Total</th><th>Pendências</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.shift_id}>
+                  <td>{r.booth_name}</td>
+                  <td>{r.operator_name}</td>
+                  <td><span className={r.status === "open" ? "cv2-status-open" : "cv2-status-closed"}>{r.status === "open" ? "Aberto" : "Fechado"}</span></td>
+                  <td>R$ {Number(r.gross_amount).toFixed(2)}</td>
+                  <td>{r.missing_card_receipts}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </AdminShell>
   );

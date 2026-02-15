@@ -56,14 +56,14 @@ export function AdminShell({ children, title, subtitle }: PropsWithChildren<{ ti
         </header>
 
         <div className="grid lg:grid-cols-[240px,1fr] gap-4">
-          <aside className="cv2-card h-fit">
-            <p className="text-xs uppercase tracking-[0.16em] text-slate-500 mb-3">Menu</p>
-            <nav className="space-y-2">
+          <aside className="cv2-card h-fit lg:sticky lg:top-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-slate-500 mb-3">Menu principal</p>
+            <nav className="space-y-1.5">
               {items.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`block rounded-lg px-3 py-2 text-sm ${pathname === item.href ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-100"}`}
+                  className={`block rounded-xl px-3 py-2 text-sm font-medium transition ${pathname === item.href ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"}`}
                 >
                   {item.label}
                 </Link>
