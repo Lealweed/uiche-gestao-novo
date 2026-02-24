@@ -286,7 +286,7 @@ export default function AdminPage() {
       const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, cashRes, cashCloseRes, txRes, adjRes] = await Promise.all([
         shiftQuery,
         supabase.from("companies").select("*").order("name"),
-        supabase.from("clients").select("id,name,document,phone,email,address,notes,active").order("name"),
+        supabase.from("clients").select("*").order("name"),
         supabase.from("booths").select("id,code,name,active").order("name"),
         supabase.from("transaction_categories").select("id,name,active").order("name"),
         supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
@@ -305,35 +305,19 @@ export default function AdminPage() {
           .limit(40),
       ]);
 
-      const isMissingTableError = (err: { message?: string } | null | undefined) =>
-        !!err?.message?.toLowerCase().includes("could not find the table");
+      const isSchemaToleranceError = (err: { message?: string } | null | undefined) => {
+        const msg = err?.message?.toLowerCase() ?? "";
+        return msg.includes("could not find the table") || (msg.includes("column") && msg.includes("does not exist"));
+      };
 
-      const clientTableMissing = isMissingTableError(clientRes.error);
-
-      const firstError = [
-        shiftRes.error,
-        companyRes.error,
-        clientRes.error,
-        boothRes.error,
-        catRes.error,
-        subRes.error,
-        profileRes.error,
-        linkRes.error,
-        auditRes.error,
-        punchRes.error,
-        cashRes.error,
-        cashCloseRes.error,
-        txRes.error,
-        adjRes.error,
-      ].find((err) => !!err && !isMissingTableError(err));
-
-      if (firstError) {
-        setDashboardError(`Falha ao atualizar dashboard: ${firstError.message}`);
+      const criticalError = [shiftRes.error, txRes.error].find(Boolean);
+      if (criticalError) {
+        setDashboardError(`Falha ao atualizar dashboard: ${criticalError.message}`);
       }
 
       setRows((shiftRes.data as ShiftTotal[]) ?? []);
       setCompanies((companyRes.data as Company[]) ?? []);
-      setClients(clientTableMissing ? [] : ((clientRes.data as Client[]) ?? []));
+      setClients(clientRes.error && isSchemaToleranceError(clientRes.error) ? [] : ((clientRes.data as Client[]) ?? []));
       setBooths((boothRes.data as Booth[]) ?? []);
       setCategories((catRes.data as Category[]) ?? []);
       setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);

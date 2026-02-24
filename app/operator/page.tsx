@@ -372,6 +372,16 @@ export default function OperatorPage() {
     [totals]
   );
 
+  const paymentSeries = useMemo(
+    () => [
+      { label: "PIX", value: totals.pix, color: "#0ea5e9" },
+      { label: "Crédito", value: totals.credit, color: "#6366f1" },
+      { label: "Débito", value: totals.debit, color: "#14b8a6" },
+      { label: "Dinheiro", value: totals.cash, color: "#f59e0b" },
+    ],
+    [totals]
+  );
+
   const cashTotals = useMemo(() => {
     const suprimento = cashMovements.filter((m) => m.movement_type === "suprimento").reduce((a, m) => a + Number(m.amount || 0), 0);
     const sangria = cashMovements.filter((m) => m.movement_type === "sangria").reduce((a, m) => a + Number(m.amount || 0), 0);
@@ -515,6 +525,11 @@ export default function OperatorPage() {
               <p className="text-slate-100 font-semibold">{txs.length} lançamentos + {cashMovements.length} mov. caixa</p>
               <p className="text-xs text-slate-400 mt-1">Dados prontos para conferência administrativa.</p>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-700/80 bg-slate-900/70 p-3">
+            <p className="text-sm font-medium mb-2 text-slate-100">Gráfico de vendas por método (turno)</p>
+            <PaymentMixBars data={paymentSeries} />
           </div>
 
           <div className="grid md:grid-cols-2 gap-3">
@@ -751,6 +766,28 @@ function MiniCard({ label, value }: { label: string; value: number }) {
     <div className="glass-card p-4">
       <p className="text-sm text-slate-400">{label}</p>
       <p className="text-lg font-semibold mt-1">R$ {value.toFixed(2)}</p>
+    </div>
+  );
+}
+
+function PaymentMixBars({ data }: { data: Array<{ label: string; value: number; color: string }> }) {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  return (
+    <div className="space-y-2">
+      {data.map((d) => {
+        const pct = Math.round((d.value / max) * 100);
+        return (
+          <div key={d.label}>
+            <div className="flex items-center justify-between text-xs mb-1">
+              <span className="text-slate-300">{d.label}</span>
+              <span className="text-slate-400">R$ {d.value.toFixed(2)}</span>
+            </div>
+            <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: d.color }} />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
