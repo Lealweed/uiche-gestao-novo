@@ -305,12 +305,15 @@ export default function AdminPage() {
           .limit(40),
       ]);
 
-      const clientTableMissing = !!clientRes.error?.message?.toLowerCase().includes("could not find the table 'public.clients'");
+      const isMissingTableError = (err: { message?: string } | null | undefined) =>
+        !!err?.message?.toLowerCase().includes("could not find the table");
+
+      const clientTableMissing = isMissingTableError(clientRes.error);
 
       const firstError = [
         shiftRes.error,
         companyRes.error,
-        clientTableMissing ? null : clientRes.error,
+        clientRes.error,
         boothRes.error,
         catRes.error,
         subRes.error,
@@ -322,7 +325,7 @@ export default function AdminPage() {
         cashCloseRes.error,
         txRes.error,
         adjRes.error,
-      ].find(Boolean);
+      ].find((err) => !!err && !isMissingTableError(err));
 
       if (firstError) {
         setDashboardError(`Falha ao atualizar dashboard: ${firstError.message}`);
