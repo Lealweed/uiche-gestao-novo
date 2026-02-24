@@ -35,6 +35,14 @@ type CashMovement = {
   created_at: string;
 };
 
+type OperatorEvent = {
+  id: string;
+  type: "lancamento" | "ponto" | "caixa";
+  at: string;
+  title: string;
+  detail: string;
+};
+
 export default function OperatorPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -60,6 +68,8 @@ export default function OperatorPage() {
   const [cashAmount, setCashAmount] = useState("");
   const [cashNote, setCashNote] = useState("");
   const [uploadingTxId, setUploadingTxId] = useState<string | null>(null);
+  const [checkAbertura, setCheckAbertura] = useState({ caixaInicial: false, conferenciaSistema: false, materiais: false });
+  const [checkFechamento, setCheckFechamento] = useState({ comprovantes: false, sangriaConferencia: false, observacoes: false });
 
   useEffect(() => {
     (async () => {
@@ -377,6 +387,39 @@ export default function OperatorPage() {
     return { cardPending, totalTx, lastTxAt };
   }, [txs]);
 
+  const turnoMeta = 3000;
+  const progressoMeta = Math.min(100, (totalGeral / turnoMeta) * 100);
+
+  const timeline = useMemo<OperatorEvent[]>(() => {
+    const evTx = txs.slice(0, 20).map((tx) => ({
+      id: `tx-${tx.id}`,
+      type: "lancamento" as const,
+      at: tx.sold_at,
+      title: `Lançamento ${tx.payment_method.toUpperCase()}`,
+      detail: `R$ ${Number(tx.amount).toFixed(2)} • ${tx.ticket_reference ?? "sem referência"}`,
+    }));
+
+    const evPunch = punches.slice(0, 20).map((p) => ({
+      id: `p-${p.id}`,
+      type: "ponto" as const,
+      at: p.punched_at,
+      title: `Ponto: ${p.note ?? p.punch_type}`,
+      detail: `Registro de ponto do operador`,
+    }));
+
+    const evCash = cashMovements.slice(0, 20).map((m) => ({
+      id: `c-${m.id}`,
+      type: "caixa" as const,
+      at: m.created_at,
+      title: `Caixa: ${m.movement_type}`,
+      detail: `R$ ${Number(m.amount).toFixed(2)}${m.note ? ` • ${m.note}` : ""}`,
+    }));
+
+    return [...evTx, ...evPunch, ...evCash]
+      .sort((a, b) => +new Date(b.at) - +new Date(a.at))
+      .slice(0, 12);
+  }, [txs, punches, cashMovements]);
+
   async function requestAdjustment(txId: string) {
     const reason = window.prompt("Descreva o motivo do ajuste:");
     if (!reason || !userId) return;
@@ -444,6 +487,61 @@ export default function OperatorPage() {
             <div className="rounded-lg border border-slate-800 p-2">Lançamentos: <b>{operatorFlow.totalTx}</b></div>
             <div className="rounded-lg border border-slate-800 p-2">Pend. cartão: <b>{operatorFlow.cardPending}</b></div>
             <div className="rounded-lg border border-slate-800 p-2">Último lançamento: <b>{operatorFlow.lastTxAt ? new Date(operatorFlow.lastTxAt).toLocaleTimeString("pt-BR") : "-"}</b></div>
+          </div>
+        </section>
+
+        <section className="glass-card p-4 space-y-4">
+          <h2 className="font-semibold">Cockpit do turno</h2>
+          <div className="grid md:grid-cols-3 gap-3 text-sm">
+            <div className="rounded-lg border border-slate-800 p-3">
+              <p className="text-slate-400">Meta do turno</p>
+              <p className="text-slate-100 font-semibold">R$ {turnoMeta.toFixed(2)}</p>
+              <div className="h-2 rounded-full bg-slate-800 mt-2">
+                <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${progressoMeta}%` }} />
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Realizado: R$ {totalGeral.toFixed(2)} ({progressoMeta.toFixed(0)}%)</p>
+            </div>
+            <div className="rounded-lg border border-amber-500/40 p-3">
+              <p className="text-slate-400">Pendências críticas</p>
+              <p className="text-amber-300 font-semibold">{operatorFlow.cardPending} comprovante(s) de cartão</p>
+              <p className="text-xs text-slate-400 mt-1">Resolva antes de encerrar o turno.</p>
+            </div>
+            <div className="rounded-lg border border-cyan-500/30 p-3">
+              <p className="text-slate-400">Pacote para ADM</p>
+              <p className="text-slate-100 font-semibold">{txs.length} lançamentos + {cashMovements.length} mov. caixa</p>
+              <p className="text-xs text-slate-400 mt-1">Dados prontos para conferência administrativa.</p>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-800 p-3">
+              <p className="text-sm font-medium mb-2">Checklist de abertura</p>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkAbertura.caixaInicial} onChange={(e) => setCheckAbertura((v) => ({ ...v, caixaInicial: e.target.checked }))} /> Caixa inicial conferido</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkAbertura.conferenciaSistema} onChange={(e) => setCheckAbertura((v) => ({ ...v, conferenciaSistema: e.target.checked }))} /> Sistema e internet ok</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkAbertura.materiais} onChange={(e) => setCheckAbertura((v) => ({ ...v, materiais: e.target.checked }))} /> Materiais de atendimento prontos</label>
+            </div>
+            <div className="rounded-lg border border-slate-800 p-3">
+              <p className="text-sm font-medium mb-2">Checklist de fechamento</p>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.comprovantes} onChange={(e) => setCheckFechamento((v) => ({ ...v, comprovantes: e.target.checked }))} /> Comprovantes anexados</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.sangriaConferencia} onChange={(e) => setCheckFechamento((v) => ({ ...v, sangriaConferencia: e.target.checked }))} /> Sangria e caixa conferidos</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.observacoes} onChange={(e) => setCheckFechamento((v) => ({ ...v, observacoes: e.target.checked }))} /> Observações para ADM registradas</label>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium mb-2">Timeline operacional (tempo real)</p>
+            <ul className="space-y-1 text-sm max-h-56 overflow-auto pr-1">
+              {timeline.map((ev) => (
+                <li key={ev.id} className="flex justify-between border-b border-slate-800 pb-1 gap-3">
+                  <div>
+                    <p className="text-slate-200">{ev.title}</p>
+                    <p className="text-xs text-slate-400">{ev.detail}</p>
+                  </div>
+                  <span className="text-xs text-slate-400 whitespace-nowrap">{new Date(ev.at).toLocaleTimeString("pt-BR")}</span>
+                </li>
+              ))}
+              {timeline.length === 0 && <li className="text-slate-500 text-sm">Sem eventos no turno.</li>}
+            </ul>
           </div>
         </section>
 
