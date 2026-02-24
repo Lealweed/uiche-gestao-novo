@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { HeroGeometric } from "@/components/ui/shape-landing-hero";
 
-type Option = { id: string; name: string; commission_percent: number };
+type Option = { id: string; name: string; commission_percent?: number | null; comission_percent?: number | null };
 type Category = { id: string; name: string };
 type Subcategory = { id: string; name: string; category_id: string };
 type Shift = { id: string; booth_id: string; status: "open" | "closed" };
@@ -42,6 +42,10 @@ type OperatorEvent = {
   title: string;
   detail: string;
 };
+
+function getCompanyPct(company: Option) {
+  return Number(company.commission_percent ?? company.comission_percent ?? 0);
+}
 
 export default function OperatorPage() {
   const router = useRouter();
@@ -88,7 +92,7 @@ export default function OperatorPage() {
 
       const [{ data: bData }, { data: cData }, { data: catData }, { data: subData }, { data: sData }] = await Promise.all([
         supabase.from("operator_booths").select("booth_id, booths(name)").eq("operator_id", authData.user.id).eq("active", true),
-        supabase.from("companies").select("id, name, commission_percent").eq("active", true).order("name"),
+        supabase.from("companies").select("*").eq("active", true).order("name"),
         supabase.from("transaction_categories").select("id, name").eq("active", true).order("name"),
         supabase.from("transaction_subcategories").select("id, name, category_id").eq("active", true).order("name"),
         supabase.from("shifts").select("id, booth_id, status").eq("operator_id", authData.user.id).eq("status", "open").maybeSingle(),
@@ -612,7 +616,7 @@ export default function OperatorPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="field" required>
               <option value="">Selecione a empresa</option>
-              {companies.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.commission_percent}%)</option>)}
+              {companies.map((c) => <option key={c.id} value={c.id}>{c.name} ({getCompanyPct(c)}%)</option>)}
             </select>
             <select
               value={categoryId}

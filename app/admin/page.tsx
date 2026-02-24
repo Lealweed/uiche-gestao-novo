@@ -18,7 +18,13 @@ type ShiftTotal = {
   missing_card_receipts: number;
 };
 
-type Company = { id: string; name: string; commission_percent: number; active: boolean };
+type Company = {
+  id: string;
+  name: string;
+  commission_percent?: number | null;
+  comission_percent?: number | null;
+  active: boolean;
+};
 type Client = { id: string; name: string; document: string | null; phone: string | null; email: string | null; address: string | null; notes: string | null; active: boolean };
 type Booth = { id: string; code: string; name: string; active: boolean };
 type Category = { id: string; name: string; active: boolean };
@@ -155,6 +161,10 @@ const priorityWeight: Record<AlertPriority, number> = {
   baixa: 1,
 };
 
+function getCompanyPct(company: Company) {
+  return Number(company.commission_percent ?? company.comission_percent ?? 0);
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [rows, setRows] = useState<ShiftTotal[]>([]);
@@ -275,7 +285,7 @@ export default function AdminPage() {
 
       const [shiftRes, companyRes, clientRes, boothRes, catRes, subRes, profileRes, linkRes, auditRes, punchRes, cashRes, cashCloseRes, txRes, adjRes] = await Promise.all([
         shiftQuery,
-        supabase.from("companies").select("id,name,commission_percent,active").order("name"),
+        supabase.from("companies").select("*").order("name"),
         supabase.from("clients").select("id,name,document,phone,email,address,notes,active").order("name"),
         supabase.from("booths").select("id,code,name,active").order("name"),
         supabase.from("transaction_categories").select("id,name,active").order("name"),
@@ -478,7 +488,7 @@ export default function AdminPage() {
     const map = new Map<string, { company: string; gross: number; commission: number; pct: number }>();
 
     for (const c of companies) {
-      map.set(c.name, { company: c.name, gross: 0, commission: 0, pct: Number(c.commission_percent || 0) });
+      map.set(c.name, { company: c.name, gross: 0, commission: 0, pct: getCompanyPct(c) });
     }
 
     for (const tx of reportTxs) {
@@ -854,11 +864,20 @@ export default function AdminPage() {
     e.preventDefault();
     setMessage(null);
 
-    const { error } = await supabase.from("companies").insert({
+    let { error } = await supabase.from("companies").insert({
       name: companyName.trim(),
       commission_percent: Number(companyPct),
       active: true,
     });
+
+    if (error && error.message?.toLowerCase().includes("commission_percent")) {
+      const retry = await supabase.from("companies").insert({
+        name: companyName.trim(),
+        comission_percent: Number(companyPct),
+        active: true,
+      } as any);
+      error = retry.error;
+    }
 
     if (error) return setMessage(`Erro ao cadastrar empresa: ${error.message}`);
     setCompanyName("");
@@ -922,12 +941,16 @@ export default function AdminPage() {
   async function editCompany(company: Company) {
     const name = window.prompt("Nome da empresa:", company.name);
     if (!name) return;
-    const pctRaw = window.prompt("Comissão %:", String(company.commission_percent));
+    const pctRaw = window.prompt("Comissão %:", String(getCompanyPct(company)));
     if (!pctRaw) return;
     const pct = Number(pctRaw.replace(",", "."));
     if (Number.isNaN(pct)) return setMessage("Comissão inválida.");
 
-    const { error } = await supabase.from("companies").update({ name: name.trim(), commission_percent: pct }).eq("id", company.id);
+    let { error } = await supabase.from("companies").update({ name: name.trim(), commission_percent: pct }).eq("id", company.id);
+    if (error && error.message?.toLowerCase().includes("commission_percent")) {
+      const retry = await supabase.from("companies").update({ name: name.trim(), comission_percent: pct } as any).eq("id", company.id);
+      error = retry.error;
+    }
     if (error) return setMessage(`Erro ao editar empresa: ${error.message}`);
     await logAction("EDIT_COMPANY", "companies", company.id, { name: name.trim(), pct });
     await refreshData();
@@ -1649,7 +1672,7 @@ export default function AdminPage() {
                 {companies.map((c) => (
                   <tr key={c.id} className="border-t border-slate-800">
                     <td className="py-2">{c.name}</td>
-                    <td>{Number(c.commission_percent).toFixed(3)}%</td>
+                    <td>{getCompanyPct(c).toFixed(3)}%</td>
                     <td>{c.active ? "Ativa" : "Inativa"}</td>
                     <td className="space-x-2"><button className="text-slate-200 hover:underline" onClick={() => editCompany(c)}>Editar</button><button className="text-slate-300 hover:underline" onClick={() => toggleCompanyActive(c)}>{c.active ? "Inativar" : "Ativar"}</button></td>
                   </tr>
