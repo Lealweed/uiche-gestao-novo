@@ -490,10 +490,10 @@ export default function OperatorPage() {
           </div>
         </section>
 
-        <section className="glass-card p-4 space-y-4">
-          <h2 className="font-semibold">Cockpit do turno</h2>
+        <section className="glass-card p-5 space-y-4 border border-cyan-500/20 bg-gradient-to-br from-slate-950/80 via-slate-900/80 to-slate-950/80">
+          <h2 className="font-semibold text-slate-100">Cockpit do turno</h2>
           <div className="grid md:grid-cols-3 gap-3 text-sm">
-            <div className="rounded-lg border border-slate-800 p-3">
+            <div className="rounded-xl border border-slate-700/80 bg-slate-900/70 p-3 shadow-[0_0_0_1px_rgba(148,163,184,0.08)]">
               <p className="text-slate-400">Meta do turno</p>
               <p className="text-slate-100 font-semibold">R$ {turnoMeta.toFixed(2)}</p>
               <div className="h-2 rounded-full bg-slate-800 mt-2">
@@ -501,12 +501,12 @@ export default function OperatorPage() {
               </div>
               <p className="text-xs text-slate-400 mt-1">Realizado: R$ {totalGeral.toFixed(2)} ({progressoMeta.toFixed(0)}%)</p>
             </div>
-            <div className="rounded-lg border border-amber-500/40 p-3">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]">
               <p className="text-slate-400">Pendências críticas</p>
               <p className="text-amber-300 font-semibold">{operatorFlow.cardPending} comprovante(s) de cartão</p>
               <p className="text-xs text-slate-400 mt-1">Resolva antes de encerrar o turno.</p>
             </div>
-            <div className="rounded-lg border border-cyan-500/30 p-3">
+            <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 shadow-[0_0_0_1px_rgba(34,211,238,0.12)]">
               <p className="text-slate-400">Pacote para ADM</p>
               <p className="text-slate-100 font-semibold">{txs.length} lançamentos + {cashMovements.length} mov. caixa</p>
               <p className="text-xs text-slate-400 mt-1">Dados prontos para conferência administrativa.</p>
@@ -514,14 +514,14 @@ export default function OperatorPage() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-3">
-            <div className="rounded-lg border border-slate-800 p-3">
-              <p className="text-sm font-medium mb-2">Checklist de abertura</p>
+            <div className="rounded-xl border border-slate-700/80 bg-slate-900/70 p-3">
+              <p className="text-sm font-medium mb-2 text-slate-100">Checklist de abertura</p>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkAbertura.caixaInicial} onChange={(e) => setCheckAbertura((v) => ({ ...v, caixaInicial: e.target.checked }))} /> Caixa inicial conferido</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkAbertura.conferenciaSistema} onChange={(e) => setCheckAbertura((v) => ({ ...v, conferenciaSistema: e.target.checked }))} /> Sistema e internet ok</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkAbertura.materiais} onChange={(e) => setCheckAbertura((v) => ({ ...v, materiais: e.target.checked }))} /> Materiais de atendimento prontos</label>
             </div>
-            <div className="rounded-lg border border-slate-800 p-3">
-              <p className="text-sm font-medium mb-2">Checklist de fechamento</p>
+            <div className="rounded-xl border border-slate-700/80 bg-slate-900/70 p-3">
+              <p className="text-sm font-medium mb-2 text-slate-100">Checklist de fechamento</p>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.comprovantes} onChange={(e) => setCheckFechamento((v) => ({ ...v, comprovantes: e.target.checked }))} /> Comprovantes anexados</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.sangriaConferencia} onChange={(e) => setCheckFechamento((v) => ({ ...v, sangriaConferencia: e.target.checked }))} /> Sangria e caixa conferidos</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.observacoes} onChange={(e) => setCheckFechamento((v) => ({ ...v, observacoes: e.target.checked }))} /> Observações para ADM registradas</label>

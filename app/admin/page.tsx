@@ -1110,13 +1110,21 @@ export default function AdminPage() {
     e.preventDefault();
     setMessage(null);
 
+    const userId = newProfileUserId.trim();
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    if (!uuidRegex.test(userId)) {
+      setMessage("ID do usuário inválido. Informe um UUID válido (auth.users.id).");
+      return;
+    }
+
     if (newProfileCpf && newProfileCpf.replace(/\D/g, "").length !== 11) {
       setMessage("CPF inválido. Informe 11 dígitos.");
       return;
     }
 
     const { error } = await supabase.from("profiles").upsert({
-      user_id: newProfileUserId.trim(),
+      user_id: userId,
       full_name: newProfileName.trim(),
       cpf: newProfileCpf.trim() || null,
       address: newProfileAddress.trim() || null,
@@ -1126,14 +1134,21 @@ export default function AdminPage() {
       active: newProfileActive,
     });
 
-    if (error) return setMessage(`Erro ao salvar usuário: ${error.message}`);
-    await logAction("UPSERT_PROFILE", "profiles", newProfileUserId.trim(), {
+    if (error) {
+      const msg = (error.message || "").toLowerCase();
+      if (msg.includes("foreign key") || msg.includes("violates") || msg.includes("auth.users")) {
+        return setMessage("Erro ao salvar usuário: este ID ainda não existe no Auth. Crie/convide o usuário no login primeiro e depois vincule o perfil.");
+      }
+      return setMessage(`Erro ao salvar usuário: ${error.message}`);
+    }
+
+    await logAction("UPSERT_PROFILE", "profiles", userId, {
       role: newProfileRole,
       active: newProfileActive,
       cpf: newProfileCpf,
       phone: newProfilePhone,
     });
-    setMessage("Usuário salvo com sucesso (perfil).\nObs: login/auth deve existir no Supabase Auth.");
+    setMessage("Perfil salvo com sucesso. Usuário já está vinculado ao portal de operador.");
     setNewProfileUserId("");
     setNewProfileName("");
     setNewProfileCpf("");
