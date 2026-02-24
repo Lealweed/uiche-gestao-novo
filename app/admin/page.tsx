@@ -47,6 +47,9 @@ type TxForReport = {
   payment_method?: "pix" | "credit" | "debit" | "cash" | string;
   operator_id?: string;
   booth_id?: string;
+  company_id?: string;
+  category_id?: string;
+  subcategory_id?: string;
   profiles?: { full_name: string } | { full_name: string }[] | null;
   booths?: { name: string; code: string } | { name: string; code: string }[] | null;
   companies?: { name: string } | { name: string }[] | null;
@@ -269,7 +272,7 @@ export default function AdminPage() {
       let shiftQuery = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
       let txQuery = supabase
         .from("transactions")
-        .select("id,status,amount,sold_at,payment_method,operator_id,booth_id,profiles(full_name),booths(name,code),companies(name),transaction_categories(name),transaction_subcategories(name)")
+        .select("id,status,amount,sold_at,payment_method,operator_id,booth_id,company_id,category_id,subcategory_id")
         .eq("status", "posted")
         .order("sold_at", { ascending: false })
         .limit(5000);
@@ -327,7 +330,24 @@ export default function AdminPage() {
       setTimePunchRows(((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
       setCashMovementRows(((cashRes.data ?? []) as unknown as CashMovementRow[]) ?? []);
       setShiftCashClosingRows(((cashCloseRes.data ?? []) as unknown as ShiftCashClosingRow[]) ?? []);
-      setReportTxs(((txRes.data ?? []) as unknown as TxForReport[]) ?? []);
+
+      const rawTxs = ((txRes.data ?? []) as unknown as TxForReport[]) ?? [];
+      const profileMap = new Map(((profileRes.data as Profile[]) ?? []).map((p) => [p.user_id, p.full_name]));
+      const boothMap = new Map(((boothRes.data as Booth[]) ?? []).map((b) => [b.id, { name: b.name, code: b.code }]));
+      const companyMap = new Map(((companyRes.data as Company[]) ?? []).map((c) => [c.id, c.name]));
+      const categoryMap = new Map(((catRes.data as Category[]) ?? []).map((c) => [c.id, c.name]));
+      const subcategoryMap = new Map((((subRes.data ?? []) as unknown as Subcategory[]) ?? []).map((s) => [s.id, s.name]));
+
+      const hydratedTxs = rawTxs.map((tx) => ({
+        ...tx,
+        profiles: tx.operator_id ? { full_name: profileMap.get(tx.operator_id) ?? "Sem operador" } : null,
+        booths: tx.booth_id ? boothMap.get(tx.booth_id) ?? null : null,
+        companies: tx.company_id ? { name: companyMap.get(tx.company_id) ?? "Sem empresa" } : null,
+        transaction_categories: tx.category_id ? { name: categoryMap.get(tx.category_id) ?? "Sem categoria" } : null,
+        transaction_subcategories: tx.subcategory_id ? { name: subcategoryMap.get(tx.subcategory_id) ?? "Sem subcategoria" } : null,
+      }));
+
+      setReportTxs((hydratedTxs as unknown as TxForReport[]) ?? []);
       setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
     } catch (error) {
       setDashboardError(`Falha ao atualizar dashboard: ${error instanceof Error ? error.message : "erro inesperado"}`);
