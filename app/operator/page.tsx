@@ -388,21 +388,21 @@ export default function OperatorPage() {
   }, [txs]);
 
   const turnoMeta = 3000;
-  const progressoMeta = Math.min(100, (totalGeral / turnoMeta) * 100);
+  const progressoMeta = Number.isFinite(totalGeral) ? Math.min(100, (totalGeral / turnoMeta) * 100) : 0;
 
   const timeline = useMemo<OperatorEvent[]>(() => {
     const evTx = txs.slice(0, 20).map((tx) => ({
       id: `tx-${tx.id}`,
       type: "lancamento" as const,
-      at: tx.sold_at,
-      title: `Lançamento ${tx.payment_method.toUpperCase()}`,
-      detail: `R$ ${Number(tx.amount).toFixed(2)} • ${tx.ticket_reference ?? "sem referência"}`,
+      at: tx.sold_at ?? new Date().toISOString(),
+      title: `Lançamento ${(tx.payment_method ?? "-").toUpperCase()}`,
+      detail: `R$ ${Number(tx.amount || 0).toFixed(2)} • ${tx.ticket_reference ?? "sem referência"}`,
     }));
 
     const evPunch = punches.slice(0, 20).map((p) => ({
       id: `p-${p.id}`,
       type: "ponto" as const,
-      at: p.punched_at,
+      at: p.punched_at ?? new Date().toISOString(),
       title: `Ponto: ${p.note ?? p.punch_type}`,
       detail: `Registro de ponto do operador`,
     }));
@@ -410,9 +410,9 @@ export default function OperatorPage() {
     const evCash = cashMovements.slice(0, 20).map((m) => ({
       id: `c-${m.id}`,
       type: "caixa" as const,
-      at: m.created_at,
+      at: m.created_at ?? new Date().toISOString(),
       title: `Caixa: ${m.movement_type}`,
-      detail: `R$ ${Number(m.amount).toFixed(2)}${m.note ? ` • ${m.note}` : ""}`,
+      detail: `R$ ${Number(m.amount || 0).toFixed(2)}${m.note ? ` • ${m.note}` : ""}`,
     }));
 
     return [...evTx, ...evPunch, ...evCash]
