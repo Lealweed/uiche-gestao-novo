@@ -305,10 +305,12 @@ export default function AdminPage() {
           .limit(40),
       ]);
 
+      const clientTableMissing = !!clientRes.error?.message?.toLowerCase().includes("could not find the table 'public.clients'");
+
       const firstError = [
         shiftRes.error,
         companyRes.error,
-        clientRes.error,
+        clientTableMissing ? null : clientRes.error,
         boothRes.error,
         catRes.error,
         subRes.error,
@@ -328,7 +330,7 @@ export default function AdminPage() {
 
       setRows((shiftRes.data as ShiftTotal[]) ?? []);
       setCompanies((companyRes.data as Company[]) ?? []);
-      setClients((clientRes.data as Client[]) ?? []);
+      setClients(clientTableMissing ? [] : ((clientRes.data as Client[]) ?? []));
       setBooths((boothRes.data as Booth[]) ?? []);
       setCategories((catRes.data as Category[]) ?? []);
       setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
