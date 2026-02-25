@@ -1689,25 +1689,19 @@ export default function AdminPage() {
 
         <section className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4">
-            <h2 className="font-semibold mb-3">Organização do que falta</h2>
-            <ul className="text-sm space-y-2 text-slate-300">
-              <li>• Cadastro e edição guiada de operador (form completo sem prompt)</li>
-              <li>• Regras de permissão por ação crítica (estorno/reabertura com motivo obrigatório)</li>
-              <li>• Dashboard executivo final com metas por dia e comparação diária</li>
-              <li>• Impressão dedicada de fechamento de caixa por turno</li>
-              <li>• Validação adicional de telefone e CPF/CNPJ com máscara</li>
-            </ul>
+            <h2 className="font-semibold mb-3">Gest?o operacional</h2>
+            <p className="text-sm text-slate-300">
+              Painel focado em opera??o di?ria. Use os m?dulos de Operadores, Financeiro e Configura??es para gest?o completa.
+            </p>
           </div>
 
           <div className="glass-card p-4">
-            <h2 className="font-semibold mb-3">Status atual dos módulos</h2>
-            <ul className="text-sm space-y-2">
-              <li className="text-emerald-300">✅ Operador PDV (turno, lançamentos, comprovante, caixa, fechamento)</li>
-              <li className="text-emerald-300">✅ Admin financeiro (comissão por empresa, fluxo de operadores, alertas)</li>
-              <li className="text-emerald-300">✅ Gestão operacional (backlog, governança e execução)</li>
-              <li className="text-emerald-300">✅ Auditoria e ponto</li>
-              <li className="text-amber-300">⚠️ Pendências finais de polimento e UX</li>
-            </ul>
+            <h2 className="font-semibold mb-3">A??es r?pidas</h2>
+            <div className="grid gap-2 text-sm">
+              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("operadores")}>Ir para Operadores</button>
+              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("financeiro")}>Ir para Financeiro</button>
+              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("configuracoes")}>Ir para Configura??es</button>
+            </div>
           </div>
         </section>
 
