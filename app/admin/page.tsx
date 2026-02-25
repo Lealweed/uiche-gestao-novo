@@ -35,6 +35,7 @@ type Adjustment = {
   reason: string;
   status: "pending" | "approved" | "rejected";
   created_at: string;
+  requested_by?: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
   transactions: { amount: number; payment_method: string; companies: { name: string } | { name: string }[] | null } | null;
 };
@@ -70,6 +71,8 @@ type Profile = {
 type OperatorBoothLink = {
   id: string;
   active: boolean;
+  operator_id?: string;
+  booth_id?: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
   booths: { name: string; code: string } | { name: string; code: string }[] | null;
 };
@@ -80,6 +83,7 @@ type AuditLog = {
   entity: string | null;
   details: Record<string, unknown>;
   created_at: string;
+  created_by?: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
 };
 
@@ -88,6 +92,8 @@ type TimePunchRow = {
   punch_type: "entrada" | "saida" | "pausa_inicio" | "pausa_fim";
   punched_at: string;
   note: string | null;
+  user_id?: string;
+  booth_id?: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
   booths: { code: string; name: string } | { code: string; name: string }[] | null;
 };
@@ -98,6 +104,8 @@ type CashMovementRow = {
   amount: number;
   note: string | null;
   created_at: string;
+  user_id?: string;
+  booth_id?: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
   booths: { code: string; name: string } | { code: string; name: string }[] | null;
 };
@@ -109,6 +117,8 @@ type ShiftCashClosingRow = {
   difference: number;
   note: string | null;
   created_at: string;
+  user_id?: string;
+  booth_id?: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
   booths: { code: string; name: string } | { code: string; name: string }[] | null;
 };
@@ -120,6 +130,10 @@ type BoothDetailTx = {
   payment_method: string;
   ticket_reference: string | null;
   note: string | null;
+  company_id?: string;
+  operator_id?: string;
+  category_id?: string;
+  subcategory_id?: string;
   companies: { name: string } | { name: string }[] | null;
   profiles: { full_name: string } | { full_name: string }[] | null;
   transaction_categories: { name: string } | { name: string }[] | null;
@@ -131,6 +145,7 @@ type BoothDetailShift = {
   opened_at: string;
   closed_at: string | null;
   status: "open" | "closed";
+  operator_id?: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
 };
 
@@ -139,6 +154,7 @@ type BoothDetailPunch = {
   punch_type: string;
   punched_at: string;
   note: string | null;
+  user_id?: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
 };
 
@@ -292,17 +308,17 @@ export default function AdminPage() {
         supabase.from("clients").select("*").order("name"),
         supabase.from("booths").select("id,code,name,active").order("name"),
         supabase.from("transaction_categories").select("id,name,active").order("name"),
-        supabase.from("transaction_subcategories").select("id,name,active,category_id,transaction_categories(name)").order("name"),
+        supabase.from("transaction_subcategories").select("id,name,active,category_id").order("name"),
         supabase.from("profiles").select("user_id,full_name,cpf,address,phone,avatar_url,role,active").order("full_name"),
-        supabase.from("operator_booths").select("id,active,profiles(full_name),booths(name,code)").order("created_at", { ascending: false }).limit(200),
-        supabase.from("audit_logs").select("id,action,entity,details,created_at,profiles(full_name)").order("created_at", { ascending: false }).limit(50),
-        supabase.from("time_punches").select("id,punch_type,punched_at,note,profiles(full_name),booths(code,name)").order("punched_at", { ascending: false }).limit(200),
-        supabase.from("cash_movements").select("id,movement_type,amount,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
-        supabase.from("shift_cash_closings").select("id,expected_cash,declared_cash,difference,note,created_at,profiles(full_name),booths(code,name)").order("created_at", { ascending: false }).limit(300),
+        supabase.from("operator_booths").select("id,active,operator_id,booth_id").order("created_at", { ascending: false }).limit(200),
+        supabase.from("audit_logs").select("id,action,entity,details,created_at,created_by").order("created_at", { ascending: false }).limit(50),
+        supabase.from("time_punches").select("id,punch_type,punched_at,note,user_id,booth_id").order("punched_at", { ascending: false }).limit(200),
+        supabase.from("cash_movements").select("id,movement_type,amount,note,created_at,user_id,booth_id").order("created_at", { ascending: false }).limit(300),
+        supabase.from("shift_cash_closings").select("id,expected_cash,declared_cash,difference,note,created_at,user_id,booth_id").order("created_at", { ascending: false }).limit(300),
         txQuery,
         supabase
           .from("adjustment_requests")
-          .select("id,transaction_id,reason,status,created_at,profiles(full_name),transactions(amount,payment_method,companies(name))")
+          .select("id,transaction_id,reason,status,created_at,requested_by")
           .eq("status", "pending")
           .order("created_at", { ascending: false })
           .limit(40),
@@ -318,26 +334,60 @@ export default function AdminPage() {
         setDashboardError(`Falha ao atualizar dashboard: ${criticalError.message}`);
       }
 
-      setRows((shiftRes.data as ShiftTotal[]) ?? []);
-      setCompanies((companyRes.data as Company[]) ?? []);
-      setClients(clientRes.error && isSchemaToleranceError(clientRes.error) ? [] : ((clientRes.data as Client[]) ?? []));
-      setBooths((boothRes.data as Booth[]) ?? []);
-      setCategories((catRes.data as Category[]) ?? []);
-      setSubcategories(((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
-      setProfiles((profileRes.data as Profile[]) ?? []);
-      setOperatorBoothLinks(((linkRes.data ?? []) as unknown as OperatorBoothLink[]) ?? []);
-      setAuditLogs(((auditRes.data ?? []) as unknown as AuditLog[]) ?? []);
-      setTimePunchRows(((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
-      setCashMovementRows(((cashRes.data ?? []) as unknown as CashMovementRow[]) ?? []);
-      setShiftCashClosingRows(((cashCloseRes.data ?? []) as unknown as ShiftCashClosingRow[]) ?? []);
+      const rowsData = (shiftRes.data as ShiftTotal[]) ?? [];
+      const companiesData = (companyRes.data as Company[]) ?? [];
+      const clientsData = clientRes.error && isSchemaToleranceError(clientRes.error) ? [] : ((clientRes.data as Client[]) ?? []);
+      const boothsData = (boothRes.data as Booth[]) ?? [];
+      const categoriesData = (catRes.data as Category[]) ?? [];
+      const subcategoriesData = (((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
+      const profilesData = (profileRes.data as Profile[]) ?? [];
+
+      const profileMap = new Map(profilesData.map((p) => [p.user_id, p.full_name]));
+      const boothMap = new Map(boothsData.map((b) => [b.id, { name: b.name, code: b.code }]));
+      const companyMap = new Map(companiesData.map((c) => [c.id, c.name]));
+      const categoryMap = new Map(categoriesData.map((c) => [c.id, c.name]));
+      const subcategoryMap = new Map(subcategoriesData.map((s) => [s.id, s.name]));
+
+      const hydratedSubcategories = subcategoriesData.map((s) => ({
+        ...s,
+        transaction_categories: { name: categoryMap.get(s.category_id) ?? "-" },
+      }));
+
+      const rawLinks = (((linkRes.data ?? []) as unknown as OperatorBoothLink[]) ?? []);
+      const hydratedLinks = rawLinks.map((l) => ({
+        ...l,
+        profiles: l.operator_id ? { full_name: profileMap.get(l.operator_id) ?? "-" } : null,
+        booths: l.booth_id ? boothMap.get(l.booth_id) ?? null : null,
+      }));
+
+      const rawAudit = (((auditRes.data ?? []) as unknown as AuditLog[]) ?? []);
+      const hydratedAudit = rawAudit.map((a) => ({
+        ...a,
+        profiles: a.created_by ? { full_name: profileMap.get(a.created_by) ?? "-" } : null,
+      }));
+
+      const rawPunch = (((punchRes.data ?? []) as unknown as TimePunchRow[]) ?? []);
+      const hydratedPunch = rawPunch.map((p) => ({
+        ...p,
+        profiles: p.user_id ? { full_name: profileMap.get(p.user_id) ?? "-" } : null,
+        booths: p.booth_id ? boothMap.get(p.booth_id) ?? null : null,
+      }));
+
+      const rawCash = (((cashRes.data ?? []) as unknown as CashMovementRow[]) ?? []);
+      const hydratedCash = rawCash.map((c) => ({
+        ...c,
+        profiles: c.user_id ? { full_name: profileMap.get(c.user_id) ?? "-" } : null,
+        booths: c.booth_id ? boothMap.get(c.booth_id) ?? null : null,
+      }));
+
+      const rawClosings = (((cashCloseRes.data ?? []) as unknown as ShiftCashClosingRow[]) ?? []);
+      const hydratedClosings = rawClosings.map((c) => ({
+        ...c,
+        profiles: c.user_id ? { full_name: profileMap.get(c.user_id) ?? "-" } : null,
+        booths: c.booth_id ? boothMap.get(c.booth_id) ?? null : null,
+      }));
 
       const rawTxs = ((txRes.data ?? []) as unknown as TxForReport[]) ?? [];
-      const profileMap = new Map(((profileRes.data as Profile[]) ?? []).map((p) => [p.user_id, p.full_name]));
-      const boothMap = new Map(((boothRes.data as Booth[]) ?? []).map((b) => [b.id, { name: b.name, code: b.code }]));
-      const companyMap = new Map(((companyRes.data as Company[]) ?? []).map((c) => [c.id, c.name]));
-      const categoryMap = new Map(((catRes.data as Category[]) ?? []).map((c) => [c.id, c.name]));
-      const subcategoryMap = new Map((((subRes.data ?? []) as unknown as Subcategory[]) ?? []).map((s) => [s.id, s.name]));
-
       const hydratedTxs = rawTxs.map((tx) => ({
         ...tx,
         profiles: tx.operator_id ? { full_name: profileMap.get(tx.operator_id) ?? "Sem operador" } : null,
@@ -347,8 +397,37 @@ export default function AdminPage() {
         transaction_subcategories: tx.subcategory_id ? { name: subcategoryMap.get(tx.subcategory_id) ?? "Sem subcategoria" } : null,
       }));
 
+      const rawAdjustments = (((adjRes.data ?? []) as unknown) as Adjustment[]) ?? [];
+      const txById = new Map(hydratedTxs.map((tx) => [tx.id, tx]));
+      const hydratedAdjustments = rawAdjustments.map((a) => {
+        const tx = txById.get(a.transaction_id);
+        return {
+          ...a,
+          profiles: a.requested_by ? { full_name: profileMap.get(a.requested_by) ?? "-" } : null,
+          transactions: tx
+            ? {
+                amount: Number(tx.amount || 0),
+                payment_method: tx.payment_method ?? "-",
+                companies: tx.company_id ? { name: companyMap.get(tx.company_id) ?? "-" } : null,
+              }
+            : null,
+        } as Adjustment;
+      });
+
+      setRows(rowsData);
+      setCompanies(companiesData);
+      setClients(clientsData);
+      setBooths(boothsData);
+      setCategories(categoriesData);
+      setSubcategories((hydratedSubcategories as unknown as Subcategory[]) ?? []);
+      setProfiles(profilesData);
+      setOperatorBoothLinks((hydratedLinks as unknown as OperatorBoothLink[]) ?? []);
+      setAuditLogs((hydratedAudit as unknown as AuditLog[]) ?? []);
+      setTimePunchRows((hydratedPunch as unknown as TimePunchRow[]) ?? []);
+      setCashMovementRows((hydratedCash as unknown as CashMovementRow[]) ?? []);
+      setShiftCashClosingRows((hydratedClosings as unknown as ShiftCashClosingRow[]) ?? []);
       setReportTxs((hydratedTxs as unknown as TxForReport[]) ?? []);
-      setAdjustments(((adjRes.data ?? []) as unknown) as Adjustment[]);
+      setAdjustments((hydratedAdjustments as unknown) as Adjustment[]);
     } catch (error) {
       setDashboardError(`Falha ao atualizar dashboard: ${error instanceof Error ? error.message : "erro inesperado"}`);
     } finally {
@@ -363,7 +442,7 @@ export default function AdminPage() {
 
     let txQ = supabase
       .from("transactions")
-      .select("id,sold_at,amount,payment_method,ticket_reference,note,companies(name),profiles(full_name),transaction_categories(name),transaction_subcategories(name)")
+      .select("id,sold_at,amount,payment_method,ticket_reference,note,company_id,operator_id,category_id,subcategory_id")
       .eq("booth_id", booth.id)
       .eq("status", "posted")
       .order("sold_at", { ascending: false })
@@ -371,14 +450,14 @@ export default function AdminPage() {
 
     let shiftQ = supabase
       .from("shifts")
-      .select("id,opened_at,closed_at,status,profiles(full_name)")
+      .select("id,opened_at,closed_at,status,operator_id")
       .eq("booth_id", booth.id)
       .order("opened_at", { ascending: false })
       .limit(100);
 
     let punchQ = supabase
       .from("time_punches")
-      .select("id,punch_type,punched_at,note,profiles(full_name)")
+      .select("id,punch_type,punched_at,note,user_id")
       .eq("booth_id", booth.id)
       .order("punched_at", { ascending: false })
       .limit(300);
@@ -396,9 +475,32 @@ export default function AdminPage() {
 
     const [txRes, shiftRes, punchRes] = await Promise.all([txQ, shiftQ, punchQ]);
 
-    setBoothDetailTxs(((txRes.data ?? []) as unknown as BoothDetailTx[]) ?? []);
-    setBoothDetailShifts(((shiftRes.data ?? []) as unknown as BoothDetailShift[]) ?? []);
-    setBoothDetailPunches(((punchRes.data ?? []) as unknown as BoothDetailPunch[]) ?? []);
+    const profileMap = new Map(profiles.map((p) => [p.user_id, p.full_name]));
+    const companyMap = new Map(companies.map((c) => [c.id, c.name]));
+    const categoryMap = new Map(categories.map((c) => [c.id, c.name]));
+    const subcategoryMap = new Map(subcategories.map((s) => [s.id, s.name]));
+
+    const txHydrated = ((((txRes.data ?? []) as unknown as BoothDetailTx[]) ?? []).map((t) => ({
+      ...t,
+      profiles: t.operator_id ? { full_name: profileMap.get(t.operator_id) ?? "-" } : null,
+      companies: t.company_id ? { name: companyMap.get(t.company_id) ?? "-" } : null,
+      transaction_categories: t.category_id ? { name: categoryMap.get(t.category_id) ?? "-" } : null,
+      transaction_subcategories: t.subcategory_id ? { name: subcategoryMap.get(t.subcategory_id) ?? "-" } : null,
+    })));
+
+    const shiftHydrated = ((((shiftRes.data ?? []) as unknown as BoothDetailShift[]) ?? []).map((s) => ({
+      ...s,
+      profiles: s.operator_id ? { full_name: profileMap.get(s.operator_id) ?? "-" } : null,
+    })));
+
+    const punchHydrated = ((((punchRes.data ?? []) as unknown as BoothDetailPunch[]) ?? []).map((p) => ({
+      ...p,
+      profiles: p.user_id ? { full_name: profileMap.get(p.user_id) ?? "-" } : null,
+    })));
+
+    setBoothDetailTxs((txHydrated as unknown as BoothDetailTx[]) ?? []);
+    setBoothDetailShifts((shiftHydrated as unknown as BoothDetailShift[]) ?? []);
+    setBoothDetailPunches((punchHydrated as unknown as BoothDetailPunch[]) ?? []);
   }
 
   const summary = useMemo(() => {

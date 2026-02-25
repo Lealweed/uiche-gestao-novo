@@ -90,15 +90,18 @@ export default function OperatorPage() {
       setOperatorActive(profile?.active ?? null);
       if (profile?.role === "admin") return router.push("/admin");
 
-      const [{ data: bData }, { data: cData }, { data: catData }, { data: subData }, { data: sData }] = await Promise.all([
-        supabase.from("operator_booths").select("booth_id, booths(name)").eq("operator_id", authData.user.id).eq("active", true),
+      const [{ data: bData }, { data: cData }, { data: catData }, { data: subData }, { data: sData }, { data: allBoothsData }] = await Promise.all([
+        supabase.from("operator_booths").select("booth_id").eq("operator_id", authData.user.id).eq("active", true),
         supabase.from("companies").select("*").eq("active", true).order("name"),
         supabase.from("transaction_categories").select("id, name").eq("active", true).order("name"),
         supabase.from("transaction_subcategories").select("id, name, category_id").eq("active", true).order("name"),
         supabase.from("shifts").select("id, booth_id, status").eq("operator_id", authData.user.id).eq("status", "open").maybeSingle(),
+        supabase.from("booths").select("id,name").eq("active", true),
       ]);
 
-      setBooths((bData as any) ?? []);
+      const boothNameMap = new Map((((allBoothsData ?? []) as { id: string; name: string }[])).map((b) => [b.id, b.name]));
+      const boothLinks = (((bData ?? []) as { booth_id: string }[]) ?? []).map((b) => ({ booth_id: b.booth_id, booths: { name: boothNameMap.get(b.booth_id) ?? b.booth_id } }));
+      setBooths(boothLinks);
       setCompanies((cData as Option[]) ?? []);
       const cats = (catData as Category[]) ?? [];
       const subs = (subData as Subcategory[]) ?? [];
