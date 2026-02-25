@@ -505,6 +505,11 @@ export default function OperatorPage() {
     return { cardPending, totalTx, lastTxAt };
   }, [txs]);
 
+  const pendingReceiptTxs = useMemo(
+    () => txs.filter((t) => (t.payment_method === "credit" || t.payment_method === "debit") && t.receipt_count === 0),
+    [txs]
+  );
+
   const operatorBlocked = operatorActive === false;
 
   const turnoMeta = 3000;
@@ -742,6 +747,32 @@ export default function OperatorPage() {
             <div className="rounded-lg border border-slate-800 p-2">Ajuste: <b>R$ {cashTotals.ajuste.toFixed(2)}</b></div>
             <div className="rounded-lg border border-emerald-700/60 p-2">Saldo caixa: <b>R$ {cashTotals.saldo.toFixed(2)}</b></div>
           </div>
+        </section>
+
+        <section className="glass-card p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold">Comprovantes de cartão (PDV)</h2>
+            <span className="text-xs text-slate-400">Pendentes: {pendingReceiptTxs.length}</span>
+          </div>
+          {pendingReceiptTxs.length === 0 ? (
+            <p className="text-sm text-emerald-300">Sem pendências de comprovante no momento.</p>
+          ) : (
+            <div className="space-y-2">
+              {pendingReceiptTxs.slice(0, 8).map((tx) => (
+                <div key={`pending-${tx.id}`} className="rounded-lg border border-amber-600/40 bg-amber-500/10 p-2 flex items-center justify-between gap-3">
+                  <div className="text-sm">
+                    <p className="text-slate-200">{tx.company_name} • R$ {Number(tx.amount).toFixed(2)}</p>
+                    <p className="text-xs text-slate-400">{tx.payment_method.toUpperCase()} • {new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                  </div>
+                  <label className="btn-ghost cursor-pointer text-sm">
+                    {uploadingTxId === tx.id ? "Enviando..." : "Anexar comprovante"}
+                    <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id || operatorBlocked} onChange={(e) => handleUploadReceipt(tx.id, e)} />
+                  </label>
+                </div>
+              ))}
+              {pendingReceiptTxs.length > 8 && <p className="text-xs text-slate-500">Mostrando 8 de {pendingReceiptTxs.length} pendências.</p>}
+            </div>
+          )}
         </section>
 
         <form onSubmit={submitTx} className="glass-card p-4 md:p-5 space-y-4">
