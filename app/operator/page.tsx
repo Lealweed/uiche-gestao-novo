@@ -16,9 +16,12 @@ type Tx = {
   sold_at: string;
   ticket_reference: string | null;
   note: string | null;
-  companies: { name: string } | { name: string }[] | null;
-  transaction_receipts?: { id: string }[];
+  company_id: string | null;
+  company_name: string;
+  receipt_count: number;
 };
+
+type BoothLink = { booth_id: string; booth_name: string };
 
 type Punch = {
   id: string;
@@ -47,6 +50,11 @@ function getCompanyPct(company: Option) {
   return Number(company.commission_percent ?? company.comission_percent ?? 0);
 }
 
+function isSchemaToleranceError(err: { message?: string } | null | undefined) {
+  const msg = err?.message?.toLowerCase() ?? "";
+  return msg.includes("could not find the table") || (msg.includes("column") && msg.includes("does not exist"));
+}
+
 export default function OperatorPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -55,7 +63,7 @@ export default function OperatorPage() {
   const [companies, setCompanies] = useState<Option[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
-  const [booths, setBooths] = useState<{ booth_id: string; booths: { name: string } }[]>([]);
+  const [booths, setBooths] = useState<BoothLink[]>([]);
   const [boothId, setBoothId] = useState("");
   const [companyId, setCompanyId] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -90,7 +98,7 @@ export default function OperatorPage() {
       setOperatorActive(profile?.active ?? null);
       if (profile?.role === "admin") return router.push("/admin");
 
-      const [{ data: bData }, { data: cData }, { data: catData }, { data: subData }, { data: sData }, { data: allBoothsData }] = await Promise.all([
+      const [boothLinksRes, companiesRes, categoriesRes, subcategoriesRes, shiftRes, allBoothsRes] = await Promise.all([
         supabase.from("operator_booths").select("booth_id").eq("operator_id", authData.user.id).eq("active", true),
         supabase.from("companies").select("*").eq("active", true).order("name"),
         supabase.from("transaction_categories").select("id, name").eq("active", true).order("name"),
@@ -99,12 +107,26 @@ export default function OperatorPage() {
         supabase.from("booths").select("id,name").eq("active", true),
       ]);
 
-      const boothNameMap = new Map((((allBoothsData ?? []) as { id: string; name: string }[])).map((b) => [b.id, b.name]));
-      const boothLinks = (((bData ?? []) as { booth_id: string }[]) ?? []).map((b) => ({ booth_id: b.booth_id, booths: { name: boothNameMap.get(b.booth_id) ?? b.booth_id } }));
-      setBooths(boothLinks);
-      setCompanies((cData as Option[]) ?? []);
-      const cats = (catData as Category[]) ?? [];
-      const subs = (subData as Subcategory[]) ?? [];
+      const bData = boothLinksRes.error && isSchemaToleranceError(boothLinksRes.error) ? [] : ((boothLinksRes.data as { booth_id: string }[] | null) ?? []);
+      const cData = companiesRes.error && isSchemaToleranceError(companiesRes.error) ? [] : ((companiesRes.data as Option[] | null) ?? []);
+      const catData = categoriesRes.error && isSchemaToleranceError(categoriesRes.error) ? [] : ((categoriesRes.data as Category[] | null) ?? []);
+      const subData = subcategoriesRes.error && isSchemaToleranceError(subcategoriesRes.error) ? [] : ((subcategoriesRes.data as Subcategory[] | null) ?? []);
+      const allBoothsData = allBoothsRes.error && isSchemaToleranceError(allBoothsRes.error) ? [] : ((allBoothsRes.data as { id: string; name: string }[] | null) ?? []);
+
+      const criticalError = [shiftRes.error].find(Boolean);
+      if (criticalError) {
+        setMessage(`Falha ao carregar operador: ${criticalError.message}`);
+      }
+
+      const boothNameMap = new Map((allBoothsData ?? []).map((b) => [b.id, b.name]));
+      const boothRows = ((bData ?? []) as { booth_id: string }[]).map((b) => ({
+        booth_id: b.booth_id,
+        booth_name: boothNameMap.get(b.booth_id) ?? b.booth_id,
+      }));
+      setBooths(boothRows);
+      setCompanies(cData ?? []);
+      const cats = catData ?? [];
+      const subs = subData ?? [];
       setCategories(cats);
       setSubcategories(subs);
       if (cats[0]) {
@@ -112,48 +134,99 @@ export default function OperatorPage() {
         const firstSub = subs.find((s) => s.category_id === cats[0].id);
         if (firstSub) setSubcategoryId(firstSub.id);
       }
+      const sData = shiftRes.data as Shift | null;
       if (sData) {
-        setShift(sData as Shift);
-        await loadTxs((sData as Shift).id);
-        await loadCashMovements((sData as Shift).id);
+        setShift(sData);
+        await loadTxs(sData.id);
+        await loadCashMovements(sData.id);
       }
       await loadPunches(authData.user.id);
-      if (!sData && bData?.[0]) setBoothId((bData[0] as any).booth_id);
+      if (!sData && bData?.[0]) setBoothId(bData[0].booth_id);
     })();
   }, [router]);
 
   async function loadTxs(shiftId: string) {
-    const { data } = await supabase
+    const txRes = await supabase
       .from("transactions")
-      .select("id, amount, payment_method, sold_at, ticket_reference, note, companies(name), transaction_receipts(id)")
+      .select("id, amount, payment_method, sold_at, ticket_reference, note, company_id")
       .eq("shift_id", shiftId)
       .eq("status", "posted")
       .order("sold_at", { ascending: false })
       .limit(100);
 
-    setTxs(((data ?? []) as unknown) as Tx[]);
+    if (txRes.error) {
+      setMessage(`Falha ao carregar lançamentos: ${txRes.error.message}`);
+      setTxs([]);
+      return;
+    }
+
+    const baseTxs = ((txRes.data ?? []) as Array<{
+      id: string;
+      amount: number;
+      payment_method: "pix" | "credit" | "debit" | "cash";
+      sold_at: string;
+      ticket_reference: string | null;
+      note: string | null;
+      company_id: string | null;
+    }>) ?? [];
+
+    const txIds = baseTxs.map((t) => t.id);
+    const companyIds = Array.from(new Set(baseTxs.map((t) => t.company_id).filter(Boolean))) as string[];
+
+    const [receiptRes, companyRes] = await Promise.all([
+      txIds.length ? supabase.from("transaction_receipts").select("id,transaction_id").in("transaction_id", txIds) : Promise.resolve({ data: [], error: null } as any),
+      companyIds.length ? supabase.from("companies").select("id,name").in("id", companyIds) : Promise.resolve({ data: [], error: null } as any),
+    ]);
+
+    const receiptRows = receiptRes.error && isSchemaToleranceError(receiptRes.error) ? [] : ((receiptRes.data as Array<{ id: string; transaction_id: string }> | null) ?? []);
+    const companyRows = companyRes.error && isSchemaToleranceError(companyRes.error) ? [] : ((companyRes.data as Array<{ id: string; name: string }> | null) ?? []);
+
+    const receiptCountByTx = new Map<string, number>();
+    for (const rec of receiptRows) {
+      receiptCountByTx.set(rec.transaction_id, (receiptCountByTx.get(rec.transaction_id) ?? 0) + 1);
+    }
+
+    const companyNameById = new Map<string, string>(companyRows.map((c) => [c.id, c.name]));
+
+    const hydratedTxs: Tx[] = baseTxs.map((tx) => ({
+      ...tx,
+      company_name: tx.company_id ? companyNameById.get(tx.company_id) ?? "-" : "-",
+      receipt_count: receiptCountByTx.get(tx.id) ?? 0,
+    }));
+
+    setTxs(hydratedTxs);
   }
 
   async function loadPunches(uid: string) {
-    const { data } = await supabase
+    const res = await supabase
       .from("time_punches")
       .select("id,punch_type,punched_at,note")
       .eq("user_id", uid)
       .order("punched_at", { ascending: false })
       .limit(20);
 
-    setPunches(((data ?? []) as unknown) as Punch[]);
+    if (res.error && !isSchemaToleranceError(res.error)) {
+      setMessage(`Falha ao carregar ponto: ${res.error.message}`);
+      return;
+    }
+
+    setPunches((res.data as Punch[] | null) ?? []);
   }
 
   async function loadCashMovements(shiftId: string) {
-    const { data } = await supabase
+    const res = await supabase
       .from("cash_movements")
       .select("id,movement_type,amount,note,created_at")
       .eq("shift_id", shiftId)
       .order("created_at", { ascending: false })
       .limit(100);
 
-    setCashMovements(((data ?? []) as unknown) as CashMovement[]);
+    if (res.error && !isSchemaToleranceError(res.error)) {
+      setMessage(`Falha ao carregar caixa: ${res.error.message}`);
+      return;
+    }
+
+    setCashMovements((res.data as CashMovement[] | null) ?? []);
   }
 
   async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string, unknown>) {
@@ -189,9 +262,7 @@ export default function OperatorPage() {
   async function closeShift() {
     if (!shift || !userId) return;
 
-    const pendencias = txs.filter(
-      (t) => (t.payment_method === "credit" || t.payment_method === "debit") && (!t.transaction_receipts || t.transaction_receipts.length === 0)
-    ).length;
+    const pendencias = txs.filter((t) => (t.payment_method === "credit" || t.payment_method === "debit") && t.receipt_count === 0).length;
 
     if (pendencias > 0) {
       setMessage(`Existem ${pendencias} lançamento(s) de cartão sem comprovante.`);
@@ -398,7 +469,7 @@ export default function OperatorPage() {
   );
 
   const operatorFlow = useMemo(() => {
-    const cardPending = txs.filter((t) => (t.payment_method === "credit" || t.payment_method === "debit") && !t.transaction_receipts?.length).length;
+    const cardPending = txs.filter((t) => (t.payment_method === "credit" || t.payment_method === "debit") && t.receipt_count === 0).length;
     const totalTx = txs.length;
     const lastTxAt = txs[0]?.sold_at ?? null;
     return { cardPending, totalTx, lastTxAt };
@@ -591,8 +662,8 @@ export default function OperatorPage() {
             <h2 className="font-semibold">Abrir turno</h2>
             <select value={boothId} onChange={(e) => setBoothId(e.target.value)} className="field">
               <option value="">Selecione o guichê</option>
-              {booths.map((b: any) => (
-                <option key={b.booth_id} value={b.booth_id}>{b.booths?.name ?? b.booth_id}</option>
+              {booths.map((b) => (
+                <option key={b.booth_id} value={b.booth_id}>{b.booth_name ?? b.booth_id}</option>
               ))}
             </select>
             {booths.length === 0 && (
@@ -680,11 +751,11 @@ export default function OperatorPage() {
               <div className="space-y-3 md:hidden">
                 {txs.map((tx) => {
                   const need = tx.payment_method === "credit" || tx.payment_method === "debit";
-                  const has = !!tx.transaction_receipts?.length;
+                  const has = tx.receipt_count > 0;
                   return (
                     <article key={tx.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3 space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-slate-300">{Array.isArray(tx.companies) ? (tx.companies[0]?.name ?? "-") : (tx.companies?.name ?? "-")}</span>
+                        <span className="text-slate-300">{tx.company_name}</span>
                         <span className="text-amber-300 font-semibold">R$ {Number(tx.amount).toFixed(2)}</span>
                       </div>
                       <div className="text-xs text-slate-400">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} • {tx.payment_method.toUpperCase()}</div>
@@ -725,11 +796,11 @@ export default function OperatorPage() {
                   <tbody>
                     {txs.map((tx) => {
                       const need = tx.payment_method === "credit" || tx.payment_method === "debit";
-                      const has = !!tx.transaction_receipts?.length;
+                      const has = tx.receipt_count > 0;
                       return (
                         <tr key={tx.id} className="border-t border-white/10">
                           <td className="py-2">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
-                          <td>{Array.isArray(tx.companies) ? (tx.companies[0]?.name ?? "-") : (tx.companies?.name ?? "-")}</td>
+                          <td>{tx.company_name}</td>
                           <td>{tx.ticket_reference ?? "-"}</td>
                           <td>{tx.payment_method}</td>
                           <td className="text-amber-300">R$ {Number(tx.amount).toFixed(2)}</td>
