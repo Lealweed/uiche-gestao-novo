@@ -1658,40 +1658,11 @@ export default function AdminPage() {
         </section>
 
         <section id="gestao-operacional" className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
-          <div className="glass-card p-4 space-y-3">
-            <h2 className="font-semibold">Backlog operacional</h2>
-            <p className="text-sm text-slate-400">Fila de pendências críticas para execução da administração.</p>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <MiniStat label="Ajustes pendentes" value={String(adjustments.filter((a) => a.status === "pending").length)} />
-              <MiniStat label="Pend. cartão" value={String(summary.pendencias)} />
-              <MiniStat label="Turnos abertos" value={String(summary.abertos)} />
-              <MiniStat label="Alertas ativos" value={String(operatorAlerts.length)} />
-            </div>
-            <ul className="space-y-2 text-sm">
-              {operatorAlerts.slice(0, 6).map((a, i) => (
-                <li key={i} className={`rounded-lg border p-2 ${a.level === "danger" ? "border-rose-700/60 text-rose-300" : "border-amber-700/60 text-amber-300"}`}>{a.text}</li>
-              ))}
-              {operatorAlerts.length === 0 && <li className="text-emerald-300">Sem pendências críticas no momento.</li>}
-            </ul>
-          </div>
-
-          <div className="glass-card p-4 space-y-3">
-            <h2 className="font-semibold">Central de governança</h2>
-            <p className="text-sm text-slate-400">Atalhos para manutenção estrutural da operação.</p>
-            <div className="grid gap-2">
-              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("operadores")}>Ir para Operadores e Timeline</button>
-              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("financeiro")}>Ir para Financeiro e Caixa</button>
-              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("configuracoes")}>Ir para Configurações e Cadastros</button>
-              <button type="button" className="btn-primary text-left" onClick={() => refreshData()}>Atualizar indicadores</button>
-            </div>
-          </div>
-        </section>
-
-        <section className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4">
             <h2 className="font-semibold mb-3">Gest?o operacional</h2>
             <p className="text-sm text-slate-300">
-              Painel focado em opera??o di?ria. Use os m?dulos de Operadores, Financeiro e Configura??es para gest?o completa.
+              Painel focado na opera??o di?ria. Use os m?dulos abaixo para acompanhamento de operadores,
+              financeiro e configura??es da plataforma.
             </p>
           </div>
 
@@ -1701,6 +1672,7 @@ export default function AdminPage() {
               <button type="button" className="btn-ghost text-left" onClick={() => setMenu("operadores")}>Ir para Operadores</button>
               <button type="button" className="btn-ghost text-left" onClick={() => setMenu("financeiro")}>Ir para Financeiro</button>
               <button type="button" className="btn-ghost text-left" onClick={() => setMenu("configuracoes")}>Ir para Configura??es</button>
+              <button type="button" className="btn-primary text-left" onClick={() => refreshData()}>Atualizar indicadores</button>
             </div>
           </div>
         </section>
@@ -2225,7 +2197,7 @@ export default function AdminPage() {
 
         <section id="gestao" className={`${menu === "gestao" ? "block" : "hidden"} rounded-xl border border-slate-800 bg-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Últimos turnos</h2>
-          {loading ? <p className="text-slate-400">Carregando...</p> : (
+          {loading ? <p className="text-slate-400">Atualizando dados...</p> : (
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
                 <tr>
