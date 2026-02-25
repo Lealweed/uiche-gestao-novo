@@ -83,24 +83,28 @@ export default function OperatorPage() {
   useEffect(() => {
     (async () => {
       const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) return router.push("/login");
-      setUserId(authData.user.id);
+      const authUserId = authData.user?.id ?? "";
+      if (!authUserId) return router.push("/login");
+      setUserId(authUserId);
 
       const { data: profile } = await supabase
         .from("profiles")
         .select("role,active")
-        .eq("user_id", authData.user.id)
+        .eq("user_id", authUserId)
         .single();
 
       setOperatorActive(profile?.active ?? null);
       if (profile?.role === "admin") return router.push("/admin");
 
+      router.replace("/v3/operator");
+      return;
+
       const [boothLinksRes, companiesRes, categoriesRes, subcategoriesRes, shiftRes, allBoothsRes] = await Promise.all([
-        supabase.from("operator_booths").select("booth_id").eq("operator_id", authData.user.id).eq("active", true),
+        supabase.from("operator_booths").select("booth_id").eq("operator_id", authUserId).eq("active", true),
         supabase.from("companies").select("*").eq("active", true).order("name"),
         supabase.from("transaction_categories").select("id, name").eq("active", true).order("name"),
         supabase.from("transaction_subcategories").select("id, name, category_id").eq("active", true).order("name"),
-        supabase.from("shifts").select("id, booth_id, status").eq("operator_id", authData.user.id).eq("status", "open").maybeSingle(),
+        supabase.from("shifts").select("id, booth_id, status").eq("operator_id", authUserId).eq("status", "open").maybeSingle(),
         supabase.from("booths").select("id,name").eq("active", true),
       ]);
 
@@ -122,9 +126,10 @@ export default function OperatorPage() {
       const subData = subDataResult.data;
       const allBoothsData = allBoothsDataResult.data;
 
-      const criticalError = [shiftRes.error].find(Boolean);
+      const criticalError = [shiftRes.error].find(Boolean) as { message?: string } | undefined;
       if (criticalError) {
-        setMessage(`Falha ao carregar operador: ${criticalError.message}`);
+        const errorMessage = criticalError?.message ?? "erro desconhecido";
+        setMessage(`Falha ao carregar operador: ${errorMessage}`);
       }
 
       const boothNameMap = new Map((allBoothsData ?? []).map((b) => [b.id, b.name]));
@@ -141,15 +146,15 @@ export default function OperatorPage() {
       if (cats[0]) {
         setCategoryId(cats[0].id);
         const firstSub = subs.find((s) => s.category_id === cats[0].id);
-        if (firstSub) setSubcategoryId(firstSub.id);
+        setSubcategoryId(firstSub?.id ?? "");
       }
       const sData = shiftRes.data as Shift | null;
       if (sData) {
-        setShift(sData);
-        await loadTxs(sData.id);
-        await loadCashMovements(sData.id);
+        setShift(sData as Shift);
+        await loadTxs((sData as Shift).id);
+        await loadCashMovements((sData as Shift).id);
       }
-      await loadPunches(authData.user.id);
+      await loadPunches(authUserId);
       if (!sData && bData?.[0]) setBoothId(bData[0].booth_id);
     })();
   }, [router]);
@@ -904,6 +909,8 @@ function PaymentMixBars({ data }: { data: Array<{ label: string; value: number; 
     </div>
   );
 }
+
+
 
 
 

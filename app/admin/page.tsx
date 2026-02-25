@@ -277,7 +277,8 @@ export default function AdminPage() {
 
       if (profile?.role !== "admin") return router.push("/operator");
 
-      await refreshData();
+      router.replace("/v3/admin");
+      return;
     })();
   }, [router]);
 
