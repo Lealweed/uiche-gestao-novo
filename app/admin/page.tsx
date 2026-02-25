@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
+import { tolerantData } from "@/lib/schema-tolerance";
 
 type ShiftTotal = {
   shift_id: string;
@@ -207,6 +208,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [schemaWarnings, setSchemaWarnings] = useState<string[]>([]);
 
   const [companyName, setCompanyName] = useState("");
   const [companyPct, setCompanyPct] = useState("6");
@@ -326,23 +328,31 @@ export default function AdminPage() {
           .limit(40),
       ]);
 
-      const isSchemaToleranceError = (err: { message?: string } | null | undefined) => {
-        const msg = err?.message?.toLowerCase() ?? "";
-        return msg.includes("could not find the table") || (msg.includes("column") && msg.includes("does not exist"));
-      };
-
       const criticalError = [shiftRes.error, txRes.error].find(Boolean);
       if (criticalError) {
         setDashboardError(`Falha ao atualizar dashboard: ${criticalError.message}`);
       }
 
+      const warnings: string[] = [];
       const rowsData = (shiftRes.data as ShiftTotal[]) ?? [];
       const companiesData = (companyRes.data as Company[]) ?? [];
-      const clientsData = clientRes.error && isSchemaToleranceError(clientRes.error) ? [] : ((clientRes.data as Client[]) ?? []);
+      const clientsResult = tolerantData((clientRes.data as Client[]) ?? [], clientRes.error, [], "Clientes");
       const boothsData = (boothRes.data as Booth[]) ?? [];
       const categoriesData = (catRes.data as Category[]) ?? [];
       const subcategoriesData = (((subRes.data ?? []) as unknown as Subcategory[]) ?? []);
       const profilesData = (profileRes.data as Profile[]) ?? [];
+
+      if (clientsResult.warning) warnings.push(clientsResult.warning);
+      [linkRes, auditRes, punchRes, cashRes, cashCloseRes, adjRes].forEach((res, index) => {
+        const labels = ["Vínculos", "Auditoria", "Ponto", "Movimentos de caixa", "Fechamentos de caixa", "Ajustes"];
+        if (res.error) {
+          const result = tolerantData([], res.error, [], labels[index]);
+          if (result.warning) warnings.push(result.warning);
+        }
+      });
+      setSchemaWarnings(warnings);
+
+      const clientsData = clientsResult.data;
 
       const profileMap = new Map(profilesData.map((p) => [p.user_id, p.full_name]));
       const boothMap = new Map(boothsData.map((b) => [b.id, { name: b.name, code: b.code }]));
@@ -848,9 +858,14 @@ export default function AdminPage() {
   }
 
   async function clearPeriodFilter() {
-    setDateFrom("");
-    setDateTo("");
-    await refreshData("", "");
+    const cleared = "";
+    setDateFrom(cleared);
+    setDateTo(cleared);
+    setReportOperatorFilter(cleared);
+    setReportBoothFilter(cleared);
+    setReportCategoryFilter(cleared);
+    setClientsPage(1);
+    await refreshData(cleared, cleared);
   }
 
   function downloadCsv(filename: string, header: string[], lines: string[][]) {
@@ -1418,9 +1433,20 @@ export default function AdminPage() {
         </section>
 
         <section className="glass-card p-4">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-1">MÃ³dulo atual</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-1">Módulo atual</p>
           <h2 className="text-xl font-bold gradient-title">{moduleLabel[menu]}</h2>
         </section>
+
+        {schemaWarnings.length > 0 && (
+          <section className="glass-card p-4 border border-amber-300/40 bg-amber-100/30">
+            <p className="text-sm font-semibold text-amber-900">Modo resiliente ativado</p>
+            <ul className="mt-2 text-xs text-amber-900 list-disc pl-4 space-y-1">
+              {schemaWarnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section id="dashboard" className={`${menu === "dashboard" ? "block" : "hidden"} space-y-4`}>
           {loading ? (
