@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { tolerantData } from "@/lib/schema-tolerance";
 
-export function AdminShellV3({ children }: PropsWithChildren) {
+export function OperatorShellV3({ children }: PropsWithChildren) {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
@@ -18,13 +18,13 @@ export function AdminShellV3({ children }: PropsWithChildren) {
       const profileResult = tolerantData(profileRes.data ? [profileRes.data as { role?: string }] : [], profileRes.error, [], "Perfil");
       if (profileResult.warning) setWarning(profileResult.warning);
       const role = profileResult.data[0]?.role;
-      if (role !== "admin") return router.push("/operator");
+      if (role === "admin") return router.push("/v3/admin");
       setReady(true);
     })();
   }, [router]);
 
   if (!ready) {
-    return <main className="cv3-shell"><div className="cv3-container"><section className="cv3-card">Carregando v3...</section></div></main>;
+    return <main className="cv3-shell"><div className="cv3-container"><section className="cv3-card">Carregando v3 operador...</section></div></main>;
   }
 
   return (
@@ -32,9 +32,9 @@ export function AdminShellV3({ children }: PropsWithChildren) {
       <div className="cv3-container">
         <header className="cv3-header">
           <div>
-            <p className="cv3-eyebrow">CENTRAL VIAGEM • V3</p>
-            <h1 className="cv3-title">Nova fundação visual</h1>
-            <p className="cv3-subtitle">Reset completo com padrão corporativo clean.</p>
+            <p className="cv3-eyebrow">CENTRAL VIAGEM • V3 OPERADOR</p>
+            <h1 className="cv3-title">Operação estável</h1>
+            <p className="cv3-subtitle">Fluxo mínimo resiliente para atendimento contínuo.</p>
           </div>
         </header>
         {warning && <section className="cv3-card border border-amber-300/50 bg-amber-100/30 text-sm">{warning}</section>}
