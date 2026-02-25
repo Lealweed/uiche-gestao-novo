@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import { HeroGeometric } from "@/components/ui/shape-landing-hero";
+import { isSchemaToleranceError, tolerantData } from "@/lib/schema-tolerance";
 
 type Option = { id: string; name: string; commission_percent?: number | null; comission_percent?: number | null };
 type Category = { id: string; name: string };
@@ -50,11 +51,6 @@ function getCompanyPct(company: Option) {
   return Number(company.commission_percent ?? company.comission_percent ?? 0);
 }
 
-function isSchemaToleranceError(err: { message?: string } | null | undefined) {
-  const msg = err?.message?.toLowerCase() ?? "";
-  return msg.includes("could not find the table") || (msg.includes("column") && msg.includes("does not exist"));
-}
-
 export default function OperatorPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
@@ -73,6 +69,7 @@ export default function OperatorPage() {
   const [ticketReference, setTicketReference] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [schemaWarnings, setSchemaWarnings] = useState<string[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
@@ -107,11 +104,23 @@ export default function OperatorPage() {
         supabase.from("booths").select("id,name").eq("active", true),
       ]);
 
-      const bData = boothLinksRes.error && isSchemaToleranceError(boothLinksRes.error) ? [] : ((boothLinksRes.data as { booth_id: string }[] | null) ?? []);
-      const cData = companiesRes.error && isSchemaToleranceError(companiesRes.error) ? [] : ((companiesRes.data as Option[] | null) ?? []);
-      const catData = categoriesRes.error && isSchemaToleranceError(categoriesRes.error) ? [] : ((categoriesRes.data as Category[] | null) ?? []);
-      const subData = subcategoriesRes.error && isSchemaToleranceError(subcategoriesRes.error) ? [] : ((subcategoriesRes.data as Subcategory[] | null) ?? []);
-      const allBoothsData = allBoothsRes.error && isSchemaToleranceError(allBoothsRes.error) ? [] : ((allBoothsRes.data as { id: string; name: string }[] | null) ?? []);
+      const warnings: string[] = [];
+      const bDataResult = tolerantData((boothLinksRes.data as { booth_id: string }[] | null) ?? [], boothLinksRes.error, [], "Vínculos de guichê");
+      const cDataResult = tolerantData((companiesRes.data as Option[] | null) ?? [], companiesRes.error, [], "Empresas");
+      const catDataResult = tolerantData((categoriesRes.data as Category[] | null) ?? [], categoriesRes.error, [], "Categorias");
+      const subDataResult = tolerantData((subcategoriesRes.data as Subcategory[] | null) ?? [], subcategoriesRes.error, [], "Subcategorias");
+      const allBoothsDataResult = tolerantData((allBoothsRes.data as { id: string; name: string }[] | null) ?? [], allBoothsRes.error, [], "Guichês");
+
+      [bDataResult, cDataResult, catDataResult, subDataResult, allBoothsDataResult].forEach((result) => {
+        if (result.warning) warnings.push(result.warning);
+      });
+      setSchemaWarnings(warnings);
+
+      const bData = bDataResult.data;
+      const cData = cDataResult.data;
+      const catData = catDataResult.data;
+      const subData = subDataResult.data;
+      const allBoothsData = allBoothsDataResult.data;
 
       const criticalError = [shiftRes.error].find(Boolean);
       if (criticalError) {
@@ -178,8 +187,18 @@ export default function OperatorPage() {
       companyIds.length ? supabase.from("companies").select("id,name").in("id", companyIds) : Promise.resolve({ data: [], error: null } as any),
     ]);
 
-    const receiptRows = receiptRes.error && isSchemaToleranceError(receiptRes.error) ? [] : ((receiptRes.data as Array<{ id: string; transaction_id: string }> | null) ?? []);
-    const companyRows = companyRes.error && isSchemaToleranceError(companyRes.error) ? [] : ((companyRes.data as Array<{ id: string; name: string }> | null) ?? []);
+    const receiptRows = tolerantData(
+      (receiptRes.data as Array<{ id: string; transaction_id: string }> | null) ?? [],
+      receiptRes.error,
+      [],
+      "Comprovantes"
+    ).data;
+    const companyRows = tolerantData(
+      (companyRes.data as Array<{ id: string; name: string }> | null) ?? [],
+      companyRes.error,
+      [],
+      "Empresas"
+    ).data;
 
     const receiptCountByTx = new Map<string, number>();
     for (const rec of receiptRows) {
@@ -397,6 +416,7 @@ export default function OperatorPage() {
   }
 
   async function handleUploadReceipt(txId: string, ev: ChangeEvent<HTMLInputElement>) {
+    if (operatorBlocked) return setMessage("Operador inativo. Procure o administrador para reativação.");
     if (!userId) return;
     const file = ev.target.files?.[0];
     if (!file) return;
@@ -551,6 +571,17 @@ export default function OperatorPage() {
           </div>
           <button onClick={logout} className="btn-ghost">Sair</button>
         </header>
+
+        {schemaWarnings.length > 0 && (
+          <section className="glass-card p-4 border border-amber-400/40 bg-amber-500/10 text-amber-100">
+            <p className="font-semibold">Modo resiliente ativado</p>
+            <ul className="mt-2 text-sm list-disc pl-4 space-y-1">
+              {schemaWarnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section>
           <HeroGeometric
