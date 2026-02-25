@@ -5,8 +5,8 @@ import { AdminShellV3 } from "@/components/v3/admin-shell";
 import { supabase } from "@/lib/supabase-client";
 import { tolerantData } from "@/lib/schema-tolerance";
 
-type ShiftRow = { id: string; booth_id: string | null; operator_id: string | null; status: "open" | "closed" | string; opened_at: string | null };
-type TxRow = { id: string; sold_at: string; amount: number; payment_method: string; booth_id: string | null; operator_id: string | null; status: string };
+type ShiftRow = { id: string; booth_id?: string | null; operator_id?: string | null; status: "open" | "closed" | string; opened_at?: string | null };
+type TxRow = { id: string; sold_at: string; amount: number; payment_method: string; booth_id?: string | null; operator_id?: string | null; status: string };
 type ProfileRow = { user_id: string; full_name: string };
 type BoothRow = { id: string; code: string; name: string };
 
@@ -24,8 +24,8 @@ export default function AdminV3Page() {
     setError(null);
     try {
       const [shiftRes, txRes, profileRes, boothRes] = await Promise.all([
-        supabase.from("shifts").select("id,booth_id,operator_id,status,opened_at").order("opened_at", { ascending: false }).limit(40),
-        supabase.from("transactions").select("id,sold_at,amount,payment_method,booth_id,operator_id,status").order("sold_at", { ascending: false }).limit(120),
+        supabase.from("shifts").select("*").order("opened_at", { ascending: false }).limit(40),
+        supabase.from("transactions").select("*").order("sold_at", { ascending: false }).limit(120),
         supabase.from("profiles").select("user_id,full_name").limit(500),
         supabase.from("booths").select("id,code,name").limit(200),
       ]);

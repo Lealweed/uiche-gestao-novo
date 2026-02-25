@@ -277,8 +277,8 @@ export default function AdminPage() {
 
       if (profile?.role !== "admin") return router.push("/operator");
 
-      router.replace("/v3/admin");
-      return;
+      // mantendo /admin funcional com módulos completos
+      // /v3/admin segue disponível como rota estável alternativa
     })();
   }, [router]);
 

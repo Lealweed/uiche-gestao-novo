@@ -96,8 +96,8 @@ export default function OperatorPage() {
       setOperatorActive(profile?.active ?? null);
       if (profile?.role === "admin") return router.push("/admin");
 
-      router.replace("/v3/operator");
-      return;
+      // mantendo /operator funcional com módulos completos
+      // /v3/operator segue disponível como rota estável alternativa
 
       const [boothLinksRes, companiesRes, categoriesRes, subcategoriesRes, shiftRes, allBoothsRes] = await Promise.all([
         supabase.from("operator_booths").select("booth_id").eq("operator_id", authUserId).eq("active", true),
