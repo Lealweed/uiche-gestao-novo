@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -249,19 +249,19 @@ export default function AdminPage() {
   const moduleLabel: Record<MenuSection, string> = {
     dashboard: "Dashboard",
     operadores: "Operadores",
-    gestao: "GestÃ£o",
+    gestao: "Gestão",
     financeiro: "Financeiro",
-    relatorios: "RelatÃ³rios",
-    configuracoes: "ConfiguraÃ§Ãµes",
+    relatorios: "Relatórios",
+    configuracoes: "Configurações",
   };
 
   const navItems: Array<{ key: MenuSection; label: string }> = [
     { key: "dashboard", label: "Dashboard" },
     { key: "operadores", label: "Operadores" },
-    { key: "gestao", label: "GestÃ£o" },
+    { key: "gestao", label: "Gestão" },
     { key: "financeiro", label: "Financeiro" },
-    { key: "relatorios", label: "RelatÃ³rios" },
-    { key: "configuracoes", label: "ConfiguraÃ§Ãµes" },
+    { key: "relatorios", label: "Relatórios" },
+    { key: "configuracoes", label: "Configurações" },
   ];
 
   useEffect(() => {
@@ -599,7 +599,7 @@ export default function AdminPage() {
     const map = new Map<string, { booth: string; qty: number; total: number }>();
     for (const tx of reportTxs) {
       const boothObj = Array.isArray(tx.booths) ? tx.booths[0] : tx.booths;
-      const booth = boothObj ? `${boothObj.code} - ${boothObj.name}` : "Sem guichÃª";
+      const booth = boothObj ? `${boothObj.code} - ${boothObj.name}` : "Sem guichê";
       const prev = map.get(booth) ?? { booth, qty: 0, total: 0 };
       prev.qty += 1;
       prev.total += Number(tx.amount || 0);
@@ -681,14 +681,14 @@ export default function AdminPage() {
 
     for (const r of rows) {
       if (r.status === "open" && Number(r.missing_card_receipts || 0) > 0) {
-        alerts.push({ level: "warn", text: `${r.operator_name} (${r.booth_name}) com ${r.missing_card_receipts} pendÃªncia(s) de comprovante.` });
+        alerts.push({ level: "warn", text: `${r.operator_name} (${r.booth_name}) com ${r.missing_card_receipts} pendência(s) de comprovante.` });
       }
     }
 
     for (const c of shiftCashClosingRows) {
       if (Math.abs(Number(c.difference || 0)) > 0) {
         const op = Array.isArray(c.profiles) ? c.profiles[0]?.full_name : c.profiles?.full_name;
-        alerts.push({ level: "danger", text: `DiferenÃ§a de caixa em fechamento de ${op ?? "operador"}: R$ ${Number(c.difference).toFixed(2)}.` });
+        alerts.push({ level: "danger", text: `Diferença de caixa em fechamento de ${op ?? "operador"}: R$ ${Number(c.difference).toFixed(2)}.` });
       }
     }
 
@@ -819,8 +819,8 @@ export default function AdminPage() {
     }
     return [
       { label: "PIX", value: base.pix, color: "#0ea5e9" },
-      { label: "CrÃ©dito", value: base.credit, color: "#6366f1" },
-      { label: "DÃ©bito", value: base.debit, color: "#14b8a6" },
+      { label: "Crédito", value: base.credit, color: "#6366f1" },
+      { label: "Débito", value: base.debit, color: "#14b8a6" },
       { label: "Dinheiro", value: base.cash, color: "#f59e0b" },
     ];
   }, [reportTxs]);
@@ -848,7 +848,7 @@ export default function AdminPage() {
     return rows.slice(0, 20).map((r) => ({
       when: r.status === "closed" ? "Turno fechado" : "Turno em andamento",
       at: r.status === "closed" ? r.shift_id : r.shift_id,
-      text: `${r.booth_name} â€¢ ${r.operator_name} â€¢ R$ ${Number(r.gross_amount).toFixed(2)}`,
+      text: `${r.booth_name} • ${r.operator_name} • R$ ${Number(r.gross_amount).toFixed(2)}`,
       status: r.status,
     }));
   }, [rows]);
@@ -896,13 +896,13 @@ export default function AdminPage() {
   }
 
   function exportBoothCsv() {
-    const header = ["GuichÃª", "Quantidade", "Total"];
+    const header = ["Guichê", "Quantidade", "Total"];
     const lines = reportByBooth.map((r) => [r.booth, String(r.qty), r.total.toFixed(2)]);
     downloadCsv(`relatorio-guiches-${new Date().toISOString().slice(0, 10)}.csv`, header, lines);
   }
 
   function exportFilteredReportCsv() {
-    const header = ["Data", "Operador", "GuichÃª", "Categoria", "Subcategoria", "Valor"];
+    const header = ["Data", "Operador", "Guichê", "Categoria", "Subcategoria", "Valor"];
     const lines = filteredReportTxs.map((tx) => {
       const op = Array.isArray(tx.profiles) ? tx.profiles[0]?.full_name : tx.profiles?.full_name;
       const boothObj = Array.isArray(tx.booths) ? tx.booths[0] : tx.booths;
@@ -925,7 +925,7 @@ export default function AdminPage() {
   }
 
   function exportPunchCsv() {
-    const header = ["Data/Hora", "Operador", "GuichÃª", "Tipo", "ObservaÃ§Ã£o"];
+    const header = ["Data/Hora", "Operador", "Guichê", "Tipo", "Observação"];
     const lines = timePunchRows.map((p) => {
       const op = Array.isArray(p.profiles) ? p.profiles[0]?.full_name : p.profiles?.full_name;
       const b = Array.isArray(p.booths) ? p.booths[0] : p.booths;
@@ -947,7 +947,7 @@ export default function AdminPage() {
   }
 
   function exportCashMovementsCsv() {
-    const header = ["Data", "Operador", "GuichÃª", "Tipo", "Valor", "Obs"];
+    const header = ["Data", "Operador", "Guichê", "Tipo", "Valor", "Obs"];
     const lines = cashMovementRows.map((m) => {
       const op = Array.isArray(m.profiles) ? m.profiles[0]?.full_name : m.profiles?.full_name;
       const b = Array.isArray(m.booths) ? m.booths[0] : m.booths;
@@ -957,7 +957,7 @@ export default function AdminPage() {
   }
 
   function exportCashClosingCsv() {
-    const header = ["Data", "Operador", "GuichÃª", "Esperado", "Declarado", "DiferenÃ§a", "Obs"];
+    const header = ["Data", "Operador", "Guichê", "Esperado", "Declarado", "Diferença", "Obs"];
     const lines = shiftCashClosingRows.map((r) => {
       const op = Array.isArray(r.profiles) ? r.profiles[0]?.full_name : r.profiles?.full_name;
       const b = Array.isArray(r.booths) ? r.booths[0] : r.booths;
@@ -1019,7 +1019,7 @@ export default function AdminPage() {
     setMessage(null);
 
     if (clientEmail && !/^\S+@\S+\.\S+$/.test(clientEmail.trim())) {
-      setMessage("E-mail do cliente invÃ¡lido.");
+      setMessage("E-mail do cliente inválido.");
       return;
     }
 
@@ -1057,21 +1057,21 @@ export default function AdminPage() {
       active: true,
     });
 
-    if (error) return setMessage(`Erro ao cadastrar guichÃª: ${error.message}`);
+    if (error) return setMessage(`Erro ao cadastrar guichê: ${error.message}`);
     setBoothCode("");
     setBoothName("");
     await logAction("CREATE_BOOTH", "booths", undefined, { code: boothCode.trim().toUpperCase(), name: boothName.trim() });
-    setMessage("GuichÃª cadastrado com sucesso.");
+    setMessage("Guichê cadastrado com sucesso.");
     await refreshData();
   }
 
   async function editCompany(company: Company) {
     const name = window.prompt("Nome da empresa:", company.name);
     if (!name) return;
-    const pctRaw = window.prompt("ComissÃ£o %:", String(getCompanyPct(company)));
+    const pctRaw = window.prompt("Comissão %:", String(getCompanyPct(company)));
     if (!pctRaw) return;
     const pct = Number(pctRaw.replace(",", "."));
-    if (Number.isNaN(pct)) return setMessage("ComissÃ£o invÃ¡lida.");
+    if (Number.isNaN(pct)) return setMessage("Comissão inválida.");
 
     let { error } = await supabase.from("companies").update({ name: name.trim(), commission_percent: pct }).eq("id", company.id);
     if (error && error.message?.toLowerCase().includes("commission_percent")) {
@@ -1103,7 +1103,7 @@ export default function AdminPage() {
     const fullName = window.prompt("Nome completo:", profile.full_name);
     if (!fullName) return;
     const phone = window.prompt("Telefone:", profile.phone ?? "") ?? "";
-    const address = window.prompt("EndereÃ§o:", profile.address ?? "") ?? "";
+    const address = window.prompt("Endereço:", profile.address ?? "") ?? "";
 
     const { error } = await supabase
       .from("profiles")
@@ -1161,7 +1161,7 @@ export default function AdminPage() {
 
     if (error) return setMessage(`Erro ao vincular operador: ${error.message}`);
     await logAction("LINK_OPERATOR_BOOTH", "operator_booths", undefined, { operator_id: selectedOperatorId, booth_id: selectedBoothId });
-    setMessage("Operador vinculado ao guichÃª com sucesso.");
+    setMessage("Operador vinculado ao guichê com sucesso.");
     await refreshData();
   }
 
@@ -1172,9 +1172,9 @@ export default function AdminPage() {
       .update({ active: !profile.active })
       .eq("user_id", profile.user_id);
 
-    if (error) return setMessage(`Erro ao atualizar usuÃ¡rio: ${error.message}`);
+    if (error) return setMessage(`Erro ao atualizar usuário: ${error.message}`);
     await logAction("TOGGLE_PROFILE_ACTIVE", "profiles", profile.user_id, { active: !profile.active });
-    setMessage("Status do usuÃ¡rio atualizado.");
+    setMessage("Status do usuário atualizado.");
     await refreshData();
   }
 
@@ -1194,7 +1194,7 @@ export default function AdminPage() {
 
   async function toggleBoothActive(booth: Booth) {
     const { error } = await supabase.from("booths").update({ active: !booth.active }).eq("id", booth.id);
-    if (error) return setMessage(`Erro ao atualizar guichÃª: ${error.message}`);
+    if (error) return setMessage(`Erro ao atualizar guichê: ${error.message}`);
     await logAction("TOGGLE_BOOTH_ACTIVE", "booths", booth.id, { active: !booth.active });
     await refreshData();
   }
@@ -1215,7 +1215,7 @@ export default function AdminPage() {
 
   async function toggleOperatorBoothLink(link: OperatorBoothLink) {
     const { error } = await supabase.from("operator_booths").update({ active: !link.active }).eq("id", link.id);
-    if (error) return setMessage(`Erro ao atualizar vÃ­nculo: ${error.message}`);
+    if (error) return setMessage(`Erro ao atualizar vínculo: ${error.message}`);
     await logAction("TOGGLE_OPERATOR_BOOTH_LINK", "operator_booths", link.id, { active: !link.active });
     await refreshData();
   }
@@ -1250,9 +1250,9 @@ export default function AdminPage() {
       .update({ status: "voided", note: `ESTORNO ADMIN: ${reason}` })
       .eq("id", txId);
 
-    if (error) return setMessage(`Erro ao estornar lanÃ§amento: ${error.message}`);
+    if (error) return setMessage(`Erro ao estornar lançamento: ${error.message}`);
     await logAction("REVERSE_TRANSACTION", "transactions", txId, { reason });
-    setMessage("LanÃ§amento estornado com sucesso.");
+    setMessage("Lançamento estornado com sucesso.");
     await refreshData();
   }
 
@@ -1264,12 +1264,12 @@ export default function AdminPage() {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
     if (!uuidRegex.test(userId)) {
-      setMessage("ID do usuÃ¡rio invÃ¡lido. Informe um UUID vÃ¡lido (auth.users.id).");
+      setMessage("ID do usuário inválido. Informe um UUID válido (auth.users.id).");
       return;
     }
 
     if (newProfileCpf && newProfileCpf.replace(/\D/g, "").length !== 11) {
-      setMessage("CPF invÃ¡lido. Informe 11 dÃ­gitos.");
+      setMessage("CPF inválido. Informe 11 dígitos.");
       return;
     }
 
@@ -1287,9 +1287,9 @@ export default function AdminPage() {
     if (error) {
       const msg = (error.message || "").toLowerCase();
       if (msg.includes("foreign key") || msg.includes("violates") || msg.includes("auth.users")) {
-        return setMessage("Erro ao salvar usuÃ¡rio: este ID ainda nÃ£o existe no Auth. Crie/convide o usuÃ¡rio no login primeiro e depois vincule o perfil.");
+        return setMessage("Erro ao salvar usuário: este ID ainda não existe no Auth. Crie/convide o usuário no login primeiro e depois vincule o perfil.");
       }
-      return setMessage(`Erro ao salvar usuÃ¡rio: ${error.message}`);
+      return setMessage(`Erro ao salvar usuário: ${error.message}`);
     }
 
     await logAction("UPSERT_PROFILE", "profiles", userId, {
@@ -1298,7 +1298,7 @@ export default function AdminPage() {
       cpf: newProfileCpf,
       phone: newProfilePhone,
     });
-    setMessage("Perfil salvo com sucesso. UsuÃ¡rio jÃ¡ estÃ¡ vinculado ao portal de operador.");
+    setMessage("Perfil salvo com sucesso. Usuário já está vinculado ao portal de operador.");
     setNewProfileUserId("");
     setNewProfileName("");
     setNewProfileCpf("");
@@ -1316,7 +1316,7 @@ export default function AdminPage() {
     const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim());
     if (error) return setMessage(`Erro ao enviar reset: ${error.message}`);
     await logAction("SEND_PASSWORD_RESET", "auth", undefined, { email: resetEmail.trim() });
-    setMessage("Link de redefiniÃ§Ã£o enviado para o e-mail informado.");
+    setMessage("Link de redefinição enviado para o e-mail informado.");
     setResetEmail("");
   }
 
@@ -1340,7 +1340,7 @@ export default function AdminPage() {
       .update({ status: "voided" })
       .eq("id", txId);
 
-    if (txErr) return setMessage(`Erro ao estornar transaÃ§Ã£o: ${txErr.message}`);
+    if (txErr) return setMessage(`Erro ao estornar transação: ${txErr.message}`);
 
     const { data: authData } = await supabase.auth.getUser();
     const { error: adjErr } = await supabase
@@ -1351,7 +1351,7 @@ export default function AdminPage() {
     if (adjErr) return setMessage(`Erro ao aprovar ajuste: ${adjErr.message}`);
 
     await logAction("APPROVE_ADJUSTMENT", "adjustment_requests", adjId, { transaction_id: txId });
-    setMessage("Ajuste aprovado e transaÃ§Ã£o estornada.");
+    setMessage("Ajuste aprovado e transação estornada.");
     await refreshData();
   }
 
@@ -1366,7 +1366,7 @@ export default function AdminPage() {
 
     if (error) return setMessage(`Erro ao rejeitar ajuste: ${error.message}`);
     await logAction("REJECT_ADJUSTMENT", "adjustment_requests", adjId);
-    setMessage("SolicitaÃ§Ã£o rejeitada.");
+    setMessage("Solicitação rejeitada.");
     await refreshData();
   }
 
@@ -1380,20 +1380,20 @@ export default function AdminPage() {
       <div className="app-container">
         <header className="flex items-center justify-between gap-4 no-print">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2"><span className="pulse-dot">â—</span> ProduÃ§Ã£o</div>
-            <h1 className="text-2xl font-bold tracking-tight gradient-title">CENTRAL VIAGEM â€¢ Admin</h1>
-            <p className="muted">GestÃ£o central de guichÃªs, empresas e fechamento.</p>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2"><span className="pulse-dot">●</span> Produção</div>
+            <h1 className="text-2xl font-bold tracking-tight gradient-title">CENTRAL VIAGEM • Admin</h1>
+            <p className="muted">Gestão central de guichês, empresas e fechamento.</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setPresentationMode((v) => !v)} className="btn-ghost">{presentationMode ? "VisÃ£o padrÃ£o" : "VisÃ£o executiva"}</button>
+            <button onClick={() => setPresentationMode((v) => !v)} className="btn-ghost">{presentationMode ? "Visão padrão" : "Visão executiva"}</button>
             <button onClick={logout} className="btn-ghost">Sair</button>
           </div>
         </header>
 
         <section className="no-print hero-premium">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">CENTRAL VIAGEM â€¢ Painel Admin</p>
-          <h2 className="text-2xl font-semibold mt-2">VisÃ£o geral operacional e financeira</h2>
-          <p className="text-sm text-slate-400 mt-2">Acompanhe turnos, operadores, caixa, ajustes e auditoria em um Ãºnico painel.</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">CENTRAL VIAGEM • Painel Admin</p>
+          <h2 className="text-2xl font-semibold mt-2">Visão geral operacional e financeira</h2>
+          <p className="text-sm text-slate-400 mt-2">Acompanhe turnos, operadores, caixa, ajustes e auditoria em um único painel.</p>
           <div className="mt-4 flex gap-2 justify-end">
             <button className="btn-primary" type="button" onClick={() => refreshData()}>Atualizar agora</button>
             <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
@@ -1419,7 +1419,7 @@ export default function AdminPage() {
           <div className="space-y-6 module-enter">
 
         <section className="glass-card p-3 lg:hidden no-print">
-          <p className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">NavegaÃ§Ã£o rÃ¡pida</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">Navegação rápida</p>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {navItems.map((item) => (
               <button
@@ -1455,19 +1455,19 @@ export default function AdminPage() {
           ) : dashboardError ? (
             <DashboardStateCard title="Falha na leitura do dashboard" text={dashboardError} tone="error" />
           ) : !hasDashboardData ? (
-            <DashboardStateCard title="Sem dados para o perÃ­odo" text="Aplique um intervalo maior ou aguarde novos lanÃ§amentos para exibir os KPIs." tone="empty" />
+            <DashboardStateCard title="Sem dados para o período" text="Aplique um intervalo maior ou aguarde novos lançamentos para exibir os KPIs." tone="empty" />
           ) : (
             <>
               <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <KpiCard label="Receita do perÃ­odo" value={`R$ ${summary.totalDia.toFixed(2)}`} hint={`${totalTransactions} transaÃ§Ãµes`} tone="base" />
-                <KpiCard label="ComissÃ£o estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} hint="Base nas regras por empresa" tone="base" />
-                <KpiCard label="Ticket mÃ©dio" value={`R$ ${avgTicket.toFixed(2)}`} hint="Valor mÃ©dio por venda" tone="base" />
-                <KpiCard label="Turnos abertos" value={String(summary.abertos)} hint={`${summary.pendencias} pendÃªncia(s) de comprovante`} tone={summary.abertos > 0 ? "warn" : "good"} />
+                <KpiCard label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} hint={`${totalTransactions} transações`} tone="base" />
+                <KpiCard label="Comissão estimada" value={`R$ ${summary.totalComissao.toFixed(2)}`} hint="Base nas regras por empresa" tone="base" />
+                <KpiCard label="Ticket médio" value={`R$ ${avgTicket.toFixed(2)}`} hint="Valor médio por venda" tone="base" />
+                <KpiCard label="Turnos abertos" value={String(summary.abertos)} hint={`${summary.pendencias} pendência(s) de comprovante`} tone={summary.abertos > 0 ? "warn" : "good"} />
               </section>
 
               <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                <WaveLineChart title="TendÃªncia de receita (7 dias)" data={dailyTrend} />
-                <WaveBarsChart title="ComposiÃ§Ã£o por mÃ©todo" data={paymentSeries} />
+                <WaveLineChart title="Tendência de receita (7 dias)" data={dailyTrend} />
+                <WaveBarsChart title="Composição por método" data={paymentSeries} />
               </section>
 
               <section className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-4">
@@ -1503,7 +1503,7 @@ export default function AdminPage() {
                 </div>
 
                 <div className="glass-card p-4">
-                  <h2 className="font-semibold mb-3 text-slate-900">Fila de aÃ§Ã£o</h2>
+                  <h2 className="font-semibold mb-3 text-slate-900">Fila de ação</h2>
                   <div className="space-y-2">
                     {actionQueue.map((task) => (
                       <button
@@ -1525,15 +1525,15 @@ export default function AdminPage() {
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button className="btn-primary" type="button" onClick={() => refreshData()}>Atualizar dados</button>
                     <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>Backup JSON</button>
-                    <button className="btn-ghost" type="button" onClick={() => booths[0] && openBoothDetail(booths[0])}>Abrir 1Âº guichÃª</button>
+                    <button className="btn-ghost" type="button" onClick={() => booths[0] && openBoothDetail(booths[0])}>Abrir 1º guichê</button>
                     <button className="btn-ghost" type="button" onClick={printReport}>Imprimir</button>
                   </div>
                 </div>
               </section>
 
               <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <MiniStat label="UsuÃ¡rios inativos" value={String(adminHealth.inactiveUsers)} />
-                <MiniStat label="GuichÃªs inativos" value={String(adminHealth.inactiveBooths)} />
+                <MiniStat label="Usuários inativos" value={String(adminHealth.inactiveUsers)} />
+                <MiniStat label="Guichês inativos" value={String(adminHealth.inactiveBooths)} />
                 <MiniStat label="Empresas inativas" value={String(adminHealth.inactiveCompanies)} />
                 <MiniStat label="Ajustes pendentes" value={String(adminHealth.pendingAdjustments)} />
               </section>
@@ -1541,10 +1541,10 @@ export default function AdminPage() {
           )}
         </section>
         <section className={`${menu === "financeiro" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">ComissÃ£o por empresa (perÃ­odo filtrado)</h2>
+          <h2 className="font-semibold mb-3">Comissão por empresa (período filtrado)</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Empresa</th><th>% ComissÃ£o</th><th>Faturamento</th><th>Valor ComissÃ£o</th></tr>
+              <tr><th className="py-2">Empresa</th><th>% Comissão</th><th>Faturamento</th><th>Valor Comissão</th></tr>
             </thead>
             <tbody>
               {companyCommissionReport.map((r) => (
@@ -1569,7 +1569,7 @@ export default function AdminPage() {
           </div>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Data</th><th>Operador</th><th>GuichÃª</th><th>Tipo</th><th>Valor</th><th>Obs</th></tr>
+              <tr><th className="py-2">Data</th><th>Operador</th><th>Guichê</th><th>Tipo</th><th>Valor</th><th>Obs</th></tr>
             </thead>
             <tbody>
               {cashMovementRows.slice(0, 150).map((m) => {
@@ -1595,11 +1595,11 @@ export default function AdminPage() {
           <div className="grid md:grid-cols-3 gap-2 text-sm mb-3">
             <div className="rounded-lg border border-slate-800 p-2">Esperado: <b>R$ {cashClosingTotals.expected.toFixed(2)}</b></div>
             <div className="rounded-lg border border-slate-800 p-2">Declarado: <b>R$ {cashClosingTotals.declared.toFixed(2)}</b></div>
-            <div className={`rounded-lg border p-2 ${cashClosingTotals.difference === 0 ? "border-emerald-700/60" : "border-amber-700/60"}`}>DiferenÃ§a: <b>R$ {cashClosingTotals.difference.toFixed(2)}</b></div>
+            <div className={`rounded-lg border p-2 ${cashClosingTotals.difference === 0 ? "border-emerald-700/60" : "border-amber-700/60"}`}>Diferença: <b>R$ {cashClosingTotals.difference.toFixed(2)}</b></div>
           </div>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Data</th><th>Operador</th><th>GuichÃª</th><th>Esperado</th><th>Declarado</th><th>DiferenÃ§a</th><th>Obs</th></tr>
+              <tr><th className="py-2">Data</th><th>Operador</th><th>Guichê</th><th>Esperado</th><th>Declarado</th><th>Diferença</th><th>Obs</th></tr>
             </thead>
             <tbody>
               {shiftCashClosingRows.slice(0, 120).map((r) => {
@@ -1626,8 +1626,8 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Financeiro</h2>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-400">PIX</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_pix||0),0).toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-400">CrÃ©dito</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_credit||0),0).toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-400">DÃ©bito</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_debit||0),0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Crédito</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_credit||0),0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-400">Débito</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_debit||0),0).toFixed(2)}</span></div>
               <div className="flex justify-between"><span className="text-slate-400">Dinheiro</span><span>R$ {rows.reduce((a,r)=>a+Number(r.total_cash||0),0).toFixed(2)}</span></div>
             </div>
             <div className="mt-4 flex justify-center">
@@ -1643,27 +1643,27 @@ export default function AdminPage() {
           <div className="glass-card p-4">
             <h2 className="font-semibold mb-3">Cadastros</h2>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <MiniStat label="GuichÃªs" value={String(booths.length)} />
+              <MiniStat label="Guichês" value={String(booths.length)} />
               <MiniStat label="Empresas" value={String(companies.length)} />
-              <MiniStat label="UsuÃ¡rios" value={String(profiles.length)} />
+              <MiniStat label="Usuários" value={String(profiles.length)} />
               <MiniStat label="Categorias" value={String(categories.length)} />
             </div>
           </div>
 
           <div className="glass-card p-4">
             <h2 className="font-semibold mb-3">CRM Operacional</h2>
-            <p className="text-sm text-slate-400">Central de guichÃªs, colaboradores e auditoria em tempo real.</p>
-            <div className="mt-3 text-xs text-slate-500">Use os blocos abaixo para gerenciar cadastros, vÃ­nculos e relatÃ³rios.</div>
+            <p className="text-sm text-slate-400">Central de guichês, colaboradores e auditoria em tempo real.</p>
+            <div className="mt-3 text-xs text-slate-500">Use os blocos abaixo para gerenciar cadastros, vínculos e relatórios.</div>
           </div>
         </section>
 
         <section id="gestao-operacional" className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Backlog operacional</h2>
-            <p className="text-sm text-slate-400">Fila de pendÃªncias crÃ­ticas para execuÃ§Ã£o da administraÃ§Ã£o.</p>
+            <p className="text-sm text-slate-400">Fila de pendências críticas para execução da administração.</p>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <MiniStat label="Ajustes pendentes" value={String(adjustments.filter((a) => a.status === "pending").length)} />
-              <MiniStat label="Pend. cartÃ£o" value={String(summary.pendencias)} />
+              <MiniStat label="Pend. cartão" value={String(summary.pendencias)} />
               <MiniStat label="Turnos abertos" value={String(summary.abertos)} />
               <MiniStat label="Alertas ativos" value={String(operatorAlerts.length)} />
             </div>
@@ -1671,17 +1671,17 @@ export default function AdminPage() {
               {operatorAlerts.slice(0, 6).map((a, i) => (
                 <li key={i} className={`rounded-lg border p-2 ${a.level === "danger" ? "border-rose-700/60 text-rose-300" : "border-amber-700/60 text-amber-300"}`}>{a.text}</li>
               ))}
-              {operatorAlerts.length === 0 && <li className="text-emerald-300">Sem pendÃªncias crÃ­ticas no momento.</li>}
+              {operatorAlerts.length === 0 && <li className="text-emerald-300">Sem pendências críticas no momento.</li>}
             </ul>
           </div>
 
           <div className="glass-card p-4 space-y-3">
-            <h2 className="font-semibold">Central de governanÃ§a</h2>
-            <p className="text-sm text-slate-400">Atalhos para manutenÃ§Ã£o estrutural da operaÃ§Ã£o.</p>
+            <h2 className="font-semibold">Central de governança</h2>
+            <p className="text-sm text-slate-400">Atalhos para manutenção estrutural da operação.</p>
             <div className="grid gap-2">
               <button type="button" className="btn-ghost text-left" onClick={() => setMenu("operadores")}>Ir para Operadores e Timeline</button>
               <button type="button" className="btn-ghost text-left" onClick={() => setMenu("financeiro")}>Ir para Financeiro e Caixa</button>
-              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("configuracoes")}>Ir para ConfiguraÃ§Ãµes e Cadastros</button>
+              <button type="button" className="btn-ghost text-left" onClick={() => setMenu("configuracoes")}>Ir para Configurações e Cadastros</button>
               <button type="button" className="btn-primary text-left" onClick={() => refreshData()}>Atualizar indicadores</button>
             </div>
           </div>
@@ -1689,24 +1689,24 @@ export default function AdminPage() {
 
         <section className={`${menu === "gestao" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card p-4">
-            <h2 className="font-semibold mb-3">OrganizaÃ§Ã£o do que falta</h2>
+            <h2 className="font-semibold mb-3">Organização do que falta</h2>
             <ul className="text-sm space-y-2 text-slate-300">
-              <li>â€¢ Cadastro e ediÃ§Ã£o guiada de operador (form completo sem prompt)</li>
-              <li>â€¢ Regras de permissÃ£o por aÃ§Ã£o crÃ­tica (estorno/reabertura com motivo obrigatÃ³rio)</li>
-              <li>â€¢ Dashboard executivo final com metas por dia e comparaÃ§Ã£o diÃ¡ria</li>
-              <li>â€¢ ImpressÃ£o dedicada de fechamento de caixa por turno</li>
-              <li>â€¢ ValidaÃ§Ã£o adicional de telefone e CPF/CNPJ com mÃ¡scara</li>
+              <li>• Cadastro e edição guiada de operador (form completo sem prompt)</li>
+              <li>• Regras de permissão por ação crítica (estorno/reabertura com motivo obrigatório)</li>
+              <li>• Dashboard executivo final com metas por dia e comparação diária</li>
+              <li>• Impressão dedicada de fechamento de caixa por turno</li>
+              <li>• Validação adicional de telefone e CPF/CNPJ com máscara</li>
             </ul>
           </div>
 
           <div className="glass-card p-4">
-            <h2 className="font-semibold mb-3">Status atual dos mÃ³dulos</h2>
+            <h2 className="font-semibold mb-3">Status atual dos módulos</h2>
             <ul className="text-sm space-y-2">
-              <li className="text-emerald-300">âœ… Operador PDV (turno, lanÃ§amentos, comprovante, caixa, fechamento)</li>
-              <li className="text-emerald-300">âœ… Admin financeiro (comissÃ£o por empresa, fluxo de operadores, alertas)</li>
-              <li className="text-emerald-300">âœ… GestÃ£o operacional (backlog, governanÃ§a e execuÃ§Ã£o)</li>
-              <li className="text-emerald-300">âœ… Auditoria e ponto</li>
-              <li className="text-amber-300">âš ï¸ PendÃªncias finais de polimento e UX</li>
+              <li className="text-emerald-300">✅ Operador PDV (turno, lançamentos, comprovante, caixa, fechamento)</li>
+              <li className="text-emerald-300">✅ Admin financeiro (comissão por empresa, fluxo de operadores, alertas)</li>
+              <li className="text-emerald-300">✅ Gestão operacional (backlog, governança e execução)</li>
+              <li className="text-emerald-300">✅ Auditoria e ponto</li>
+              <li className="text-amber-300">⚠️ Pendências finais de polimento e UX</li>
             </ul>
           </div>
         </section>
@@ -1724,22 +1724,22 @@ export default function AdminPage() {
           <button className="btn-ghost" type="button" onClick={clearPeriodFilter}>Limpar</button>
           <button className="btn-ghost" type="button" onClick={exportCategoryCsv}>CSV Categorias</button>
           <button className="btn-ghost" type="button" onClick={exportOperatorCsv}>CSV Operadores</button>
-          <button className="btn-ghost" type="button" onClick={exportBoothCsv}>CSV GuichÃªs</button>
+          <button className="btn-ghost" type="button" onClick={exportBoothCsv}>CSV Guichês</button>
           <button className="btn-ghost" type="button" onClick={exportPunchCsv}>CSV Ponto</button>
-          <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>JSON OperaÃ§Ã£o</button>
+          <button className="btn-ghost" type="button" onClick={exportAdminBackupJson}>JSON Operação</button>
           <button className="btn-ghost" type="button" onClick={exportCashMovementsCsv}>CSV Mov. Caixa</button>
           <button className="btn-ghost" type="button" onClick={exportCashClosingCsv}>CSV Fech. Caixa</button>
-          <button className="btn-primary no-print" type="button" onClick={printReport}>Imprimir relatÃ³rio</button>
+          <button className="btn-primary no-print" type="button" onClick={printReport}>Imprimir relatório</button>
         </form>
 
         <section className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <form onSubmit={saveProfile} className="glass-card p-4 space-y-3">
-            <h2 className="font-semibold">Cadastrar/Atualizar usuÃ¡rio (perfil)</h2>
-            <input value={newProfileUserId} onChange={(e)=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuÃ¡rio (auth.users.id)" className="field" />
+            <h2 className="font-semibold">Cadastrar/Atualizar usuário (perfil)</h2>
+            <input value={newProfileUserId} onChange={(e)=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuário (auth.users.id)" className="field" />
             <input value={newProfileName} onChange={(e)=>setNewProfileName(e.target.value)} required placeholder="Nome completo" className="field" />
             <input value={newProfileCpf} onChange={(e)=>setNewProfileCpf(e.target.value)} placeholder="CPF" className="field" />
             <input value={newProfilePhone} onChange={(e)=>setNewProfilePhone(e.target.value)} placeholder="Telefone" className="field" />
-            <input value={newProfileAddress} onChange={(e)=>setNewProfileAddress(e.target.value)} placeholder="EndereÃ§o" className="field" />
+            <input value={newProfileAddress} onChange={(e)=>setNewProfileAddress(e.target.value)} placeholder="Endereço" className="field" />
             <input value={newProfileAvatarUrl} onChange={(e)=>setNewProfileAvatarUrl(e.target.value)} placeholder="URL da foto de perfil" className="field" />
             <select value={newProfileRole} onChange={(e)=>setNewProfileRole(e.target.value as "admin"|"operator")} className="field">
               <option value="operator">Operator</option>
@@ -1747,14 +1747,14 @@ export default function AdminPage() {
             </select>
             <label className="flex items-center gap-2 text-sm text-slate-300">
               <input type="checkbox" checked={newProfileActive} onChange={(e)=>setNewProfileActive(e.target.checked)} />
-              UsuÃ¡rio ativo
+              Usuário ativo
             </label>
-            <button className="btn-primary">Salvar usuÃ¡rio</button>
+            <button className="btn-primary">Salvar usuário</button>
           </form>
 
           <form onSubmit={sendResetLink} className="glass-card p-4 space-y-3">
-            <h2 className="font-semibold">Enviar link de redefiniÃ§Ã£o de senha</h2>
-            <input value={resetEmail} onChange={(e)=>setResetEmail(e.target.value)} required placeholder="E-mail do usuÃ¡rio" className="field" type="email" />
+            <h2 className="font-semibold">Enviar link de redefinição de senha</h2>
+            <input value={resetEmail} onChange={(e)=>setResetEmail(e.target.value)} required placeholder="E-mail do usuário" className="field" type="email" />
             <button className="btn-primary">Enviar reset</button>
           </form>
         </section>
@@ -1763,15 +1763,15 @@ export default function AdminPage() {
           <form onSubmit={createCompany} className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Cadastrar Empresa</h2>
             <input value={companyName} onChange={(e)=>setCompanyName(e.target.value)} required placeholder="Nome da empresa" className="field" />
-            <input value={companyPct} onChange={(e)=>setCompanyPct(e.target.value)} required type="number" min="0" step="0.001" placeholder="% comissÃ£o" className="field" />
+            <input value={companyPct} onChange={(e)=>setCompanyPct(e.target.value)} required type="number" min="0" step="0.001" placeholder="% comissão" className="field" />
             <button className="btn-primary">Salvar empresa</button>
           </form>
 
           <form onSubmit={createBooth} className="glass-card p-4 space-y-3">
-            <h2 className="font-semibold">Cadastrar GuichÃª</h2>
-            <input value={boothCode} onChange={(e)=>setBoothCode(e.target.value)} required placeholder="CÃ³digo (ex: G02)" className="field" />
-            <input value={boothName} onChange={(e)=>setBoothName(e.target.value)} required placeholder="Nome (ex: GuichÃª 02)" className="field" />
-            <button className="btn-primary">Salvar guichÃª</button>
+            <h2 className="font-semibold">Cadastrar Guichê</h2>
+            <input value={boothCode} onChange={(e)=>setBoothCode(e.target.value)} required placeholder="Código (ex: G02)" className="field" />
+            <input value={boothName} onChange={(e)=>setBoothName(e.target.value)} required placeholder="Nome (ex: Guichê 02)" className="field" />
+            <button className="btn-primary">Salvar guichê</button>
           </form>
         </section>
 
@@ -1804,7 +1804,7 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Empresas</h2>
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Nome</th><th>%</th><th>Status</th><th>AÃ§Ã£o</th></tr>
+                <tr><th className="py-2">Nome</th><th>%</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {companies.map((c) => (
@@ -1820,11 +1820,11 @@ export default function AdminPage() {
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-card p-4 overflow-auto">
-            <h2 className="font-semibold mb-3">GuichÃªs</h2>
-            <input value={boothSearch} onChange={(e)=>setBoothSearch(e.target.value)} placeholder="Buscar guichÃª por cÃ³digo ou nome" className="field mb-3" />
+            <h2 className="font-semibold mb-3">Guichês</h2>
+            <input value={boothSearch} onChange={(e)=>setBoothSearch(e.target.value)} placeholder="Buscar guichê por código ou nome" className="field mb-3" />
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">CÃ³digo</th><th>Nome</th><th>Status</th><th>AÃ§Ã£o</th></tr>
+                <tr><th className="py-2">Código</th><th>Nome</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {filteredBooths.map((b) => (
@@ -1843,10 +1843,10 @@ export default function AdminPage() {
         </section>
 
         <section className={`${menu === "configuracoes" && selectedBooth ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">Detalhes do guichÃª {selectedBooth?.code} - {selectedBooth?.name}</h2>
+          <h2 className="font-semibold mb-3">Detalhes do guichê {selectedBooth?.code} - {selectedBooth?.name}</h2>
           <div className="grid lg:grid-cols-3 gap-4 text-sm mb-4">
             <div className="rounded-xl border border-slate-800 p-3 bg-slate-950/50">
-              <div className="text-slate-400">LanÃ§amentos</div>
+              <div className="text-slate-400">Lançamentos</div>
               <div className="text-lg font-semibold">{boothDetailTxs.length}</div>
             </div>
             <div className="rounded-xl border border-slate-800 p-3 bg-slate-950/50">
@@ -1861,11 +1861,11 @@ export default function AdminPage() {
 
           <div className="grid lg:grid-cols-2 gap-4">
             <div>
-              <h3 className="font-semibold mb-2">TransaÃ§Ãµes</h3>
+              <h3 className="font-semibold mb-2">Transações</h3>
               <div className="max-h-72 overflow-auto">
                 <table className="w-full text-xs">
                   <thead className="text-left text-slate-400">
-                    <tr><th className="py-2">Data</th><th>Operador</th><th>MÃ©todo</th><th>Total</th></tr>
+                    <tr><th className="py-2">Data</th><th>Operador</th><th>Método</th><th>Total</th></tr>
                   </thead>
                   <tbody>
                     {boothDetailTxs.map((t) => {
@@ -1892,7 +1892,7 @@ export default function AdminPage() {
                   <ul className="space-y-1 text-xs">
                     {boothDetailShifts.map((s) => {
                       const op = Array.isArray(s.profiles) ? s.profiles[0]?.full_name : s.profiles?.full_name;
-                      return <li key={s.id} className="border-b border-slate-800 pb-1">{new Date(s.opened_at).toLocaleString("pt-BR")} â€¢ {op ?? "-"} â€¢ {s.status}</li>;
+                      return <li key={s.id} className="border-b border-slate-800 pb-1">{new Date(s.opened_at).toLocaleString("pt-BR")} • {op ?? "-"} • {s.status}</li>;
                     })}
                   </ul>
                 </div>
@@ -1901,7 +1901,7 @@ export default function AdminPage() {
                   <ul className="space-y-1 text-xs">
                     {boothDetailPunches.map((p) => {
                       const op = Array.isArray(p.profiles) ? p.profiles[0]?.full_name : p.profiles?.full_name;
-                      return <li key={p.id} className="border-b border-slate-800 pb-1">{new Date(p.punched_at).toLocaleString("pt-BR")} â€¢ {op ?? "-"} â€¢ {p.punch_type}</li>;
+                      return <li key={p.id} className="border-b border-slate-800 pb-1">{new Date(p.punched_at).toLocaleString("pt-BR")} • {op ?? "-"} • {p.punch_type}</li>;
                     })}
                   </ul>
                 </div>
@@ -1915,7 +1915,7 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Categorias</h2>
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Categoria</th><th>Status</th><th>AÃ§Ã£o</th></tr>
+                <tr><th className="py-2">Categoria</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {categories.map((c) => (
@@ -1933,7 +1933,7 @@ export default function AdminPage() {
             <h2 className="font-semibold mb-3">Subcategorias</h2>
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Subcategoria</th><th>Categoria</th><th>Status</th><th>AÃ§Ã£o</th></tr>
+                <tr><th className="py-2">Subcategoria</th><th>Categoria</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {subcategories.map((s) => {
@@ -1954,7 +1954,7 @@ export default function AdminPage() {
 
         <section id="configuracoes" className={`${menu === "configuracoes" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <form onSubmit={linkOperatorToBooth} className="glass-card p-4 space-y-3">
-            <h2 className="font-semibold">Vincular operador ao guichÃª</h2>
+            <h2 className="font-semibold">Vincular operador ao guichê</h2>
             <select className="field" value={selectedOperatorId} onChange={(e)=>setSelectedOperatorId(e.target.value)} required>
               <option value="">Selecione operador</option>
               {profiles.filter((p)=>p.role === "operator").map((p)=>(
@@ -1962,7 +1962,7 @@ export default function AdminPage() {
               ))}
             </select>
             <select className="field" value={selectedBoothId} onChange={(e)=>setSelectedBoothId(e.target.value)} required>
-              <option value="">Selecione guichÃª</option>
+              <option value="">Selecione guichê</option>
               {booths.filter((b)=>b.active).map((b)=>(
                 <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
               ))}
@@ -1971,11 +1971,11 @@ export default function AdminPage() {
           </form>
 
           <div className="glass-card p-4 overflow-auto">
-            <h2 className="font-semibold mb-3">UsuÃ¡rios</h2>
+            <h2 className="font-semibold mb-3">Usuários</h2>
             <input value={profileSearch} onChange={(e)=>setProfileSearch(e.target.value)} placeholder="Buscar por nome, CPF, telefone ou perfil" className="field mb-3" />
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Nome</th><th>CPF</th><th>Telefone</th><th>Perfil</th><th>Status</th><th>AÃ§Ã£o</th></tr>
+                <tr><th className="py-2">Nome</th><th>CPF</th><th>Telefone</th><th>Perfil</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 {filteredProfiles.map((p) => (
@@ -2004,10 +2004,10 @@ export default function AdminPage() {
         </section>
 
         <section className={`${menu === "configuracoes" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">VÃ­nculos operador â†” guichÃª</h2>
+          <h2 className="font-semibold mb-3">Vínculos operador ↔ guichê</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Operador</th><th>GuichÃª</th><th>Status</th><th>AÃ§Ã£o</th></tr>
+              <tr><th className="py-2">Operador</th><th>Guichê</th><th>Status</th><th>Ação</th></tr>
             </thead>
             <tbody>
               {operatorBoothLinks.map((l) => {
@@ -2027,10 +2027,10 @@ export default function AdminPage() {
         </section>
 
         <section id="relatorios" className={`${menu === "relatorios" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">RelatÃ³rio por categoria/subcategoria</h2>
+          <h2 className="font-semibold mb-3">Relatório por categoria/subcategoria</h2>
           <div className="grid lg:grid-cols-4 gap-2 mb-3">
             <input value={reportOperatorFilter} onChange={(e)=>setReportOperatorFilter(e.target.value)} className="field" placeholder="Filtrar operador" />
-            <input value={reportBoothFilter} onChange={(e)=>setReportBoothFilter(e.target.value)} className="field" placeholder="Filtrar guichÃª" />
+            <input value={reportBoothFilter} onChange={(e)=>setReportBoothFilter(e.target.value)} className="field" placeholder="Filtrar guichê" />
             <input value={reportCategoryFilter} onChange={(e)=>setReportCategoryFilter(e.target.value)} className="field" placeholder="Filtrar categoria" />
             <button type="button" className="btn-ghost" onClick={exportFilteredReportCsv}>CSV filtrado</button>
           </div>
@@ -2053,7 +2053,7 @@ export default function AdminPage() {
 
         <section className={`${menu === "relatorios" ? "grid" : "hidden"} lg:grid-cols-2 gap-4`}>
           <div className="glass-card print-card p-4 overflow-auto">
-            <h2 className="font-semibold mb-3">RelatÃ³rio por operador</h2>
+            <h2 className="font-semibold mb-3">Relatório por operador</h2>
             <div className="space-y-3">
               {reportByOperator.slice(0, 8).map((r) => (
                 <BarRow key={r.operator} label={r.operator} value={r.total} max={reportByOperator[0]?.total ?? 1} />
@@ -2062,7 +2062,7 @@ export default function AdminPage() {
           </div>
 
           <div className="glass-card print-card p-4 overflow-auto">
-            <h2 className="font-semibold mb-3">RelatÃ³rio por guichÃª</h2>
+            <h2 className="font-semibold mb-3">Relatório por guichê</h2>
             <div className="space-y-3">
               {reportByBooth.slice(0, 8).map((r) => (
                 <BarRow key={r.booth} label={r.booth} value={r.total} max={reportByBooth[0]?.total ?? 1} />
@@ -2070,10 +2070,10 @@ export default function AdminPage() {
             </div>
 
             <div className="mt-5">
-              <h3 className="text-sm font-semibold mb-2">Tabela detalhada por guichÃª</h3>
+              <h3 className="text-sm font-semibold mb-2">Tabela detalhada por guichê</h3>
               <table className="w-full text-sm">
                 <thead className="text-left text-slate-400">
-                  <tr><th className="py-2">GuichÃª</th><th>Qtd</th><th>Total</th></tr>
+                  <tr><th className="py-2">Guichê</th><th>Qtd</th><th>Total</th></tr>
                 </thead>
                 <tbody>
                   {reportByBooth.map((r) => (
@@ -2090,10 +2090,10 @@ export default function AdminPage() {
         </section>
 
         <section className={`${menu === "relatorios" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">RelatÃ³rio detalhado (operador/categoria/guichÃª)</h2>
+          <h2 className="font-semibold mb-3">Relatório detalhado (operador/categoria/guichê)</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Data</th><th>Operador</th><th>GuichÃª</th><th>Categoria</th><th>Subcategoria</th><th>Valor</th><th>Status</th><th>AÃ§Ã£o</th></tr>
+              <tr><th className="py-2">Data</th><th>Operador</th><th>Guichê</th><th>Categoria</th><th>Subcategoria</th><th>Valor</th><th>Status</th><th>Ação</th></tr>
             </thead>
             <tbody>
               {filteredReportTxs.slice(0, 300).map((tx, idx) => {
@@ -2122,14 +2122,14 @@ export default function AdminPage() {
               })}
             </tbody>
           </table>
-          <p className="text-xs text-slate-500 mt-2">Exibindo atÃ© 300 linhas na tela para manter performance.</p>
+          <p className="text-xs text-slate-500 mt-2">Exibindo até 300 linhas na tela para manter performance.</p>
         </section>
 
         <section className={`${menu === "operadores" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
           <h2 className="font-semibold mb-3">Fluxo dos operadores</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
-              <tr><th className="py-2">Operador</th><th>Turnos abertos</th><th>LanÃ§amentos</th><th>Mov. caixa</th><th>Pontos</th></tr>
+              <tr><th className="py-2">Operador</th><th>Turnos abertos</th><th>Lançamentos</th><th>Mov. caixa</th><th>Pontos</th></tr>
             </thead>
             <tbody>
               {operatorFlowRows.map((r) => (
@@ -2158,7 +2158,7 @@ export default function AdminPage() {
           </div>
 
           {!selectedBooth ? (
-            <p className="text-sm text-slate-400">Selecione um guichÃª para visualizar a timeline e os pontos especÃ­ficos.</p>
+            <p className="text-sm text-slate-400">Selecione um guichê para visualizar a timeline e os pontos específicos.</p>
           ) : (
             <ul className="space-y-2 text-sm">
               {boothDetailShifts.map((s) => {
@@ -2166,7 +2166,7 @@ export default function AdminPage() {
                 return (
                   <li key={s.id} className="border-b border-slate-800 pb-2">
                     <span className="text-slate-200">{s.status === "open" ? "TURNO_ABERTO" : "TURNO_FECHADO"}</span>
-                    <span className="text-slate-300"> â€” {who ?? "UsuÃ¡rio"} â€¢ {new Date(s.opened_at).toLocaleString("pt-BR")}</span>
+                    <span className="text-slate-300"> — {who ?? "Usuário"} • {new Date(s.opened_at).toLocaleString("pt-BR")}</span>
                   </li>
                 );
               })}
@@ -2175,7 +2175,7 @@ export default function AdminPage() {
         </section>
 
         <section className={`${menu === "operadores" ? "block" : "hidden"} glass-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">Controle de ponto (Ãºltimos registros) {selectedBooth ? `â€¢ ${selectedBooth.code}` : ""}</h2>
+          <h2 className="font-semibold mb-3">Controle de ponto (últimos registros) {selectedBooth ? `• ${selectedBooth.code}` : ""}</h2>
           <table className="w-full text-sm">
             <thead className="text-left text-slate-400">
               <tr><th className="py-2">Data/Hora</th><th>Operador</th><th>Tipo</th><th>Obs</th></tr>
@@ -2197,13 +2197,13 @@ export default function AdminPage() {
         </section>
 
         <section className={`${menu === "financeiro" ? "block" : "hidden"} rounded-xl border border-slate-800 bg-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">SolicitaÃ§Ãµes de ajuste</h2>
+          <h2 className="font-semibold mb-3">Solicitações de ajuste</h2>
           {adjustments.length === 0 ? (
-            <p className="text-slate-400 text-sm">Nenhuma solicitaÃ§Ã£o pendente.</p>
+            <p className="text-slate-400 text-sm">Nenhuma solicitação pendente.</p>
           ) : (
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
-                <tr><th className="py-2">Hora</th><th>Operador</th><th>Empresa</th><th>MÃ©todo</th><th>Valor</th><th>Motivo</th><th>AÃ§Ãµes</th></tr>
+                <tr><th className="py-2">Hora</th><th>Operador</th><th>Empresa</th><th>Método</th><th>Valor</th><th>Motivo</th><th>Ações</th></tr>
               </thead>
               <tbody>
                 {adjustments.map((a) => {
@@ -2230,12 +2230,12 @@ export default function AdminPage() {
         </section>
 
         <section id="gestao" className={`${menu === "gestao" ? "block" : "hidden"} rounded-xl border border-slate-800 bg-card p-4 overflow-auto`}>
-          <h2 className="font-semibold mb-3">Ãšltimos turnos</h2>
+          <h2 className="font-semibold mb-3">Últimos turnos</h2>
           {loading ? <p className="text-slate-400">Carregando...</p> : (
             <table className="w-full text-sm">
               <thead className="text-left text-slate-400">
                 <tr>
-                  <th className="py-2">GuichÃª</th><th>Operador</th><th>Status</th><th>Total</th><th>PIX</th><th>CrÃ©dito</th><th>DÃ©bito</th><th>PendÃªncias</th><th>AÃ§Ã£o</th>
+                  <th className="py-2">Guichê</th><th>Operador</th><th>Status</th><th>Total</th><th>PIX</th><th>Crédito</th><th>Débito</th><th>Pendências</th><th>Ação</th>
                 </tr>
               </thead>
               <tbody>
@@ -2367,8 +2367,8 @@ function FinanceDonut({ pix, credit, debit, cash }: { pix: number; credit: numbe
       </div>
       <div className="text-xs space-y-1">
         <div><span className="inline-block w-2 h-2 rounded-full bg-emerald-400 mr-2" />PIX</div>
-        <div><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-2" />CrÃ©dito</div>
-        <div><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-2" />DÃ©bito</div>
+        <div><span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-2" />Crédito</div>
+        <div><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-2" />Débito</div>
         <div><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-2" />Dinheiro</div>
       </div>
     </div>
