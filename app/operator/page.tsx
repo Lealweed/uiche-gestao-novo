@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -155,7 +155,7 @@ export default function OperatorPage() {
       .limit(100);
 
     if (txRes.error) {
-      setMessage(`Falha ao carregar lançamentos: ${txRes.error.message}`);
+      setMessage(`Falha ao carregar lanÃ§amentos: ${txRes.error.message}`);
       setTxs([]);
       return;
     }
@@ -241,14 +241,15 @@ export default function OperatorPage() {
   }
 
   async function openShift() {
+    if (operatorBlocked) return setMessage("Operador inativo. Procure o administrador para reativaÃ§Ã£o.");
     if (!boothId) {
-      setMessage("Selecione um guichê para abrir o turno.");
+      setMessage("Selecione um guichÃª para abrir o turno.");
       return;
     }
 
     const { data, error } = await supabase.rpc("open_shift", { p_booth_id: boothId, p_ip: null });
     if (error) {
-      setMessage(`Não foi possível abrir turno: ${error.message}`);
+      setMessage(`NÃ£o foi possÃ­vel abrir turno: ${error.message}`);
       return;
     }
 
@@ -260,12 +261,13 @@ export default function OperatorPage() {
   }
 
   async function closeShift() {
+    if (operatorBlocked) return setMessage("Operador inativo. Procure o administrador para reativaÃ§Ã£o.");
     if (!shift || !userId) return;
 
     const pendencias = txs.filter((t) => (t.payment_method === "credit" || t.payment_method === "debit") && t.receipt_count === 0).length;
 
     if (pendencias > 0) {
-      setMessage(`Existem ${pendencias} lançamento(s) de cartão sem comprovante.`);
+      setMessage(`Existem ${pendencias} lanÃ§amento(s) de cartÃ£o sem comprovante.`);
       return;
     }
 
@@ -278,9 +280,9 @@ export default function OperatorPage() {
     const declaredRaw = window.prompt(`Fechamento de caixa\nValor esperado: R$ ${expectedCash.toFixed(2)}\n\nInforme o valor contado no caixa:`);
     if (declaredRaw === null) return;
     const declaredCash = Number(declaredRaw.replace(",", "."));
-    if (Number.isNaN(declaredCash)) return setMessage("Valor de caixa inválido.");
+    if (Number.isNaN(declaredCash)) return setMessage("Valor de caixa invÃ¡lido.");
 
-    const note = window.prompt("Observação do fechamento (opcional):") || null;
+    const note = window.prompt("ObservaÃ§Ã£o do fechamento (opcional):") || null;
     const difference = Number((declaredCash - expectedCash).toFixed(2));
 
     const closeCash = await supabase.from("shift_cash_closings").upsert({
@@ -307,13 +309,14 @@ export default function OperatorPage() {
     setShift(null);
     setTxs([]);
     setCashMovements([]);
-    setMessage(`Turno encerrado. Diferença de caixa: R$ ${difference.toFixed(2)}.`);
+    setMessage(`Turno encerrado. DiferenÃ§a de caixa: R$ ${difference.toFixed(2)}.`);
   }
 
   async function registerPunch(type: Punch["punch_type"]) {
+    if (operatorBlocked) return setMessage("Operador inativo. Procure o administrador para reativaÃ§Ã£o.");
     if (!userId) return;
 
-    const note = type === "entrada" ? "Entrada" : type === "saida" ? "Saída" : type === "pausa_inicio" ? "Início de pausa" : "Fim de pausa";
+    const note = type === "entrada" ? "Entrada" : type === "saida" ? "SaÃ­da" : type === "pausa_inicio" ? "InÃ­cio de pausa" : "Fim de pausa";
 
     const { error } = await supabase.from("time_punches").insert({
       user_id: userId,
@@ -331,6 +334,7 @@ export default function OperatorPage() {
 
   async function submitCashMovement(e: FormEvent) {
     e.preventDefault();
+    if (operatorBlocked) return setMessage("Operador inativo. Procure o administrador para reativaÃ§Ã£o.");
     if (!shift || !userId || !cashAmount) return;
 
     const { error } = await supabase.from("cash_movements").insert({
@@ -358,6 +362,7 @@ export default function OperatorPage() {
 
   async function submitTx(e: FormEvent) {
     e.preventDefault();
+    if (operatorBlocked) return setMessage("Operador inativo. Procure o administrador para reativaÃ§Ã£o.");
     if (!shift || !companyId || !categoryId || !subcategoryId || !amount || !userId) return;
 
     const payload = {
@@ -387,7 +392,7 @@ export default function OperatorPage() {
     setAmount("");
     setTicketReference("");
     setNote("");
-    setMessage("Lançamento salvo.");
+    setMessage("LanÃ§amento salvo.");
     await loadTxs(shift.id);
   }
 
@@ -449,8 +454,8 @@ export default function OperatorPage() {
   const paymentSeries = useMemo(
     () => [
       { label: "PIX", value: totals.pix, color: "#0ea5e9" },
-      { label: "Crédito", value: totals.credit, color: "#6366f1" },
-      { label: "Débito", value: totals.debit, color: "#14b8a6" },
+      { label: "CrÃ©dito", value: totals.credit, color: "#6366f1" },
+      { label: "DÃ©bito", value: totals.debit, color: "#14b8a6" },
       { label: "Dinheiro", value: totals.cash, color: "#f59e0b" },
     ],
     [totals]
@@ -475,6 +480,8 @@ export default function OperatorPage() {
     return { cardPending, totalTx, lastTxAt };
   }, [txs]);
 
+  const operatorBlocked = operatorActive === false;
+
   const turnoMeta = 3000;
   const progressoMeta = Number.isFinite(totalGeral) ? Math.min(100, (totalGeral / turnoMeta) * 100) : 0;
 
@@ -483,8 +490,8 @@ export default function OperatorPage() {
       id: `tx-${tx.id}`,
       type: "lancamento" as const,
       at: tx.sold_at ?? new Date().toISOString(),
-      title: `Lançamento ${(tx.payment_method ?? "-").toUpperCase()}`,
-      detail: `R$ ${Number(tx.amount || 0).toFixed(2)} • ${tx.ticket_reference ?? "sem referência"}`,
+      title: `LanÃ§amento ${(tx.payment_method ?? "-").toUpperCase()}`,
+      detail: `R$ ${Number(tx.amount || 0).toFixed(2)} â€¢ ${tx.ticket_reference ?? "sem referÃªncia"}`,
     }));
 
     const evPunch = punches.slice(0, 20).map((p) => ({
@@ -500,7 +507,7 @@ export default function OperatorPage() {
       type: "caixa" as const,
       at: m.created_at ?? new Date().toISOString(),
       title: `Caixa: ${m.movement_type}`,
-      detail: `R$ ${Number(m.amount || 0).toFixed(2)}${m.note ? ` • ${m.note}` : ""}`,
+      detail: `R$ ${Number(m.amount || 0).toFixed(2)}${m.note ? ` â€¢ ${m.note}` : ""}`,
     }));
 
     return [...evTx, ...evPunch, ...evCash]
@@ -509,6 +516,7 @@ export default function OperatorPage() {
   }, [txs, punches, cashMovements]);
 
   async function requestAdjustment(txId: string) {
+    if (operatorBlocked) return setMessage("Operador inativo. Procure o administrador para reativaÃ§Ã£o.");
     const reason = window.prompt("Descreva o motivo do ajuste:");
     if (!reason || !userId) return;
 
@@ -520,7 +528,7 @@ export default function OperatorPage() {
 
     if (error) return setMessage(`Erro ao solicitar ajuste: ${error.message}`);
     await logAction("REQUEST_ADJUSTMENT", "transactions", txId, { reason });
-    setMessage("Solicitação de ajuste enviada para o admin.");
+    setMessage("SolicitaÃ§Ã£o de ajuste enviada para o admin.");
   }
 
   async function logout() {
@@ -533,34 +541,34 @@ export default function OperatorPage() {
       <div className="max-w-5xl mx-auto space-y-6">
         <header className="flex items-center justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2">● Operação ativa</div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs mb-2">â— OperaÃ§Ã£o ativa</div>
             <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs mb-2 ml-2 ${operatorActive === false ? "border-rose-500/40 bg-rose-500/10 text-rose-300" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"}`}>
-              <span>●</span>
+              <span>â—</span>
               {operatorActive === false ? "Operador inativo" : "Operador ativo"}
             </div>
-            <h1 className="text-2xl font-bold tracking-tight gradient-title">CENTRAL VIAGEM • Operador</h1>
-            <p className="muted">Turno e lançamentos.</p>
+            <h1 className="text-2xl font-bold tracking-tight gradient-title">CENTRAL VIAGEM â€¢ Operador</h1>
+            <p className="muted">Turno e lanÃ§amentos.</p>
           </div>
           <button onClick={logout} className="btn-ghost">Sair</button>
         </header>
 
         <section>
           <HeroGeometric
-            badge="CENTRAL VIAGEM • PORTAL DO OPERADOR"
+            badge="CENTRAL VIAGEM â€¢ PORTAL DO OPERADOR"
             title1="CENTRAL VIAGEM"
             subtitle="Abra turno, registre vendas, controle caixa e acompanhe o fluxo operacional em tempo real."
             chips={["Turno", "PDV", "Caixa"]}
           />
           <div className="mt-3 text-sm text-slate-300 text-right">
             <div>Status do turno: <b>{shift ? "Aberto" : "Fechado"}</b></div>
-            <div>Pendências de cartão: <b>{operatorFlow.cardPending}</b></div>
+            <div>PendÃªncias de cartÃ£o: <b>{operatorFlow.cardPending}</b></div>
           </div>
         </section>
 
         <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <MiniCard label="PIX" value={totals.pix} />
-          <MiniCard label="Crédito" value={totals.credit} />
-          <MiniCard label="Débito" value={totals.debit} />
+          <MiniCard label="CrÃ©dito" value={totals.credit} />
+          <MiniCard label="DÃ©bito" value={totals.debit} />
           <MiniCard label="Dinheiro" value={totals.cash} />
           <div className="glass-card p-4 border-amber-400/40">
             <p className="text-sm text-amber-300">Total geral</p>
@@ -572,9 +580,9 @@ export default function OperatorPage() {
           <h2 className="font-semibold mb-2">Fluxo do operador</h2>
           <div className="grid md:grid-cols-4 gap-2 text-sm">
             <div className="rounded-lg border border-slate-800 p-2">Turno: <b>{shift ? "Aberto" : "Fechado"}</b></div>
-            <div className="rounded-lg border border-slate-800 p-2">Lançamentos: <b>{operatorFlow.totalTx}</b></div>
-            <div className="rounded-lg border border-slate-800 p-2">Pend. cartão: <b>{operatorFlow.cardPending}</b></div>
-            <div className="rounded-lg border border-slate-800 p-2">Último lançamento: <b>{operatorFlow.lastTxAt ? new Date(operatorFlow.lastTxAt).toLocaleTimeString("pt-BR") : "-"}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">LanÃ§amentos: <b>{operatorFlow.totalTx}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Pend. cartÃ£o: <b>{operatorFlow.cardPending}</b></div>
+            <div className="rounded-lg border border-slate-800 p-2">Ãšltimo lanÃ§amento: <b>{operatorFlow.lastTxAt ? new Date(operatorFlow.lastTxAt).toLocaleTimeString("pt-BR") : "-"}</b></div>
           </div>
         </section>
 
@@ -590,19 +598,19 @@ export default function OperatorPage() {
               <p className="text-xs text-slate-400 mt-1">Realizado: R$ {totalGeral.toFixed(2)} ({progressoMeta.toFixed(0)}%)</p>
             </div>
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 shadow-[0_0_0_1px_rgba(245,158,11,0.12)]">
-              <p className="text-slate-400">Pendências críticas</p>
-              <p className="text-amber-300 font-semibold">{operatorFlow.cardPending} comprovante(s) de cartão</p>
+              <p className="text-slate-400">PendÃªncias crÃ­ticas</p>
+              <p className="text-amber-300 font-semibold">{operatorFlow.cardPending} comprovante(s) de cartÃ£o</p>
               <p className="text-xs text-slate-400 mt-1">Resolva antes de encerrar o turno.</p>
             </div>
             <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 shadow-[0_0_0_1px_rgba(34,211,238,0.12)]">
               <p className="text-slate-400">Pacote para ADM</p>
-              <p className="text-slate-100 font-semibold">{txs.length} lançamentos + {cashMovements.length} mov. caixa</p>
-              <p className="text-xs text-slate-400 mt-1">Dados prontos para conferência administrativa.</p>
+              <p className="text-slate-100 font-semibold">{txs.length} lanÃ§amentos + {cashMovements.length} mov. caixa</p>
+              <p className="text-xs text-slate-400 mt-1">Dados prontos para conferÃªncia administrativa.</p>
             </div>
           </div>
 
           <div className="rounded-xl border border-slate-700/80 bg-slate-900/70 p-3">
-            <p className="text-sm font-medium mb-2 text-slate-100">Gráfico de vendas por método (turno)</p>
+            <p className="text-sm font-medium mb-2 text-slate-100">GrÃ¡fico de vendas por mÃ©todo (turno)</p>
             <PaymentMixBars data={paymentSeries} />
           </div>
 
@@ -617,7 +625,7 @@ export default function OperatorPage() {
               <p className="text-sm font-medium mb-2 text-slate-100">Checklist de fechamento</p>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.comprovantes} onChange={(e) => setCheckFechamento((v) => ({ ...v, comprovantes: e.target.checked }))} /> Comprovantes anexados</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.sangriaConferencia} onChange={(e) => setCheckFechamento((v) => ({ ...v, sangriaConferencia: e.target.checked }))} /> Sangria e caixa conferidos</label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.observacoes} onChange={(e) => setCheckFechamento((v) => ({ ...v, observacoes: e.target.checked }))} /> Observações para ADM registradas</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checkFechamento.observacoes} onChange={(e) => setCheckFechamento((v) => ({ ...v, observacoes: e.target.checked }))} /> ObservaÃ§Ãµes para ADM registradas</label>
             </div>
           </div>
 
@@ -642,11 +650,11 @@ export default function OperatorPage() {
           <h2 className="font-semibold">Bater ponto</h2>
           <div className="flex flex-wrap gap-2">
             <button className="btn-primary" type="button" onClick={() => registerPunch("entrada")}>Entrada</button>
-            <button className="btn-ghost" type="button" onClick={() => registerPunch("pausa_inicio")}>Início pausa</button>
+            <button className="btn-ghost" type="button" onClick={() => registerPunch("pausa_inicio")}>InÃ­cio pausa</button>
             <button className="btn-ghost" type="button" onClick={() => registerPunch("pausa_fim")}>Fim pausa</button>
-            <button className="btn-ghost" type="button" onClick={() => registerPunch("saida")}>Saída</button>
+            <button className="btn-ghost" type="button" onClick={() => registerPunch("saida")}>SaÃ­da</button>
           </div>
-          <div className="text-xs text-slate-400">Últimos registros de ponto</div>
+          <div className="text-xs text-slate-400">Ãšltimos registros de ponto</div>
           <ul className="space-y-1 text-sm">
             {punches.map((p) => (
               <li key={p.id} className="flex justify-between border-b border-slate-800 pb-1">
@@ -661,21 +669,21 @@ export default function OperatorPage() {
           <section className="glass-card p-4 space-y-3">
             <h2 className="font-semibold">Abrir turno</h2>
             <select value={boothId} onChange={(e) => setBoothId(e.target.value)} className="field">
-              <option value="">Selecione o guichê</option>
+              <option value="">Selecione o guichÃª</option>
               {booths.map((b) => (
                 <option key={b.booth_id} value={b.booth_id}>{b.booth_name ?? b.booth_id}</option>
               ))}
             </select>
             {booths.length === 0 && (
-              <p className="text-amber-300 text-sm">Seu usuário não está vinculado a nenhum guichê ativo. Peça ao admin para vincular em Configurações.</p>
+              <p className="text-amber-300 text-sm">Seu usuÃ¡rio nÃ£o estÃ¡ vinculado a nenhum guichÃª ativo. PeÃ§a ao admin para vincular em ConfiguraÃ§Ãµes.</p>
             )}
-            <button onClick={openShift} className="btn-primary">Abrir turno</button>
+            <button onClick={openShift} className="btn-primary" disabled={operatorBlocked}>Abrir turno</button>
           </section>
         ) : (
           <section className="rounded-xl border border-slate-800 bg-card p-4">
             <div className="flex items-center justify-between">
               <p className="text-green-400">Turno aberto</p>
-              <button onClick={closeShift} className="px-3 py-2 rounded-lg border border-red-500 text-red-300">Encerrar turno</button>
+              <button onClick={closeShift} disabled={operatorBlocked} className="px-3 py-2 rounded-lg border border-red-500 text-red-300 disabled:opacity-50">Encerrar turno</button>
             </div>
           </section>
         )}
@@ -683,14 +691,14 @@ export default function OperatorPage() {
         <section className="glass-card p-4 space-y-3">
           <h2 className="font-semibold">Caixa (PDV)</h2>
           <form onSubmit={submitCashMovement} className="grid md:grid-cols-4 gap-2 items-end">
-            <select value={cashType} onChange={(e) => setCashType(e.target.value as any)} className="field" disabled={!shift}>
+            <select value={cashType} onChange={(e) => setCashType(e.target.value as any)} className="field" disabled={!shift || operatorBlocked}>
               <option value="suprimento">Suprimento</option>
               <option value="sangria">Sangria</option>
               <option value="ajuste">Ajuste</option>
             </select>
-            <input value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} type="number" min="0" step="0.01" placeholder="Valor" className="field" disabled={!shift} />
-            <input value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Observação" className="field" disabled={!shift} />
-            <button className="btn-primary" disabled={!shift}>Registrar</button>
+            <input value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} type="number" min="0" step="0.01" placeholder="Valor" className="field" disabled={!shift || operatorBlocked} />
+            <input value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Observação" className="field" disabled={!shift || operatorBlocked} />
+            <button className="btn-primary" disabled={!shift || operatorBlocked}>Registrar</button>
           </form>
           <div className="grid md:grid-cols-4 gap-2 text-sm">
             <div className="rounded-lg border border-slate-800 p-2">Suprimento: <b>R$ {cashTotals.suprimento.toFixed(2)}</b></div>
@@ -701,7 +709,7 @@ export default function OperatorPage() {
         </section>
 
         <form onSubmit={submitTx} className="glass-card p-4 md:p-5 space-y-4">
-          <h2 className="font-semibold text-slate-100">Novo lançamento</h2>
+          <h2 className="font-semibold text-slate-100">Novo lanÃ§amento</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <select value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="field" required>
               <option value="">Selecione a empresa</option>
@@ -727,25 +735,25 @@ export default function OperatorPage() {
             </select>
             <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as any)} className="field">
               <option value="pix">PIX</option>
-              <option value="credit">Crédito</option>
-              <option value="debit">Débito</option>
+              <option value="credit">CrÃ©dito</option>
+              <option value="debit">DÃ©bito</option>
               <option value="cash">Dinheiro</option>
             </select>
             <input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" step="0.01" min="0" placeholder="Valor" className="field" required />
-            <input value={ticketReference} onChange={(e) => setTicketReference(e.target.value)} placeholder="Referência da passagem (opcional)" className="field" />
+            <input value={ticketReference} onChange={(e) => setTicketReference(e.target.value)} placeholder="ReferÃªncia da passagem (opcional)" className="field" />
           </div>
-          <textarea value={note} onChange={(e) => setNote(e.target.value)} className="field" placeholder="Observação (opcional)" />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} className="field" placeholder="ObservaÃ§Ã£o (opcional)" />
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
-            <button disabled={!shift} className="btn-primary disabled:opacity-50">Salvar lançamento</button>
+            <button disabled={!shift || operatorBlocked} className="btn-primary disabled:opacity-50">Salvar lanÃ§amento</button>
             {message && <p className="text-sm text-slate-300">{message}</p>}
           </div>
         </form>
 
         <section className="glass-card p-4">
-          <h2 className="font-semibold mb-3">Lançamentos do turno</h2>
+          <h2 className="font-semibold mb-3">LanÃ§amentos do turno</h2>
 
           {txs.length === 0 ? (
-            <p className="text-sm text-slate-400">Nenhum lançamento no turno atual.</p>
+            <p className="text-sm text-slate-400">Nenhum lanÃ§amento no turno atual.</p>
           ) : (
             <>
               <div className="space-y-3 md:hidden">
@@ -758,18 +766,18 @@ export default function OperatorPage() {
                         <span className="text-slate-300">{tx.company_name}</span>
                         <span className="text-amber-300 font-semibold">R$ {Number(tx.amount).toFixed(2)}</span>
                       </div>
-                      <div className="text-xs text-slate-400">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} • {tx.payment_method.toUpperCase()}</div>
+                      <div className="text-xs text-slate-400">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} â€¢ {tx.payment_method.toUpperCase()}</div>
                       <div className="text-xs text-slate-400">Ref: {tx.ticket_reference ?? "-"}</div>
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-xs">
                           {!need ? (
-                            <span className="text-slate-500">Comprovante não obrigatório</span>
+                            <span className="text-slate-500">Comprovante nÃ£o obrigatÃ³rio</span>
                           ) : has ? (
                             <span className="text-emerald-300">Comprovante OK</span>
                           ) : (
                             <label className="inline-flex items-center gap-2 cursor-pointer text-slate-200">
                               <span>{uploadingTxId === tx.id ? "Enviando..." : "Anexar comprovante"}</span>
-                              <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id} onChange={(e) => handleUploadReceipt(tx.id, e)} />
+                              <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id || operatorBlocked} onChange={(e) => handleUploadReceipt(tx.id, e)} />
                             </label>
                           )}
                         </div>
@@ -787,7 +795,7 @@ export default function OperatorPage() {
                       <th className="py-2">Hora</th>
                       <th>Empresa</th>
                       <th>Ref</th>
-                      <th>Método</th>
+                      <th>MÃ©todo</th>
                       <th>Valor</th>
                       <th>Comprovante</th>
                       <th>Ajuste</th>
@@ -806,13 +814,13 @@ export default function OperatorPage() {
                           <td className="text-amber-300">R$ {Number(tx.amount).toFixed(2)}</td>
                           <td>
                             {!need ? (
-                              <span className="text-slate-500">Não obrigatório</span>
+                              <span className="text-slate-500">NÃ£o obrigatÃ³rio</span>
                             ) : has ? (
                               <span className="text-emerald-300">OK</span>
                             ) : (
                               <label className="inline-flex items-center gap-2 cursor-pointer text-slate-200">
                                 <span>{uploadingTxId === tx.id ? "Enviando..." : "Anexar"}</span>
-                                <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id} onChange={(e) => handleUploadReceipt(tx.id, e)} />
+                                <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id || operatorBlocked} onChange={(e) => handleUploadReceipt(tx.id, e)} />
                               </label>
                             )}
                           </td>
@@ -865,3 +873,7 @@ function PaymentMixBars({ data }: { data: Array<{ label: string; value: number; 
     </div>
   );
 }
+
+
+
+
