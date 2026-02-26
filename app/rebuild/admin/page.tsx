@@ -4,162 +4,156 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 
+type AdminSection = "dashboard" | "controle-turno" | "historico" | "relatorios" | "usuarios" | "configuracoes";
+
 type Profile = { user_id: string; full_name: string; role: "admin" | "operator"; active?: boolean | null };
-type Shift = { id: string; status: "open" | "closed"; opened_at: string; operator_id: string; booth_id: string };
-type TransactionBase = {
+type Shift = { id: string; status: "open" | "closed"; opened_at: string; closed_at?: string | null; operator_id?: string | null; booth_id?: string | null };
+type Tx = {
   id: string;
   sold_at: string;
   amount: number;
-  commission_amount: number | null;
   payment_method: "pix" | "credit" | "debit" | "cash";
   status: "posted" | "voided";
   operator_id?: string | null;
+  booth_id?: string | null;
+  category_id?: string | null;
 };
-type Receipt = { id: string; transaction_id: string };
-type AdjustmentRequest = {
-  id: string;
-  transaction_id: string;
-  requested_by: string;
-  reason: string;
-  status: "pending" | "approved" | "rejected";
-  created_at: string;
+type Company = { id: string; name: string; active: boolean };
+type Booth = { id: string; code: string; name: string; active: boolean };
+type Category = { id: string; name: string; active: boolean };
+type Subcategory = { id: string; name: string; category_id: string; active: boolean };
+type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
+
+type UiState = { loading: boolean; error: string | null };
+
+const sections: Record<AdminSection, string> = {
+  dashboard: "Dashboard",
+  "controle-turno": "Controle de Turno",
+  historico: "Histórico",
+  relatorios: "Relatórios",
+  usuarios: "Usuários",
+  configuracoes: "Configurações",
 };
 
-type AdminSection = "dashboard" | "historico" | "relatorios" | "usuarios" | "configuracoes";
-
-const sections: Array<{ key: AdminSection; label: string }> = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "historico", label: "Histórico" },
-  { key: "relatorios", label: "Relatórios" },
-  { key: "usuarios", label: "Usuários" },
-  { key: "configuracoes", label: "Configurações" },
-];
-
-function brl(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function paymentLabel(method: TransactionBase["payment_method"]) {
-  if (method === "credit") return "Crédito";
-  if (method === "debit") return "Débito";
-  if (method === "cash") return "Dinheiro";
-  return "Pix";
-}
-
-function paymentIcon(method: TransactionBase["payment_method"]) {
-  if (method === "credit" || method === "debit") return "credit_card";
-  if (method === "cash") return "payments";
-  return "qr_code_2";
-}
+const brl = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export default function RebuildAdminPage() {
   const router = useRouter();
 
+  const sectionParam = (typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("section") as AdminSection | null) : null);
+  const activeSection: AdminSection = sectionParam && sectionParam in sections ? sectionParam : "dashboard";
+
   const [authLoading, setAuthLoading] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [ui, setUi] = useState<UiState>({ loading: true, error: null });
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const [operators, setOperators] = useState<Profile[]>([]);
-  const [transactions, setTransactions] = useState<TransactionBase[]>([]);
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [adjustments, setAdjustments] = useState<AdjustmentRequest[]>([]);
+  const [txs, setTxs] = useState<Tx[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [booths, setBooths] = useState<Booth[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [links, setLinks] = useState<OperatorBooth[]>([]);
 
-  const sectionParam = (typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("section") as AdminSection | null) : null) ?? "dashboard";
-  const activeSection: AdminSection = sections.some((s) => s.key === sectionParam) ? sectionParam : "dashboard";
+  const [companyName, setCompanyName] = useState("");
+  const [boothCode, setBoothCode] = useState("");
+  const [boothName, setBoothName] = useState("");
+  const [categoryName, setCategoryName] = useState("");
+  const [subCategoryName, setSubCategoryName] = useState("");
+  const [subCategoryParentId, setSubCategoryParentId] = useState("");
+  const [linkOperatorId, setLinkOperatorId] = useState("");
+  const [linkBoothId, setLinkBoothId] = useState("");
 
-  const operatorNameById = useMemo(() => new Map(operators.map((o) => [o.user_id, o.full_name])), [operators]);
-  const postedTx = useMemo(() => transactions.filter((tx) => tx.status === "posted"), [transactions]);
+  const [historicoOperatorFilter, setHistoricoOperatorFilter] = useState("");
+  const [historicoStatusFilter, setHistoricoStatusFilter] = useState("");
+  const [historicoDateFilter, setHistoricoDateFilter] = useState("");
+  const [reportBoothFilter, setReportBoothFilter] = useState("");
+  const [reportCategoryFilter, setReportCategoryFilter] = useState("");
 
-  const todayKey = new Date().toISOString().slice(0, 10);
-  const txToday = useMemo(() => postedTx.filter((tx) => tx.sold_at.slice(0, 10) === todayKey), [postedTx, todayKey]);
+  const operatorMap = useMemo(() => new Map(profiles.map((p) => [p.user_id, p.full_name])), [profiles]);
+  const boothMap = useMemo(() => new Map(booths.map((b) => [b.id, `${b.code} - ${b.name}`])), [booths]);
+  const categoryMap = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
 
-  const kpis = useMemo(() => {
-    const revenue = txToday.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
-    const commission = txToday.reduce((acc, tx) => acc + Number(tx.commission_amount || 0), 0);
-    const avgTicket = txToday.length ? revenue / txToday.length : 0;
-    const openShifts = shifts.filter((s) => s.status === "open").length;
-    return { revenue, commission, avgTicket, openShifts };
-  }, [txToday, shifts]);
-
-  const pendingReceiptCount = useMemo(() => {
-    const cardTx = postedTx.filter((tx) => tx.payment_method === "credit" || tx.payment_method === "debit");
-    const receiptSet = new Set(receipts.map((r) => r.transaction_id));
-    return cardTx.filter((tx) => !receiptSet.has(tx.id)).length;
-  }, [postedTx, receipts]);
-
-  const pendingAdjustments = useMemo(() => adjustments.filter((a) => a.status === "pending"), [adjustments]);
-
-  const alerts = useMemo(() => {
-    const list: Array<{ title: string; ref: string; detail: string }> = [];
-    pendingAdjustments.slice(0, 2).forEach((adj) => {
-      list.push({
-        title: "Ajuste Pendente",
-        ref: `#${adj.transaction_id.slice(0, 8)}`,
-        detail: adj.reason,
-      });
+  const operators = useMemo(() => profiles.filter((p) => p.role === "operator"), [profiles]);
+  const openShifts = useMemo(() => shifts.filter((s) => s.status === "open"), [shifts]);
+  const closedShifts = useMemo(() => shifts.filter((s) => s.status === "closed"), [shifts]);
+  const pendingByOperator = useMemo(() => {
+    const map = new Map<string, number>();
+    openShifts.forEach((s) => {
+      const key = s.operator_id || "sem-operador";
+      map.set(key, (map.get(key) || 0) + 1);
     });
-    if (pendingReceiptCount > 0) {
-      list.push({
-        title: "Comprovantes Pendentes",
-        ref: "Cartão",
-        detail: `${pendingReceiptCount} transação(ões) aguardando comprovante.`,
-      });
-    }
-    if (list.length === 0) {
-      list.push({ title: "Operação Estável", ref: "Agora", detail: "Nenhum alerta crítico no momento." });
-    }
-    return list.slice(0, 3);
-  }, [pendingAdjustments, pendingReceiptCount]);
+    return Array.from(map.entries()).map(([operatorId, total]) => ({ operatorId, total })).sort((a, b) => b.total - a.total);
+  }, [openShifts]);
 
-  const chartDays = useMemo(() => {
-    const out: Array<{ key: string; label: string; total: number }> = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      out.push({ key, label: d.toLocaleDateString("pt-BR", { weekday: "short" }), total: 0 });
-    }
-    postedTx.forEach((tx) => {
-      const item = out.find((d) => d.key === tx.sold_at.slice(0, 10));
-      if (item) item.total += Number(tx.amount || 0);
+  const filteredHistorico = useMemo(() => {
+    return txs.filter((t) => {
+      if (historicoOperatorFilter && t.operator_id !== historicoOperatorFilter) return false;
+      if (historicoStatusFilter && t.status !== historicoStatusFilter) return false;
+      if (historicoDateFilter && !t.sold_at.startsWith(historicoDateFilter)) return false;
+      return true;
     });
-    return out;
-  }, [postedTx]);
+  }, [txs, historicoOperatorFilter, historicoStatusFilter, historicoDateFilter]);
 
-  const chartPath = useMemo(() => {
-    const max = Math.max(1, ...chartDays.map((d) => d.total));
-    const width = 760;
-    const height = 220;
-    const step = width / Math.max(1, chartDays.length - 1);
-    const points = chartDays.map((d, idx) => {
-      const x = idx * step;
-      const y = height - (d.total / max) * 200 - 10;
-      return { x, y };
+  const filteredReportTx = useMemo(() => {
+    return txs.filter((t) => {
+      if (reportBoothFilter && t.booth_id !== reportBoothFilter) return false;
+      if (reportCategoryFilter && t.category_id !== reportCategoryFilter) return false;
+      return t.status === "posted";
     });
-    if (!points.length) return { line: "", area: "" };
-    const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
-    const area = `${line} L ${width},${height} L 0,${height} Z`;
-    return { line, area };
-  }, [chartDays]);
+  }, [txs, reportBoothFilter, reportCategoryFilter]);
+
+  const reportTotals = useMemo(() => {
+    const total = filteredReportTx.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+    const byOperator = new Map<string, { name: string; qty: number; total: number }>();
+    const byBooth = new Map<string, { name: string; qty: number; total: number }>();
+    const byCategory = new Map<string, { name: string; qty: number; total: number }>();
+
+    filteredReportTx.forEach((tx) => {
+      const opName = operatorMap.get(tx.operator_id || "") || "Sem operador";
+      const boothName = boothMap.get(tx.booth_id || "") || "Sem guichê";
+      const categoryName = categoryMap.get(tx.category_id || "") || "Sem categoria";
+
+      const opPrev = byOperator.get(opName) || { name: opName, qty: 0, total: 0 };
+      opPrev.qty += 1;
+      opPrev.total += Number(tx.amount || 0);
+      byOperator.set(opName, opPrev);
+
+      const boothPrev = byBooth.get(boothName) || { name: boothName, qty: 0, total: 0 };
+      boothPrev.qty += 1;
+      boothPrev.total += Number(tx.amount || 0);
+      byBooth.set(boothName, boothPrev);
+
+      const catPrev = byCategory.get(categoryName) || { name: categoryName, qty: 0, total: 0 };
+      catPrev.qty += 1;
+      catPrev.total += Number(tx.amount || 0);
+      byCategory.set(categoryName, catPrev);
+    });
+
+    return {
+      total,
+      qty: filteredReportTx.length,
+      byOperator: Array.from(byOperator.values()).sort((a, b) => b.total - a.total),
+      byBooth: Array.from(byBooth.values()).sort((a, b) => b.total - a.total),
+      byCategory: Array.from(byCategory.values()).sort((a, b) => b.total - a.total),
+    };
+  }, [filteredReportTx, operatorMap, boothMap, categoryMap]);
 
   useEffect(() => {
     async function guard() {
       setAuthLoading(true);
       try {
         const { data } = await supabase.auth.getUser();
-        const authUserId = data.user?.id;
-        if (!authUserId) return router.replace("/login");
+        const userId = data.user?.id;
+        if (!userId) return router.replace("/login");
 
-        const profileRes = await supabase.from("profiles").select("role,active").eq("user_id", authUserId).single();
-        if (profileRes.error || !profileRes.data) return router.replace("/login");
-
-        const profile = profileRes.data as { role: "admin" | "operator"; active?: boolean | null };
-        if (profile.active === false) {
+        const profileRes = await supabase.from("profiles").select("role,active").eq("user_id", userId).single();
+        if (profileRes.error || !profileRes.data || profileRes.data.active === false) {
           await supabase.auth.signOut();
           return router.replace("/login");
         }
-        if (profile.role !== "admin") return router.replace("/rebuild/operator");
+        if (profileRes.data.role !== "admin") return router.replace("/rebuild/operator");
       } finally {
         setAuthLoading(false);
       }
@@ -168,144 +162,301 @@ export default function RebuildAdminPage() {
     guard();
   }, [router]);
 
-  useEffect(() => {
-    if (authLoading) return;
+  async function loadAll() {
+    setUi({ loading: true, error: null });
+    setNotice(null);
+    try {
+      const [profilesRes, shiftsRes, txRes, companiesRes, boothsRes, categoriesRes, subcategoriesRes, linksRes] = await Promise.all([
+        supabase.from("profiles").select("user_id,full_name,role,active").order("full_name"),
+        supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120),
+        supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400),
+        supabase.from("companies").select("id,name,active").order("name"),
+        supabase.from("booths").select("id,code,name,active").order("name"),
+        supabase.from("transaction_categories").select("id,name,active").order("name"),
+        supabase.from("transaction_subcategories").select("id,name,category_id,active").order("name"),
+        supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250),
+      ]);
 
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const from = new Date();
-        from.setDate(from.getDate() - 90);
-        from.setHours(0, 0, 0, 0);
-
-        const [opsRes, txRes, shiftsRes, adjRes] = await Promise.all([
-          supabase.from("profiles").select("user_id,full_name,role,active").eq("role", "operator").order("full_name"),
-          supabase
-            .from("transactions")
-            .select("id,sold_at,amount,commission_amount,payment_method,status,operator_id")
-            .gte("sold_at", from.toISOString())
-            .order("sold_at", { ascending: false })
-            .limit(600),
-          supabase.from("shifts").select("id,status,opened_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(150),
-          supabase.from("adjustment_requests").select("id,transaction_id,requested_by,reason,status,created_at").order("created_at", { ascending: false }).limit(120),
-        ]);
-
-        if (opsRes.error || txRes.error || shiftsRes.error || adjRes.error) {
-          setError("Não foi possível carregar o dashboard administrativo.");
-          return;
-        }
-
-        const txList = (txRes.data as TransactionBase[] | null) ?? [];
-        const txIds = txList.map((t) => t.id);
-        const recRes = txIds.length
-          ? await supabase.from("transaction_receipts").select("id,transaction_id").in("transaction_id", txIds)
-          : ({ data: [], error: null } as { data: Receipt[]; error: null });
-
-        setOperators((opsRes.data as Profile[] | null) ?? []);
-        setTransactions(txList);
-        setShifts((shiftsRes.data as Shift[] | null) ?? []);
-        setAdjustments((adjRes.data as AdjustmentRequest[] | null) ?? []);
-        setReceipts((recRes.data as Receipt[] | null) ?? []);
-      } catch {
-        setError("Falha inesperada ao carregar os dados.");
-      } finally {
-        setLoading(false);
+      const err = [profilesRes.error, shiftsRes.error, txRes.error, companiesRes.error, boothsRes.error, categoriesRes.error, subcategoriesRes.error, linksRes.error].find(Boolean);
+      if (err) {
+        setUi({ loading: false, error: "Não foi possível carregar os dados administrativos." });
+        return;
       }
-    }
 
-    load();
+      setProfiles((profilesRes.data as Profile[] | null) ?? []);
+      setShifts((shiftsRes.data as Shift[] | null) ?? []);
+      setTxs((txRes.data as Tx[] | null) ?? []);
+      setCompanies((companiesRes.data as Company[] | null) ?? []);
+      setBooths((boothsRes.data as Booth[] | null) ?? []);
+      setCategories((categoriesRes.data as Category[] | null) ?? []);
+      setSubcategories((subcategoriesRes.data as Subcategory[] | null) ?? []);
+      setLinks((linksRes.data as OperatorBooth[] | null) ?? []);
+      setUi({ loading: false, error: null });
+    } catch {
+      setUi({ loading: false, error: "Falha inesperada ao carregar os dados." });
+    }
+  }
+
+  useEffect(() => {
+    if (!authLoading) loadAll();
   }, [authLoading]);
 
-  if (authLoading || loading) return <div className="text-sm text-slate-500">Carregando dashboard...</div>;
-  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>;
+  async function toggleRow(table: string, idField: string, id: string, current: boolean, okMsg: string) {
+    const res = await supabase.from(table).update({ active: !current }).eq(idField, id);
+    if (res.error) return setNotice("Não foi possível atualizar o status.");
+    setNotice(okMsg);
+    await loadAll();
+  }
+
+  async function createCompany() {
+    if (!companyName.trim()) return setNotice("Informe o nome da empresa.");
+    const res = await supabase.from("companies").insert({ name: companyName.trim(), active: true });
+    if (res.error) return setNotice("Não foi possível cadastrar a empresa.");
+    setCompanyName("");
+    setNotice("Empresa cadastrada com sucesso.");
+    await loadAll();
+  }
+
+  async function createBooth() {
+    if (!boothCode.trim() || !boothName.trim()) return setNotice("Informe código e nome do guichê.");
+    const res = await supabase.from("booths").insert({ code: boothCode.trim(), name: boothName.trim(), active: true });
+    if (res.error) return setNotice("Não foi possível cadastrar o guichê.");
+    setBoothCode("");
+    setBoothName("");
+    setNotice("Guichê cadastrado com sucesso.");
+    await loadAll();
+  }
+
+  async function createCategory() {
+    if (!categoryName.trim()) return setNotice("Informe o nome da categoria.");
+    const res = await supabase.from("transaction_categories").insert({ name: categoryName.trim(), active: true });
+    if (res.error) return setNotice("Não foi possível cadastrar a categoria.");
+    setCategoryName("");
+    setNotice("Categoria cadastrada com sucesso.");
+    await loadAll();
+  }
+
+  async function createSubcategory() {
+    if (!subCategoryName.trim() || !subCategoryParentId) return setNotice("Informe a categoria e o nome da subcategoria.");
+    const res = await supabase.from("transaction_subcategories").insert({ name: subCategoryName.trim(), category_id: subCategoryParentId, active: true });
+    if (res.error) return setNotice("Não foi possível cadastrar a subcategoria.");
+    setSubCategoryName("");
+    setSubCategoryParentId("");
+    setNotice("Subcategoria cadastrada com sucesso.");
+    await loadAll();
+  }
+
+  async function createLink() {
+    if (!linkOperatorId || !linkBoothId) return setNotice("Selecione operador e guichê para vincular.");
+    const exists = links.some((l) => l.operator_id === linkOperatorId && l.booth_id === linkBoothId);
+    if (exists) return setNotice("Esse vínculo já existe.");
+    const res = await supabase.from("operator_booths").insert({ operator_id: linkOperatorId, booth_id: linkBoothId, active: true });
+    if (res.error) return setNotice("Não foi possível criar o vínculo.");
+    setLinkOperatorId("");
+    setLinkBoothId("");
+    setNotice("Vínculo criado com sucesso.");
+    await loadAll();
+  }
+
+  function exportCsv() {
+    const headers = ["data", "operador", "guiche", "categoria", "valor", "status"];
+    const rows = filteredReportTx.map((tx) => [
+      new Date(tx.sold_at).toLocaleString("pt-BR"),
+      operatorMap.get(tx.operator_id || "") || "Sem operador",
+      boothMap.get(tx.booth_id || "") || "Sem guichê",
+      categoryMap.get(tx.category_id || "") || "Sem categoria",
+      String(Number(tx.amount || 0).toFixed(2)).replace(".", ","),
+      tx.status,
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(";")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `relatorio-admin-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  if (authLoading || ui.loading) return <div className="text-sm text-slate-500">Carregando dados administrativos...</div>;
+  if (ui.error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{ui.error}</div>;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {activeSection !== "dashboard" ? (
-        <div className="rounded-xl border border-slate-100 bg-white p-6 shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)]">
-          <h2 className="text-lg font-bold text-slate-900">{sections.find((s) => s.key === activeSection)?.label}</h2>
-          <p className="mt-1 text-sm text-slate-500">Use o menu lateral para voltar ao dashboard visual completo.</p>
-        </div>
-      ) : null}
+      {notice ? <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">{notice}</div> : null}
 
       {activeSection === "dashboard" && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-            <div className="bg-white p-5 rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 h-[140px]">
-              <div className="flex justify-between items-start"><div><p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Receita Hoje</p><h3 className="text-3xl font-extrabold text-slate-900 mt-2">{brl(kpis.revenue)}</h3></div><div className="p-2 bg-blue-50 text-[#0da2e7] rounded-lg"><span className="material-symbols-outlined text-[24px]">payments</span></div></div>
-              <div className="flex items-center mt-2"><span className="bg-emerald-50 text-emerald-600 text-xs font-bold px-2 py-0.5 rounded-full">Dados reais</span></div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card title="Operadores" value={String(operators.length)} />
+          <Card title="Turnos abertos" value={String(openShifts.length)} />
+          <Card title="Transações (90d)" value={String(txs.length)} />
+          <Card title="Receita lançada" value={brl(txs.filter((t) => t.status === "posted").reduce((a, t) => a + Number(t.amount || 0), 0))} />
+        </div>
+      )}
+
+      {activeSection === "controle-turno" && (
+        <SectionBox title="Controle de Turno" subtitle="Visão de turnos abertos, fechados recentes e pendências por operador.">
+          {shifts.length === 0 ? <Empty text="Nenhum turno encontrado." /> : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <MiniList title="Turnos abertos" items={openShifts.slice(0, 12).map((s) => `${operatorMap.get(s.operator_id || "") || "Sem operador"} • ${boothMap.get(s.booth_id || "") || "Sem guichê"}`)} />
+              <MiniList title="Turnos fechados recentes" items={closedShifts.slice(0, 12).map((s) => `${operatorMap.get(s.operator_id || "") || "Sem operador"} • ${new Date(s.opened_at).toLocaleString("pt-BR")}`)} />
+              <MiniList title="Pendências" items={pendingByOperator.slice(0, 12).map((p) => `${operatorMap.get(p.operatorId) || "Sem operador"}: ${p.total} turno(s) aberto(s)`)} />
             </div>
-            <div className="bg-white p-5 rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 h-[140px]">
-              <div className="flex justify-between items-start"><div><p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Comissão Estimada</p><h3 className="text-3xl font-extrabold text-slate-900 mt-2">{brl(kpis.commission)}</h3></div><div className="p-2 bg-indigo-50 text-indigo-500 rounded-lg"><span className="material-symbols-outlined text-[24px]">percent</span></div></div>
-              <div className="flex items-center mt-2"><span className="bg-indigo-50 text-indigo-600 text-xs font-bold px-2 py-0.5 rounded-full">Hoje</span></div>
-            </div>
-            <div className="bg-white p-5 rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 h-[140px]">
-              <div className="flex justify-between items-start"><div><p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Ticket Médio</p><h3 className="text-3xl font-extrabold text-slate-900 mt-2">{brl(kpis.avgTicket)}</h3></div><div className="p-2 bg-amber-50 text-amber-500 rounded-lg"><span className="material-symbols-outlined text-[24px]">receipt</span></div></div>
-              <div className="flex items-center mt-2"><span className="bg-red-50 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">{txToday.length} venda(s)</span></div>
-            </div>
-            <div className="bg-white p-5 rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 h-[140px]">
-              <div className="flex justify-between items-start"><div><p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Turnos Abertos</p><h3 className="text-3xl font-extrabold text-slate-900 mt-2">{kpis.openShifts}</h3></div><div className="p-2 bg-emerald-50 text-emerald-500 rounded-lg"><span className="material-symbols-outlined text-[24px]">storefront</span></div></div>
-              <div className="flex items-center mt-2"><span className="bg-amber-50 text-amber-600 text-xs font-bold px-2 py-0.5 rounded-full">{pendingAdjustments.length} pendente(s)</span></div>
-            </div>
+          )}
+        </SectionBox>
+      )}
+
+      {activeSection === "historico" && (
+        <SectionBox title="Histórico" subtitle="Tabela de transações com filtros básicos.">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+            <select className="border rounded-lg px-3 py-2" value={historicoOperatorFilter} onChange={(e) => setHistoricoOperatorFilter(e.target.value)}>
+              <option value="">Todos operadores</option>
+              {operators.map((op) => <option key={op.user_id} value={op.user_id}>{op.full_name}</option>)}
+            </select>
+            <select className="border rounded-lg px-3 py-2" value={historicoStatusFilter} onChange={(e) => setHistoricoStatusFilter(e.target.value)}>
+              <option value="">Todos status</option>
+              <option value="posted">Lançado</option>
+              <option value="voided">Cancelado</option>
+            </select>
+            <input className="border rounded-lg px-3 py-2" type="date" value={historicoDateFilter} onChange={(e) => setHistoricoDateFilter(e.target.value)} />
           </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 p-6">
-              <div className="flex items-center justify-between mb-6"><div><h2 className="text-lg font-bold text-slate-900">Evolução de Receita</h2><p className="text-sm text-slate-500">Últimos 7 dias</p></div></div>
-              <div className="relative h-64 w-full">
-                <div className="absolute inset-0 flex flex-col justify-between text-xs text-slate-400">
-                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">máx</span><div className="h-px bg-slate-100 w-full"></div></div>
-                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">75%</span><div className="h-px bg-slate-100 w-full"></div></div>
-                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">50%</span><div className="h-px bg-slate-100 w-full"></div></div>
-                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">25%</span><div className="h-px bg-slate-100 w-full"></div></div>
-                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">0</span><div className="h-px bg-slate-100 w-full"></div></div>
-                </div>
-                <svg className="absolute inset-0 left-10 h-full w-[calc(100%-2.5rem)]" viewBox="0 0 760 220" preserveAspectRatio="none">
-                  <defs><linearGradient id="gradient-real" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#0da2e7" stopOpacity="0.2" /><stop offset="100%" stopColor="#0da2e7" stopOpacity="0" /></linearGradient></defs>
-                  <path d={chartPath.area} fill="url(#gradient-real)" />
-                  <path d={chartPath.line} fill="none" stroke="#0da2e7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                <div className="absolute -bottom-6 left-10 right-0 flex justify-between text-xs font-medium text-slate-400 px-2">
-                  {chartDays.map((d) => <span key={d.key}>{d.label}</span>)}
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 flex flex-col overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50"><h3 className="font-bold text-slate-900 flex items-center gap-2"><span className="material-symbols-outlined text-amber-500">warning</span>Atenção Necessária</h3><span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{alerts.length}</span></div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                {alerts.map((alert) => (
-                  <div key={alert.title + alert.ref} className="p-3 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-all">
-                    <div className="flex justify-between items-start mb-1"><p className="text-sm font-semibold text-slate-800">{alert.title}</p><span className="text-[10px] text-slate-400 font-mono">{alert.ref}</span></div>
-                    <p className="text-xs text-slate-500">{alert.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between"><h3 className="font-bold text-lg text-slate-900">Últimas Transações</h3></div>
+          {filteredHistorico.length === 0 ? <Empty text="Sem transações para os filtros selecionados." /> : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead><tr className="bg-slate-50/50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-100"><th className="px-6 py-3 font-semibold w-24">ID</th><th className="px-6 py-3 font-semibold">Data/Hora</th><th className="px-6 py-3 font-semibold">Operador</th><th className="px-6 py-3 font-semibold">Método</th><th className="px-6 py-3 font-semibold text-right">Valor</th><th className="px-6 py-3 font-semibold text-center">Status</th></tr></thead>
-                <tbody className="text-sm divide-y divide-slate-100">
-                  {postedTx.slice(0, 8).map((tx, idx) => (
-                    <tr key={tx.id} className={`hover:bg-blue-50/30 transition-colors ${idx % 2 ? "bg-slate-50/30" : ""}`}>
-                      <td className="px-6 py-3 font-mono text-slate-400 text-xs">#{tx.id.slice(0, 8)}</td>
-                      <td className="px-6 py-3 text-slate-600">{new Date(tx.sold_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td>
-                      <td className="px-6 py-3 font-medium text-slate-900">{operatorNameById.get(tx.operator_id || "") || "Não informado"}</td>
-                      <td className="px-6 py-3 text-slate-600"><div className="flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px] text-slate-400">{paymentIcon(tx.payment_method)}</span>{paymentLabel(tx.payment_method)}</div></td>
-                      <td className="px-6 py-3 text-right font-bold text-slate-900">{brl(Number(tx.amount || 0))}</td>
-                      <td className="px-6 py-3 text-center"><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Confirmado</span></td>
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Operador</th><th className="p-2 text-left">Guichê</th><th className="p-2 text-right">Valor</th><th className="p-2 text-left">Status</th></tr></thead>
+                <tbody>
+                  {filteredHistorico.slice(0, 160).map((tx) => (
+                    <tr key={tx.id} className="border-t">
+                      <td className="p-2">{new Date(tx.sold_at).toLocaleString("pt-BR")}</td>
+                      <td className="p-2">{operatorMap.get(tx.operator_id || "") || "Sem operador"}</td>
+                      <td className="p-2">{boothMap.get(tx.booth_id || "") || "Sem guichê"}</td>
+                      <td className="p-2 text-right">{brl(Number(tx.amount || 0))}</td>
+                      <td className="p-2">{tx.status === "posted" ? "Lançado" : "Cancelado"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          )}
+        </SectionBox>
+      )}
+
+      {activeSection === "relatorios" && (
+        <SectionBox title="Relatórios" subtitle="Consolidado por operador, guichê e categoria com exportação CSV.">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+            <select className="border rounded-lg px-3 py-2" value={reportBoothFilter} onChange={(e) => setReportBoothFilter(e.target.value)}>
+              <option value="">Todos guichês</option>
+              {booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
+            </select>
+            <select className="border rounded-lg px-3 py-2" value={reportCategoryFilter} onChange={(e) => setReportCategoryFilter(e.target.value)}>
+              <option value="">Todas categorias</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold" onClick={exportCsv}>Exportar CSV</button>
           </div>
-        </>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <Card title="Receita consolidada" value={brl(reportTotals.total)} />
+            <Card title="Total de transações" value={String(reportTotals.qty)} />
+            <Card title="Ticket médio" value={brl(reportTotals.qty ? reportTotals.total / reportTotals.qty : 0)} />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <MiniTable title="Por operador" rows={reportTotals.byOperator} />
+            <MiniTable title="Por guichê" rows={reportTotals.byBooth} />
+            <MiniTable title="Por categoria" rows={reportTotals.byCategory} />
+          </div>
+        </SectionBox>
+      )}
+
+      {activeSection === "usuarios" && (
+        <SectionBox title="Usuários" subtitle="Gestão de perfis de operador ativos/inativos.">
+          {operators.length === 0 ? <Empty text="Nenhum operador cadastrado." /> : (
+            <div className="space-y-2">
+              {operators.map((op) => (
+                <div key={op.user_id} className="rounded-lg border p-3 flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-slate-900">{op.full_name}</p>
+                    <p className="text-xs text-slate-500">{op.user_id}</p>
+                  </div>
+                  <button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => toggleRow("profiles", "user_id", op.user_id, op.active !== false, `Usuário ${op.active === false ? "ativado" : "inativado"} com sucesso.`)}>
+                    {op.active === false ? "Ativar" : "Inativar"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionBox>
+      )}
+
+      {activeSection === "configuracoes" && (
+        <SectionBox title="Configurações" subtitle="Gestão de empresas, guichês, categorias, subcategorias e vínculos operador↔guichê.">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <CrudPanel title="Empresas" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createCompany}>Cadastrar</button></div>} items={companies.map((c) => ({ id: c.id, label: c.name, active: c.active, onToggle: () => toggleRow("companies", "id", c.id, c.active, "Empresa atualizada com sucesso.") }))} />
+
+            <CrudPanel title="Guichês" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 w-28" placeholder="Código" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} /><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nome" value={boothName} onChange={(e) => setBoothName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createBooth}>Cadastrar</button></div>} items={booths.map((b) => ({ id: b.id, label: `${b.code} - ${b.name}`, active: b.active, onToggle: () => toggleRow("booths", "id", b.id, b.active, "Guichê atualizado com sucesso.") }))} />
+
+            <CrudPanel title="Categorias" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova categoria" value={categoryName} onChange={(e) => setCategoryName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createCategory}>Cadastrar</button></div>} items={categories.map((c) => ({ id: c.id, label: c.name, active: c.active, onToggle: () => toggleRow("transaction_categories", "id", c.id, c.active, "Categoria atualizada com sucesso.") }))} />
+
+            <CrudPanel title="Subcategorias" createForm={<div className="flex gap-2 flex-wrap"><select className="border rounded-lg px-3 py-2" value={subCategoryParentId} onChange={(e) => setSubCategoryParentId(e.target.value)}><option value="">Categoria</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova subcategoria" value={subCategoryName} onChange={(e) => setSubCategoryName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createSubcategory}>Cadastrar</button></div>} items={subcategories.map((s) => ({ id: s.id, label: `${s.name} (${categoryMap.get(s.category_id) || "Sem categoria"})`, active: s.active, onToggle: () => toggleRow("transaction_subcategories", "id", s.id, s.active, "Subcategoria atualizada com sucesso.") }))} />
+
+            <CrudPanel title="Vínculos operador↔guichê" createForm={<div className="flex gap-2 flex-wrap"><select className="border rounded-lg px-3 py-2" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)}><option value="">Operador</option>{operators.map((o) => <option key={o.user_id} value={o.user_id}>{o.full_name}</option>)}</select><select className="border rounded-lg px-3 py-2" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)}><option value="">Guichê</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createLink}>Vincular</button></div>} items={links.map((l) => ({ id: l.id, label: `${operatorMap.get(l.operator_id) || "Sem operador"} ↔ ${boothMap.get(l.booth_id) || "Sem guichê"}`, active: l.active, onToggle: () => toggleRow("operator_booths", "id", l.id, l.active, "Vínculo atualizado com sucesso.") }))} />
+          </div>
+        </SectionBox>
+      )}
+    </div>
+  );
+}
+
+function Card({ title, value }: { title: string; value: string }) {
+  return <div className="bg-white rounded-xl border border-slate-100 p-4"><p className="text-xs uppercase text-slate-500 font-semibold">{title}</p><p className="text-2xl font-bold text-slate-900 mt-1">{value}</p></div>;
+}
+
+function SectionBox({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+  return <div className="rounded-xl border border-slate-100 bg-white p-5"><h2 className="text-lg font-bold text-slate-900">{title}</h2><p className="text-sm text-slate-500 mb-4">{subtitle}</p>{children}</div>;
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">{text}</div>;
+}
+
+function MiniList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <p className="font-semibold text-slate-800 mb-2">{title}</p>
+      {items.length === 0 ? <p className="text-sm text-slate-500">Sem dados.</p> : <ul className="space-y-1 text-sm text-slate-600">{items.map((item, i) => <li key={`${title}-${i}`}>{item}</li>)}</ul>}
+    </div>
+  );
+}
+
+function MiniTable({ title, rows }: { title: string; rows: Array<{ name: string; qty: number; total: number }> }) {
+  return (
+    <div className="rounded-lg border p-3 overflow-x-auto">
+      <p className="font-semibold text-slate-800 mb-2">{title}</p>
+      {rows.length === 0 ? <p className="text-sm text-slate-500">Sem dados.</p> : (
+        <table className="w-full text-sm">
+          <thead><tr className="text-slate-500"><th className="text-left">Nome</th><th className="text-right">Qtd</th><th className="text-right">Total</th></tr></thead>
+          <tbody>{rows.slice(0, 10).map((r) => <tr key={`${title}-${r.name}`} className="border-t"><td className="py-1">{r.name}</td><td className="py-1 text-right">{r.qty}</td><td className="py-1 text-right">{brl(r.total)}</td></tr>)}</tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function CrudPanel({ title, createForm, items }: { title: string; createForm: React.ReactNode; items: Array<{ id: string; label: string; active: boolean; onToggle: () => void }> }) {
+  return (
+    <div className="rounded-lg border p-3 space-y-3">
+      <p className="font-semibold text-slate-800">{title}</p>
+      {createForm}
+      {items.length === 0 ? <p className="text-sm text-slate-500">Sem registros.</p> : (
+        <div className="max-h-64 overflow-auto space-y-2">
+          {items.map((item) => (
+            <div key={item.id} className="rounded-lg border p-2 flex items-center justify-between gap-3">
+              <p className="text-sm text-slate-700">{item.label}</p>
+              <button className="rounded-lg border px-3 py-1.5 text-xs" onClick={item.onToggle}>{item.active ? "Inativar" : "Ativar"}</button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
