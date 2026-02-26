@@ -2,7 +2,24 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Building2, ChartColumn, CircleDollarSign, Download, Landmark, Search, ShieldCheck, Store, UserCog, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  Building2,
+  ChartColumn,
+  CircleDollarSign,
+  Download,
+  Landmark,
+  Search,
+  ShieldCheck,
+  Store,
+  UserCog,
+  Users,
+  Receipt,
+  Wallet,
+  Percent,
+  TrendingUp,
+  TrendingDown,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { StatCard } from "@/components/rebuild/ui/stat-card";
@@ -126,6 +143,7 @@ export default function RebuildAdminPage() {
   const [finAdjustmentStatus, setFinAdjustmentStatus] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [reportFrom, setReportFrom] = useState(() => new Date(Date.now() - 1000 * 60 * 60 * 24 * 29).toISOString().slice(0, 10));
   const [reportTo, setReportTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [activeSection, setActiveSection] = useState<"dashboard" | "cadastros" | "financeiro" | "relatorios">("dashboard");
 
   const operatorNameById = useMemo(() => new Map(operators.map((item) => [item.user_id, item.full_name])), [operators]);
   const boothNameById = useMemo(() => new Map(booths.map((item) => [item.id, `${item.code} - ${item.name}`])), [booths]);
@@ -413,18 +431,42 @@ export default function RebuildAdminPage() {
 
   return (
     <div className="rb-page">
-      <SectionHeader title="Painel Administrativo" subtitle="Cadastros, financeiro e relatórios executivos em uma visão unificada." className="rb-admin-header" />
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="rb-card-description" style={{ marginTop: 0 }}>Central Viagens</p>
+            <h2 className="rb-card-title">Dashboard Administrativo</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["dashboard", "Dashboard"],
+              ["cadastros", "Cadastros"],
+              ["financeiro", "Financeiro"],
+              ["relatorios", "Relatórios"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                className={activeSection === key ? "btn-primary" : "btn-ghost"}
+                onClick={() => setActiveSection(key as any)}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
+
       {feedback ? <Card><p className="rb-card-description" style={{ marginTop: 0 }}>{feedback}</p></Card> : null}
 
-      {dashState.loading ? <LoadingState title="Carregando dashboard" message="Consolidando indicadores e alertas operacionais." /> : dashState.error ? <ErrorState title="Falha no dashboard" message={dashState.error} /> : (
+      {activeSection === "dashboard" && (dashState.loading ? <LoadingState title="Carregando dashboard" message="Consolidando indicadores e alertas operacionais." /> : dashState.error ? <ErrorState title="Falha no dashboard" message={dashState.error} /> : (
         <>
           {dashState.warning ? <Card><p className="text-sm text-amber-700">{dashState.warning}</p></Card> : null}
-          <section className="rb-stat-grid" aria-label="Indicadores executivos">
-            <StatCard label="Receita (30 dias)" value={brl(kpis.revenue)} delta="Base: transações postadas" icon={<CircleDollarSign size={16} />} />
-            <StatCard label="Comissão estimada" value={brl(kpis.commission)} delta="Somatório de comissão registrada" icon={<Landmark size={16} />} />
-            <StatCard label="Ticket médio" value={brl(kpis.averageTicket)} delta={`${postedTx.length} venda(s) no período`} icon={<ChartColumn size={16} />} />
-            <StatCard label="Turnos abertos" value={String(kpis.openShifts)} delta={kpis.openShifts > 0 ? "Monitorar encerramento" : "Sem turnos em aberto"} icon={<Users size={16} />} />
-            <StatCard label="Pendências de comprovante" value={String(pendingReceiptCount)} delta={pendingReceiptCount > 0 ? "Requer ação dos operadores" : "Tudo em dia"} icon={<ShieldCheck size={16} />} />
+          <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Indicadores executivos">
+            <Card className="h-[140px]"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Receita</p><h3 className="mt-2 text-3xl font-extrabold text-slate-900">{brl(kpis.revenue)}</h3></div><div className="rounded-lg bg-blue-50 p-2 text-sky-600"><Wallet size={20} /></div></div><div className="mt-3 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"><TrendingUp size={12} /> fluxo postado</div></Card>
+            <Card className="h-[140px]"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Comissão Estimada</p><h3 className="mt-2 text-3xl font-extrabold text-slate-900">{brl(kpis.commission)}</h3></div><div className="rounded-lg bg-indigo-50 p-2 text-indigo-600"><Percent size={20} /></div></div><div className="mt-3 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">sobre vendas postadas</div></Card>
+            <Card className="h-[140px]"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ticket Médio</p><h3 className="mt-2 text-3xl font-extrabold text-slate-900">{brl(kpis.averageTicket)}</h3></div><div className="rounded-lg bg-amber-50 p-2 text-amber-600"><Receipt size={20} /></div></div><div className="mt-3 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700"><TrendingDown size={12} /> {postedTx.length} vendas</div></Card>
+            <Card className="h-[140px]"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Turnos Abertos</p><h3 className="mt-2 text-3xl font-extrabold text-slate-900">{kpis.openShifts}</h3></div><div className="rounded-lg bg-emerald-50 p-2 text-emerald-600"><Store size={20} /></div></div><div className="mt-3 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">{pendingReceiptCount} comprovantes pendentes</div></Card>
           </section>
           <section className="rb-grid-3" aria-label="Gráfico e alertas">
             <Card className="md:col-span-2"><CardTitle>Receita diária (últimos 7 dias)</CardTitle><CardDescription>Evolução simples para leitura rápida da operação.</CardDescription><div className="mt-4 grid grid-cols-7 gap-2">{chartData.map((item) => <div key={item.key} className="flex flex-col items-center gap-2"><div className="h-28 w-full rounded-xl border border-slate-200 bg-slate-50 p-1 flex items-end"><div className="w-full rounded-lg bg-blue-500/90" style={{ height: `${Math.max(6, item.ratio * 100)}%`, transition: "height 220ms ease" }} /></div><span className="text-xs text-slate-500">{item.label}</span><span className="text-xs font-semibold text-slate-700">{brl(item.total)}</span></div>)}</div></Card>
@@ -442,7 +484,8 @@ export default function RebuildAdminPage() {
               <table className="rb-table">
                 <thead className="text-left text-slate-500">
                   <tr>
-                    <th className="py-2">Data/Hora</th>
+                    <th className="py-2">ID</th>
+                    <th>Data/Hora</th>
                     <th>Operador</th>
                     <th>Método</th>
                     <th>Status</th>
@@ -452,7 +495,8 @@ export default function RebuildAdminPage() {
                 <tbody>
                   {postedTx.slice(0, 8).map((tx) => (
                     <tr key={tx.id} className="border-t border-slate-200">
-                      <td className="py-2">{dt(tx.sold_at)}</td>
+                      <td className="py-2 font-mono text-xs text-slate-400">#{tx.id.slice(0, 8)}</td>
+                      <td>{dt(tx.sold_at)}</td>
                       <td>{operatorNameById.get(tx.operator_id || "") || "Não informado"}</td>
                       <td>{paymentMethodLabel(tx.payment_method)}</td>
                       <td>
@@ -467,9 +511,9 @@ export default function RebuildAdminPage() {
             </div>
           </Card>
         </>
-      )}
+      ))}
 
-      {cadState.loading ? <LoadingState title="Carregando cadastros" message="Sincronizando empresas, guichês, categorias e operadores." /> : cadState.error ? <ErrorState title="Falha nos cadastros" message={cadState.error} /> : (
+      {activeSection === "cadastros" && (cadState.loading ? <LoadingState title="Carregando cadastros" message="Sincronizando empresas, guichês, categorias e operadores." /> : cadState.error ? <ErrorState title="Falha nos cadastros" message={cadState.error} /> : (
         <section className="rb-grid-3" aria-label="Cadastros principais">
           <Card className="md:col-span-3"><div className="flex items-center gap-3"><Search size={16} /><input className="field" value={cadSearch} onChange={(e) => setCadSearch(e.target.value)} placeholder="Buscar em empresas, guichês, operadores, categorias, subcategorias e vínculos" /></div>{cadState.warning ? <p className="text-xs text-amber-700 mt-2">{cadState.warning}</p> : null}</Card>
 
@@ -483,17 +527,17 @@ export default function RebuildAdminPage() {
 
           <Card><CardTitle>Resumo de cadastro</CardTitle><CardDescription>Panorama rápido dos cadastros ativos.</CardDescription><div className="mt-4 space-y-2 text-sm"><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Building2 size={14} /> Empresas ativas</span><b>{companies.filter((i) => i.active).length}</b></div><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Store size={14} /> Guichês ativos</span><b>{booths.filter((i) => i.active).length}</b></div><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><UserCog size={14} /> Operadores ativos</span><b>{operators.filter((i) => i.active).length}</b></div></div></Card>
         </section>
-      )}
+      ))}
 
-      {finState.loading ? <LoadingState title="Carregando financeiro" message="Buscando ajustes e fechamentos de caixa." /> : finState.error ? <ErrorState title="Falha no financeiro" message={finState.error} /> : (
+      {activeSection === "financeiro" && (finState.loading ? <LoadingState title="Carregando financeiro" message="Buscando ajustes e fechamentos de caixa." /> : finState.error ? <ErrorState title="Falha no financeiro" message={finState.error} /> : (
         <section className="rb-grid-3" aria-label="Financeiro e administração">
           <Card className="md:col-span-3"><div className="grid md:grid-cols-3 gap-3"><div><p className="text-sm text-slate-600">Período (dias)</p><select className="field mt-1" value={finPeriodDays} onChange={(e) => setFinPeriodDays(e.target.value)}><option value="7">Últimos 7 dias</option><option value="15">Últimos 15 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option></select></div><div><p className="text-sm text-slate-600">Status dos ajustes</p><select className="field mt-1" value={finAdjustmentStatus} onChange={(e) => setFinAdjustmentStatus(e.target.value as any)}><option value="all">Todos</option><option value="pending">Pendentes</option><option value="approved">Aprovados</option><option value="rejected">Rejeitados</option></select></div></div>{finState.warning ? <p className="text-xs text-amber-700 mt-2">{finState.warning}</p> : null}</Card>
           <Card className="md:col-span-2"><CardTitle>Ajustes</CardTitle><CardDescription>Gestão por período e status, com ações rápidas.</CardDescription><div className="mt-4 space-y-2">{filteredAdjustments.length === 0 ? <EmptyState title="Sem ajustes no filtro" message="Não há solicitações de ajuste para os filtros atuais." /> : filteredAdjustments.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-semibold">Transação: {item.transaction_id}</p><p className="text-xs text-slate-500 mt-1">Solicitante: {operatorNameById.get(item.requested_by) || item.requested_by} • {dt(item.created_at)} • {item.status.toUpperCase()}</p><p className="text-sm text-slate-700 mt-2">{item.reason}</p>{item.status === "pending" ? <div className="mt-3 flex gap-2"><button className="btn-primary" disabled={busyKey === `adj-${item.id}-approved`} onClick={() => reviewAdjustment(item, "approved")}>Aprovar</button><button className="btn-ghost" disabled={busyKey === `adj-${item.id}-rejected`} onClick={() => reviewAdjustment(item, "rejected")}>Rejeitar</button></div> : null}</div>)}</div></Card>
           <Card><CardTitle>Caixa / Fechamentos</CardTitle><CardDescription>Últimos fechamentos no período selecionado.</CardDescription>{filteredCashClosings.length === 0 ? <div className="mt-4"><EmptyState title="Sem fechamentos" message="Nenhum fechamento encontrado para o período selecionado." /></div> : <div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Data</th><th>Guichê</th><th>Operador</th><th>Diferença</th></tr></thead><tbody>{filteredCashClosings.map((item) => <tr key={item.id} className="border-t border-slate-200"><td className="py-2">{dt(item.created_at)}</td><td>{(item.booth_id && boothNameById.get(item.booth_id)) || "-"}</td><td>{(item.user_id && operatorNameById.get(item.user_id)) || "-"}</td><td>{brl(Number(item.difference || 0))}</td></tr>)}</tbody></table></div>}</Card>
         </section>
-      )}
+      ))}
 
-      {relState.loading ? <LoadingState title="Carregando relatórios" message="Consolidando análises por período, operador, guichê e categoria." /> : relState.error ? <ErrorState title="Falha nos relatórios" message={relState.error} /> : (
+      {activeSection === "relatorios" && (relState.loading ? <LoadingState title="Carregando relatórios" message="Consolidando análises por período, operador, guichê e categoria." /> : relState.error ? <ErrorState title="Falha nos relatórios" message={relState.error} /> : (
         <section className="rb-grid-3" aria-label="Relatórios e exportações">
           <Card className="md:col-span-3"><div className="grid md:grid-cols-3 gap-3"><div><p className="text-sm text-slate-600">Data inicial</p><input className="field mt-1" type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} /></div><div><p className="text-sm text-slate-600">Data final</p><input className="field mt-1" type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} /></div><div className="flex items-end"><button className="btn-primary w-full inline-flex justify-center items-center gap-2" onClick={exportConsolidadoCsv}><Download size={16} /> Exportar consolidado CSV</button></div></div></Card>
 
@@ -505,7 +549,7 @@ export default function RebuildAdminPage() {
 
           <Card className="md:col-span-2"><div className="flex items-center justify-between gap-2"><div><CardTitle>Por categoria / subcategoria</CardTitle><CardDescription>Visão analítica por tipo de venda.</CardDescription></div><button className="btn-ghost inline-flex items-center gap-2" onClick={() => exportGroupedCsv("relatorio-por-categoria", reportByCategory)}><Download size={14} /> CSV</button></div><div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Grupo</th><th>Qtd</th><th>Receita</th><th>Comissão</th></tr></thead><tbody>{reportByCategory.slice(0, 60).map((r) => <tr key={r.label} className="border-t border-slate-200"><td className="py-2">{r.label}</td><td>{r.qty}</td><td>{brl(r.total)}</td><td>{brl(r.commission)}</td></tr>)}</tbody></table>{reportByCategory.length === 0 ? <EmptyState title="Sem dados" message="Não há vendas no período selecionado." /> : null}</div></Card>
         </section>
-      )}
+      ))}
     </div>
   );
 }
