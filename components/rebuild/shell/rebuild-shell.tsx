@@ -71,6 +71,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setCurrentSection(item.section)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group ${
                   active
                     ? "bg-[#0da2e7] text-white shadow-md shadow-blue-900/20"
@@ -92,6 +93,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setCurrentSection(item.section)}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group ${
                   active
                     ? "bg-[#0da2e7] text-white shadow-md shadow-blue-900/20"

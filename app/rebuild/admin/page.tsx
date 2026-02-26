@@ -25,6 +25,7 @@ type Subcategory = { id: string; name: string; category_id: string; active: bool
 type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
 
 type UiState = { loading: boolean; error: string | null };
+type SectionWarning = { section: string; message: string };
 
 const sections: Record<AdminSection, string> = {
   dashboard: "Dashboard",
@@ -44,6 +45,7 @@ export default function RebuildAdminPage() {
   const [authLoading, setAuthLoading] = useState(true);
   const [ui, setUi] = useState<UiState>({ loading: true, error: null });
   const [notice, setNotice] = useState<string | null>(null);
+  const [sectionWarnings, setSectionWarnings] = useState<SectionWarning[]>([]);
 
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -175,35 +177,47 @@ export default function RebuildAdminPage() {
   async function loadAll() {
     setUi({ loading: true, error: null });
     setNotice(null);
+
+    const warnings: SectionWarning[] = [];
+
+    async function loadChunk<T>(section: string, request: PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
+      try {
+        const res = await request;
+        if (res.error) {
+          warnings.push({ section, message: res.error.message });
+          return [] as T[];
+        }
+        return (res.data ?? []) as T[];
+      } catch (error) {
+        warnings.push({ section, message: error instanceof Error ? error.message : "Erro inesperado." });
+        return [] as T[];
+      }
+    }
+
     try {
-      const [profilesRes, shiftsRes, txRes, companiesRes, boothsRes, categoriesRes, subcategoriesRes, linksRes] = await Promise.all([
-        supabase.from("profiles").select("user_id,full_name,role,active").order("full_name"),
-        supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120),
-        supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400),
-        supabase.from("companies").select("id,name,active").order("name"),
-        supabase.from("booths").select("id,code,name,active").order("name"),
-        supabase.from("transaction_categories").select("id,name,active").order("name"),
-        supabase.from("transaction_subcategories").select("id,name,category_id,active").order("name"),
-        supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250),
+      const [nextProfiles, nextShifts, nextTxs, nextCompanies, nextBooths, nextCategories, nextSubcategories, nextLinks] = await Promise.all([
+        loadChunk<Profile>("Usuários", supabase.from("profiles").select("user_id,full_name,role,active").order("full_name")),
+        loadChunk<Shift>("Controle de turno", supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120)),
+        loadChunk<Tx>("Histórico", supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400)),
+        loadChunk<Company>("Empresas", supabase.from("companies").select("id,name,active").order("name")),
+        loadChunk<Booth>("Guichês", supabase.from("booths").select("id,code,name,active").order("name")),
+        loadChunk<Category>("Categorias", supabase.from("transaction_categories").select("id,name,active").order("name")),
+        loadChunk<Subcategory>("Subcategorias", supabase.from("transaction_subcategories").select("id,name,category_id,active").order("name")),
+        loadChunk<OperatorBooth>("Vínculos operador↔guichê", supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250)),
       ]);
 
-      const err = [profilesRes.error, shiftsRes.error, txRes.error, companiesRes.error, boothsRes.error, categoriesRes.error, subcategoriesRes.error, linksRes.error].find(Boolean);
-      if (err) {
-        setUi({ loading: false, error: "Não foi possível carregar os dados administrativos." });
-        return;
-      }
-
-      setProfiles((profilesRes.data as Profile[] | null) ?? []);
-      setShifts((shiftsRes.data as Shift[] | null) ?? []);
-      setTxs((txRes.data as Tx[] | null) ?? []);
-      setCompanies((companiesRes.data as Company[] | null) ?? []);
-      setBooths((boothsRes.data as Booth[] | null) ?? []);
-      setCategories((categoriesRes.data as Category[] | null) ?? []);
-      setSubcategories((subcategoriesRes.data as Subcategory[] | null) ?? []);
-      setLinks((linksRes.data as OperatorBooth[] | null) ?? []);
+      setProfiles(nextProfiles);
+      setShifts(nextShifts);
+      setTxs(nextTxs);
+      setCompanies(nextCompanies);
+      setBooths(nextBooths);
+      setCategories(nextCategories);
+      setSubcategories(nextSubcategories);
+      setLinks(nextLinks);
+      setSectionWarnings(warnings);
       setUi({ loading: false, error: null });
     } catch {
-      setUi({ loading: false, error: "Falha inesperada ao carregar os dados." });
+      setUi({ loading: false, error: "Falha inesperada ao carregar os dados administrativos." });
     }
   }
 
@@ -213,7 +227,7 @@ export default function RebuildAdminPage() {
 
   async function toggleRow(table: string, idField: string, id: string, current: boolean, okMsg: string) {
     const res = await supabase.from(table).update({ active: !current }).eq(idField, id);
-    if (res.error) return setNotice("Não foi possível atualizar o status.");
+    if (res.error) return setNotice(`Não foi possível atualizar o status: ${res.error.message}`);
     setNotice(okMsg);
     await loadAll();
   }
@@ -221,7 +235,7 @@ export default function RebuildAdminPage() {
   async function createCompany() {
     if (!companyName.trim()) return setNotice("Informe o nome da empresa.");
     const res = await supabase.from("companies").insert({ name: companyName.trim(), active: true });
-    if (res.error) return setNotice("Não foi possível cadastrar a empresa.");
+    if (res.error) return setNotice(`Não foi possível cadastrar a empresa: ${res.error.message}`);
     setCompanyName("");
     setNotice("Empresa cadastrada com sucesso.");
     await loadAll();
@@ -230,7 +244,7 @@ export default function RebuildAdminPage() {
   async function createBooth() {
     if (!boothCode.trim() || !boothName.trim()) return setNotice("Informe código e nome do guichê.");
     const res = await supabase.from("booths").insert({ code: boothCode.trim(), name: boothName.trim(), active: true });
-    if (res.error) return setNotice("Não foi possível cadastrar o guichê.");
+    if (res.error) return setNotice(`Não foi possível cadastrar o guichê: ${res.error.message}`);
     setBoothCode("");
     setBoothName("");
     setNotice("Guichê cadastrado com sucesso.");
@@ -240,7 +254,7 @@ export default function RebuildAdminPage() {
   async function createCategory() {
     if (!categoryName.trim()) return setNotice("Informe o nome da categoria.");
     const res = await supabase.from("transaction_categories").insert({ name: categoryName.trim(), active: true });
-    if (res.error) return setNotice("Não foi possível cadastrar a categoria.");
+    if (res.error) return setNotice(`Não foi possível cadastrar a categoria: ${res.error.message}`);
     setCategoryName("");
     setNotice("Categoria cadastrada com sucesso.");
     await loadAll();
@@ -249,7 +263,7 @@ export default function RebuildAdminPage() {
   async function createSubcategory() {
     if (!subCategoryName.trim() || !subCategoryParentId) return setNotice("Informe a categoria e o nome da subcategoria.");
     const res = await supabase.from("transaction_subcategories").insert({ name: subCategoryName.trim(), category_id: subCategoryParentId, active: true });
-    if (res.error) return setNotice("Não foi possível cadastrar a subcategoria.");
+    if (res.error) return setNotice(`Não foi possível cadastrar a subcategoria: ${res.error.message}`);
     setSubCategoryName("");
     setSubCategoryParentId("");
     setNotice("Subcategoria cadastrada com sucesso.");
@@ -261,7 +275,7 @@ export default function RebuildAdminPage() {
     const exists = links.some((l) => l.operator_id === linkOperatorId && l.booth_id === linkBoothId);
     if (exists) return setNotice("Esse vínculo já existe.");
     const res = await supabase.from("operator_booths").insert({ operator_id: linkOperatorId, booth_id: linkBoothId, active: true });
-    if (res.error) return setNotice("Não foi possível criar o vínculo.");
+    if (res.error) return setNotice(`Não foi possível criar o vínculo: ${res.error.message}`);
     setLinkOperatorId("");
     setLinkBoothId("");
     setNotice("Vínculo criado com sucesso.");
@@ -296,6 +310,16 @@ export default function RebuildAdminPage() {
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {notice ? <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">{notice}</div> : null}
+      {sectionWarnings.length > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-semibold">Algumas seções carregaram com limitações:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {sectionWarnings.map((warning) => (
+              <li key={`${warning.section}-${warning.message}`}>{warning.section}: {warning.message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {activeSection === "dashboard" && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
