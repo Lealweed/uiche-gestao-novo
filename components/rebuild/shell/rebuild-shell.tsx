@@ -11,26 +11,47 @@ import {
   LogOut,
   Search,
   Settings,
-  Shield,
   Store,
   UserCircle2,
   Users,
+  BarChart3,
+  Clock3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const navigation = [
-  { href: "/rebuild/admin", label: "Dashboard", icon: LayoutGrid },
-  { href: "/rebuild/operator", label: "Controle de Turno", icon: Store },
-];
+const primaryNavigation = [
+  { href: "/rebuild/admin", label: "Dashboard", icon: LayoutGrid, section: "dashboard" },
+  { href: "/rebuild/operator", label: "Controle de Turno", icon: Clock3 },
+  { href: "/rebuild/admin?section=historico", label: "Histórico", icon: FileText, section: "historico" },
+  { href: "/rebuild/admin?section=relatorios", label: "Relatórios", icon: BarChart3, section: "relatorios" },
+] as const;
 
-const secondary = [
-  { label: "Histórico", icon: FileText },
-  { label: "Relatórios", icon: Shield },
-];
+const systemNavigation = [
+  { href: "/rebuild/admin?section=usuarios", label: "Usuários", icon: Users, section: "usuarios" },
+  { href: "/rebuild/admin?section=configuracoes", label: "Configurações", icon: Settings, section: "configuracoes" },
+] as const;
+
+const adminSectionLabels: Record<string, string> = {
+  dashboard: "Dashboard",
+  historico: "Histórico",
+  relatorios: "Relatórios",
+  usuarios: "Usuários",
+  configuracoes: "Configurações",
+};
 
 export function RebuildShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const activeLabel = pathname.includes("/operator") ? "Controle de Turno" : "Dashboard";
+  const currentSection = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("section") || "dashboard" : "dashboard";
+
+  const activeLabel = pathname.includes("/operator")
+    ? "Controle de Turno"
+    : adminSectionLabels[currentSection] || "Dashboard";
+
+  function isNavActive(itemHref: string, section?: string) {
+    if (itemHref === "/rebuild/operator") return pathname === "/rebuild/operator";
+    if (!pathname.startsWith("/rebuild/admin")) return false;
+    return section ? currentSection === section : currentSection === "dashboard";
+  }
 
   return (
     <div className="rb-shell">
@@ -46,9 +67,9 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="rb-nav" aria-label="Navegação principal">
-          {navigation.map((item) => {
-            const isActive = pathname === item.href;
+          {primaryNavigation.map((item) => {
             const Icon = item.icon;
+            const isActive = isNavActive(item.href, "section" in item ? item.section : undefined);
             return (
               <Link key={item.href} href={item.href} className={cn("rb-nav-item", isActive && "active")}>
                 <Icon size={18} />
@@ -57,26 +78,19 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
             );
           })}
 
-          {secondary.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.label} className="rb-nav-item" type="button">
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-
           <div className="rb-nav-divider" />
           <span className="rb-nav-caption">Sistema</span>
-          <button className="rb-nav-item" type="button">
-            <Users size={18} />
-            <span>Usuários</span>
-          </button>
-          <button className="rb-nav-item" type="button">
-            <Settings size={18} />
-            <span>Configurações</span>
-          </button>
+
+          {systemNavigation.map((item) => {
+            const Icon = item.icon;
+            const isActive = isNavActive(item.href, item.section);
+            return (
+              <Link key={item.href} href={item.href} className={cn("rb-nav-item", isActive && "active")}>
+                <Icon size={18} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="rb-user-card">

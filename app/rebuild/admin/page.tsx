@@ -143,7 +143,11 @@ export default function RebuildAdminPage() {
   const [finAdjustmentStatus, setFinAdjustmentStatus] = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [reportFrom, setReportFrom] = useState(() => new Date(Date.now() - 1000 * 60 * 60 * 24 * 29).toISOString().slice(0, 10));
   const [reportTo, setReportTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [activeSection, setActiveSection] = useState<"dashboard" | "cadastros" | "financeiro" | "relatorios">("dashboard");
+  const urlSection = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("section") : null;
+  const activeSection: "dashboard" | "historico" | "relatorios" | "usuarios" | "configuracoes" =
+    urlSection === "historico" || urlSection === "relatorios" || urlSection === "usuarios" || urlSection === "configuracoes"
+      ? urlSection
+      : "dashboard";
 
   const operatorNameById = useMemo(() => new Map(operators.map((item) => [item.user_id, item.full_name])), [operators]);
   const boothNameById = useMemo(() => new Map(booths.map((item) => [item.id, `${item.code} - ${item.name}`])), [booths]);
@@ -437,23 +441,7 @@ export default function RebuildAdminPage() {
             <p className="rb-card-description" style={{ marginTop: 0 }}>Central Viagens</p>
             <h2 className="rb-card-title">Dashboard Administrativo</h2>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              ["dashboard", "Dashboard"],
-              ["cadastros", "Cadastros"],
-              ["financeiro", "Financeiro"],
-              ["relatorios", "Relatórios"],
-            ].map(([key, label]) => (
-              <button
-                key={key}
-                className={activeSection === key ? "btn-primary" : "btn-ghost"}
-                onClick={() => setActiveSection(key as any)}
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <p className="text-sm text-slate-500">Navegue pelo menu lateral para alternar entre Dashboard, Histórico, Relatórios e Sistema.</p>
         </div>
       </Card>
 
@@ -513,8 +501,8 @@ export default function RebuildAdminPage() {
         </>
       ))}
 
-      {activeSection === "cadastros" && (cadState.loading ? <LoadingState title="Carregando cadastros" message="Sincronizando empresas, guichês, categorias e operadores." /> : cadState.error ? <ErrorState title="Falha nos cadastros" message={cadState.error} /> : (
-        <section className="rb-grid-3" aria-label="Cadastros principais">
+      {activeSection === "configuracoes" && (cadState.loading ? <LoadingState title="Carregando configurações" message="Sincronizando empresas, guichês e categorias do sistema." /> : cadState.error ? <ErrorState title="Falha nas configurações" message={cadState.error} /> : (
+        <section className="rb-grid-3" aria-label="Configurações e cadastros">
           <Card className="md:col-span-3"><div className="flex items-center gap-3"><Search size={16} /><input className="field" value={cadSearch} onChange={(e) => setCadSearch(e.target.value)} placeholder="Buscar em empresas, guichês, operadores, categorias, subcategorias e vínculos" /></div>{cadState.warning ? <p className="text-xs text-amber-700 mt-2">{cadState.warning}</p> : null}</Card>
 
           <Card><CardTitle>Empresas</CardTitle><CardDescription>Cadastro comercial com comissão e status operacional.</CardDescription><form className="mt-4 space-y-3" onSubmit={createCompany}><input className="field" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Nome da empresa" required /><input className="field" type="number" min="0" max="100" step="0.001" value={companyCommission} onChange={(e) => setCompanyCommission(e.target.value)} placeholder="Comissão (%)" required /><button className="btn-primary" disabled={busyKey === "company-create"}>{busyKey === "company-create" ? "Salvando..." : "Criar empresa"}</button></form><div className="mt-4 space-y-2">{filteredCompanies.length === 0 ? <EmptyState title="Sem empresas" message="Nenhum resultado para a busca atual." /> : filteredCompanies.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3 flex items-center justify-between gap-2"><div><p className="text-sm font-semibold">{item.name}</p><p className="text-xs text-slate-500">Comissão: {Number(item.commission_percent || 0).toFixed(3)}%</p></div><button className="btn-ghost" disabled={busyKey === `company-${item.id}`} onClick={() => toggleCompany(item)}>{item.active ? "Desativar" : "Ativar"}</button></div>)}</div></Card>
@@ -529,8 +517,53 @@ export default function RebuildAdminPage() {
         </section>
       ))}
 
-      {activeSection === "financeiro" && (finState.loading ? <LoadingState title="Carregando financeiro" message="Buscando ajustes e fechamentos de caixa." /> : finState.error ? <ErrorState title="Falha no financeiro" message={finState.error} /> : (
-        <section className="rb-grid-3" aria-label="Financeiro e administração">
+      {activeSection === "usuarios" && (cadState.loading ? <LoadingState title="Carregando usuários" message="Sincronizando operadores e vínculos com guichês." /> : cadState.error ? <ErrorState title="Falha nos usuários" message={cadState.error} /> : (
+        <section className="rb-grid-3" aria-label="Usuários e vínculos">
+          <Card className="md:col-span-3"><div className="flex items-center gap-3"><Search size={16} /><input className="field" value={cadSearch} onChange={(e) => setCadSearch(e.target.value)} placeholder="Buscar operadores e vínculos" /></div>{cadState.warning ? <p className="text-xs text-amber-700 mt-2">{cadState.warning}</p> : null}</Card>
+          <Card className="md:col-span-2"><CardTitle>Operadores</CardTitle><CardDescription>Gestão de perfis operacionais.</CardDescription><div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Nome</th><th>Status</th><th>Ação</th></tr></thead><tbody>{filteredOperators.map((item) => <tr key={item.user_id} className="border-t border-slate-200"><td className="py-2">{item.full_name}</td><td>{item.active ? "Ativo" : "Inativo"}</td><td><button className="btn-ghost" disabled={busyKey === `operator-${item.user_id}`} onClick={() => toggleOperator(item)}>{item.active ? "Desativar" : "Ativar"}</button></td></tr>)}</tbody></table>{filteredOperators.length === 0 ? <EmptyState title="Sem operadores" message="Nenhum resultado para a busca atual." /> : null}</div></Card>
+          <Card><CardTitle>Resumo de usuários</CardTitle><CardDescription>Painel rápido da base operacional.</CardDescription><div className="mt-4 space-y-2 text-sm"><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><UserCog size={14} /> Operadores ativos</span><b>{operators.filter((i) => i.active).length}</b></div><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Store size={14} /> Vínculos ativos</span><b>{links.filter((i) => i.active).length}</b></div></div></Card>
+          <Card className="md:col-span-3"><CardTitle>Vínculo operador ↔ guichê</CardTitle><CardDescription>Controle de alocação por ponto de atendimento.</CardDescription><form className="mt-3 grid gap-3 md:grid-cols-3" onSubmit={createLink}><select className="field" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)} required><option value="">Operador</option>{operators.map((item) => <option key={item.user_id} value={item.user_id}>{item.full_name}</option>)}</select><select className="field" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)} required><option value="">Guichê</option>{booths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="btn-primary" disabled={busyKey === "link-create"}>{busyKey === "link-create" ? "Salvando..." : "Salvar vínculo"}</button></form><div className="mt-3 space-y-2">{filteredLinks.length === 0 ? <EmptyState title="Sem vínculos" message="Nenhum resultado para a busca atual." /> : filteredLinks.map((item) => <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 flex items-center justify-between gap-2"><p className="text-sm text-slate-700">{(operatorNameById.get(item.operator_id) || item.operator_id)} → {(boothNameById.get(item.booth_id) || item.booth_id)}</p><button className="btn-ghost" disabled={busyKey === `link-${item.id}`} onClick={() => toggleLink(item)}>{item.active ? "Desativar" : "Ativar"}</button></div>)}</div></Card>
+        </section>
+      ))}
+
+      {activeSection === "historico" && (finState.loading ? <LoadingState title="Carregando histórico" message="Buscando transações e pendências operacionais." /> : finState.error ? <ErrorState title="Falha no histórico" message={finState.error} /> : (
+        <section className="rb-grid-3" aria-label="Histórico e pendências">
+          <Card className="md:col-span-3 rb-admin-transactions">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Histórico de transações</CardTitle>
+                <CardDescription>Tabela consolidada dos últimos lançamentos postados.</CardDescription>
+              </div>
+            </div>
+            <div className="mt-4 rb-table-wrap">
+              <table className="rb-table">
+                <thead className="text-left text-slate-500">
+                  <tr>
+                    <th className="py-2">ID</th>
+                    <th>Data/Hora</th>
+                    <th>Operador</th>
+                    <th>Método</th>
+                    <th>Status</th>
+                    <th className="text-right">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {postedTx.slice(0, 30).map((tx) => (
+                    <tr key={tx.id} className="border-t border-slate-200">
+                      <td className="py-2 font-mono text-xs text-slate-400">#{tx.id.slice(0, 8)}</td>
+                      <td>{dt(tx.sold_at)}</td>
+                      <td>{operatorNameById.get(tx.operator_id || "") || "Não informado"}</td>
+                      <td>{paymentMethodLabel(tx.payment_method)}</td>
+                      <td><span className="rb-badge rb-badge-success">Confirmado</span></td>
+                      <td className="text-right font-semibold">{brl(Number(tx.amount || 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {postedTx.length === 0 ? <div className="pt-4"><EmptyState title="Sem transações" message="As transações aparecerão aqui conforme os lançamentos." /></div> : null}
+            </div>
+          </Card>
+
           <Card className="md:col-span-3"><div className="grid md:grid-cols-3 gap-3"><div><p className="text-sm text-slate-600">Período (dias)</p><select className="field mt-1" value={finPeriodDays} onChange={(e) => setFinPeriodDays(e.target.value)}><option value="7">Últimos 7 dias</option><option value="15">Últimos 15 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option></select></div><div><p className="text-sm text-slate-600">Status dos ajustes</p><select className="field mt-1" value={finAdjustmentStatus} onChange={(e) => setFinAdjustmentStatus(e.target.value as any)}><option value="all">Todos</option><option value="pending">Pendentes</option><option value="approved">Aprovados</option><option value="rejected">Rejeitados</option></select></div></div>{finState.warning ? <p className="text-xs text-amber-700 mt-2">{finState.warning}</p> : null}</Card>
           <Card className="md:col-span-2"><CardTitle>Ajustes</CardTitle><CardDescription>Gestão por período e status, com ações rápidas.</CardDescription><div className="mt-4 space-y-2">{filteredAdjustments.length === 0 ? <EmptyState title="Sem ajustes no filtro" message="Não há solicitações de ajuste para os filtros atuais." /> : filteredAdjustments.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-semibold">Transação: {item.transaction_id}</p><p className="text-xs text-slate-500 mt-1">Solicitante: {operatorNameById.get(item.requested_by) || item.requested_by} • {dt(item.created_at)} • {item.status.toUpperCase()}</p><p className="text-sm text-slate-700 mt-2">{item.reason}</p>{item.status === "pending" ? <div className="mt-3 flex gap-2"><button className="btn-primary" disabled={busyKey === `adj-${item.id}-approved`} onClick={() => reviewAdjustment(item, "approved")}>Aprovar</button><button className="btn-ghost" disabled={busyKey === `adj-${item.id}-rejected`} onClick={() => reviewAdjustment(item, "rejected")}>Rejeitar</button></div> : null}</div>)}</div></Card>
           <Card><CardTitle>Caixa / Fechamentos</CardTitle><CardDescription>Últimos fechamentos no período selecionado.</CardDescription>{filteredCashClosings.length === 0 ? <div className="mt-4"><EmptyState title="Sem fechamentos" message="Nenhum fechamento encontrado para o período selecionado." /></div> : <div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Data</th><th>Guichê</th><th>Operador</th><th>Diferença</th></tr></thead><tbody>{filteredCashClosings.map((item) => <tr key={item.id} className="border-t border-slate-200"><td className="py-2">{dt(item.created_at)}</td><td>{(item.booth_id && boothNameById.get(item.booth_id)) || "-"}</td><td>{(item.user_id && operatorNameById.get(item.user_id)) || "-"}</td><td>{brl(Number(item.difference || 0))}</td></tr>)}</tbody></table></div>}</Card>
