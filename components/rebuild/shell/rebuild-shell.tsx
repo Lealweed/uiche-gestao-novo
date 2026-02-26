@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const primaryNavigation = [
   { href: "/rebuild/admin", label: "Dashboard", icon: "grid_view", section: "dashboard" },
-  { href: "/rebuild/operator", label: "Controle de Turno", icon: "point_of_sale" },
+  { href: "/rebuild/admin?section=controle-turno", label: "Controle de Turno", icon: "point_of_sale", section: "controle-turno" },
   { href: "/rebuild/admin?section=historico", label: "Histórico", icon: "receipt_long", section: "historico" },
   { href: "/rebuild/admin?section=relatorios", label: "Relatórios", icon: "analytics", section: "relatorios" },
 ] as const;
@@ -17,6 +17,7 @@ const systemNavigation = [
 
 const adminSectionLabels: Record<string, string> = {
   dashboard: "Dashboard",
+  "controle-turno": "Controle de Turno",
   historico: "Histórico",
   relatorios: "Relatórios",
   usuarios: "Usuários",
