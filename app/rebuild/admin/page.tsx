@@ -1,39 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  Building2,
-  ChartColumn,
-  CircleDollarSign,
-  Download,
-  Landmark,
-  Search,
-  ShieldCheck,
-  Store,
-  UserCog,
-  Users,
-  Receipt,
-  Wallet,
-  Percent,
-  TrendingUp,
-  TrendingDown,
-} from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
-import { SectionHeader } from "@/components/rebuild/ui/section-header";
-import { StatCard } from "@/components/rebuild/ui/stat-card";
-import { EmptyState } from "@/components/rebuild/ui/empty-state";
-import { ErrorState } from "@/components/rebuild/ui/error-state";
-import { LoadingState } from "@/components/rebuild/ui/loading-state";
-import { Card, CardDescription, CardTitle } from "@/components/rebuild/ui/card";
 
 type Profile = { user_id: string; full_name: string; role: "admin" | "operator"; active?: boolean | null };
-type Company = { id: string; name: string; commission_percent: number | null; active: boolean };
-type Booth = { id: string; code: string; name: string; location: string | null; active: boolean };
-type Category = { id: string; name: string; active: boolean };
-type Subcategory = { id: string; category_id: string; name: string; active: boolean };
-type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
 type Shift = { id: string; status: "open" | "closed"; opened_at: string; operator_id: string; booth_id: string };
 type TransactionBase = {
   id: string;
@@ -43,9 +14,6 @@ type TransactionBase = {
   payment_method: "pix" | "credit" | "debit" | "cash";
   status: "posted" | "voided";
   operator_id?: string | null;
-  booth_id?: string | null;
-  category_id?: string | null;
-  subcategory_id?: string | null;
 };
 type Receipt = { id: string; transaction_id: string };
 type AdjustmentRequest = {
@@ -56,533 +24,289 @@ type AdjustmentRequest = {
   status: "pending" | "approved" | "rejected";
   created_at: string;
 };
-type CashClosing = {
-  id: string;
-  shift_id: string;
-  booth_id: string | null;
-  user_id: string | null;
-  expected_cash: number | null;
-  declared_cash: number | null;
-  difference: number | null;
-  created_at: string;
-};
 
-type SectionState = { loading: boolean; error: string | null; warning?: string | null };
+type AdminSection = "dashboard" | "historico" | "relatorios" | "usuarios" | "configuracoes";
+
+const sections: Array<{ key: AdminSection; label: string }> = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "historico", label: "Histórico" },
+  { key: "relatorios", label: "Relatórios" },
+  { key: "usuarios", label: "Usuários" },
+  { key: "configuracoes", label: "Configurações" },
+];
 
 function brl(value: number) {
-  return `R$ ${Number(value || 0).toFixed(2)}`;
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function dt(value: string) {
-  return new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-}
-
-function paymentMethodLabel(method: "pix" | "credit" | "debit" | "cash") {
+function paymentLabel(method: TransactionBase["payment_method"]) {
   if (method === "credit") return "Crédito";
   if (method === "debit") return "Débito";
   if (method === "cash") return "Dinheiro";
-  return "PIX";
+  return "Pix";
 }
 
-function csvEscape(value: string | number) {
-  const text = String(value ?? "");
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number>>) {
-  const content = [headers.map(csvEscape).join(","), ...rows.map((row) => row.map(csvEscape).join(","))].join("\n");
-  const blob = new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+function paymentIcon(method: TransactionBase["payment_method"]) {
+  if (method === "credit" || method === "debit") return "credit_card";
+  if (method === "cash") return "payments";
+  return "qr_code_2";
 }
 
 export default function RebuildAdminPage() {
   const router = useRouter();
 
   const [authLoading, setAuthLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [booths, setBooths] = useState<Booth[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [operators, setOperators] = useState<Profile[]>([]);
-  const [links, setLinks] = useState<OperatorBooth[]>([]);
-
   const [transactions, setTransactions] = useState<TransactionBase[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [adjustments, setAdjustments] = useState<AdjustmentRequest[]>([]);
-  const [cashClosings, setCashClosings] = useState<CashClosing[]>([]);
 
-  const [cadState, setCadState] = useState<SectionState>({ loading: true, error: null });
-  const [dashState, setDashState] = useState<SectionState>({ loading: true, error: null });
-  const [finState, setFinState] = useState<SectionState>({ loading: true, error: null });
-  const [relState, setRelState] = useState<SectionState>({ loading: true, error: null });
+  const sectionParam = (typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("section") as AdminSection | null) : null) ?? "dashboard";
+  const activeSection: AdminSection = sections.some((s) => s.key === sectionParam) ? sectionParam : "dashboard";
 
-  const [companyName, setCompanyName] = useState("");
-  const [companyCommission, setCompanyCommission] = useState("10");
-  const [boothCode, setBoothCode] = useState("");
-  const [boothName, setBoothName] = useState("");
-  const [boothLocation, setBoothLocation] = useState("");
-  const [categoryName, setCategoryName] = useState("");
-  const [subCategoryName, setSubCategoryName] = useState("");
-  const [subCategoryParent, setSubCategoryParent] = useState("");
-  const [linkOperatorId, setLinkOperatorId] = useState("");
-  const [linkBoothId, setLinkBoothId] = useState("");
-
-  const [cadSearch, setCadSearch] = useState("");
-  const [finPeriodDays, setFinPeriodDays] = useState("30");
-  const [finAdjustmentStatus, setFinAdjustmentStatus] = useState<"all" | "pending" | "approved" | "rejected">("all");
-  const [reportFrom, setReportFrom] = useState(() => new Date(Date.now() - 1000 * 60 * 60 * 24 * 29).toISOString().slice(0, 10));
-  const [reportTo, setReportTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const urlSection = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("section") : null;
-  const activeSection: "dashboard" | "historico" | "relatorios" | "usuarios" | "configuracoes" =
-    urlSection === "historico" || urlSection === "relatorios" || urlSection === "usuarios" || urlSection === "configuracoes"
-      ? urlSection
-      : "dashboard";
-
-  const operatorNameById = useMemo(() => new Map(operators.map((item) => [item.user_id, item.full_name])), [operators]);
-  const boothNameById = useMemo(() => new Map(booths.map((item) => [item.id, `${item.code} - ${item.name}`])), [booths]);
-  const categoryNameById = useMemo(() => new Map(categories.map((item) => [item.id, item.name])), [categories]);
-  const subcategoryNameById = useMemo(() => new Map(subcategories.map((item) => [item.id, item.name])), [subcategories]);
-
-  const queryRangeStart = useMemo(() => {
-    const reportStart = new Date(`${reportFrom}T00:00:00`);
-    const finStart = new Date();
-    finStart.setDate(finStart.getDate() - (Number(finPeriodDays) - 1));
-    finStart.setHours(0, 0, 0, 0);
-    return (reportStart < finStart ? reportStart : finStart).toISOString();
-  }, [reportFrom, finPeriodDays]);
-
+  const operatorNameById = useMemo(() => new Map(operators.map((o) => [o.user_id, o.full_name])), [operators]);
   const postedTx = useMemo(() => transactions.filter((tx) => tx.status === "posted"), [transactions]);
 
-  const pendingReceiptCount = useMemo(() => {
-    const cardTxs = postedTx.filter((tx) => tx.payment_method === "credit" || tx.payment_method === "debit");
-    const receiptByTx = new Set(receipts.map((r) => r.transaction_id));
-    return cardTxs.filter((tx) => !receiptByTx.has(tx.id)).length;
-  }, [postedTx, receipts]);
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const txToday = useMemo(() => postedTx.filter((tx) => tx.sold_at.slice(0, 10) === todayKey), [postedTx, todayKey]);
 
   const kpis = useMemo(() => {
-    const revenue = postedTx.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
-    const commission = postedTx.reduce((acc, tx) => acc + Number(tx.commission_amount || 0), 0);
-    const averageTicket = postedTx.length ? revenue / postedTx.length : 0;
-    const openShifts = shifts.filter((item) => item.status === "open").length;
-    return { revenue, commission, averageTicket, openShifts };
-  }, [postedTx, shifts]);
+    const revenue = txToday.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+    const commission = txToday.reduce((acc, tx) => acc + Number(tx.commission_amount || 0), 0);
+    const avgTicket = txToday.length ? revenue / txToday.length : 0;
+    const openShifts = shifts.filter((s) => s.status === "open").length;
+    return { revenue, commission, avgTicket, openShifts };
+  }, [txToday, shifts]);
 
-  const chartData = useMemo(() => {
-    const days: Array<{ key: string; label: string; total: number }> = [];
-    for (let i = 6; i >= 0; i -= 1) {
+  const pendingReceiptCount = useMemo(() => {
+    const cardTx = postedTx.filter((tx) => tx.payment_method === "credit" || tx.payment_method === "debit");
+    const receiptSet = new Set(receipts.map((r) => r.transaction_id));
+    return cardTx.filter((tx) => !receiptSet.has(tx.id)).length;
+  }, [postedTx, receipts]);
+
+  const pendingAdjustments = useMemo(() => adjustments.filter((a) => a.status === "pending"), [adjustments]);
+
+  const alerts = useMemo(() => {
+    const list: Array<{ title: string; ref: string; detail: string }> = [];
+    pendingAdjustments.slice(0, 2).forEach((adj) => {
+      list.push({
+        title: "Ajuste Pendente",
+        ref: `#${adj.transaction_id.slice(0, 8)}`,
+        detail: adj.reason,
+      });
+    });
+    if (pendingReceiptCount > 0) {
+      list.push({
+        title: "Comprovantes Pendentes",
+        ref: "Cartão",
+        detail: `${pendingReceiptCount} transação(ões) aguardando comprovante.`,
+      });
+    }
+    if (list.length === 0) {
+      list.push({ title: "Operação Estável", ref: "Agora", detail: "Nenhum alerta crítico no momento." });
+    }
+    return list.slice(0, 3);
+  }, [pendingAdjustments, pendingReceiptCount]);
+
+  const chartDays = useMemo(() => {
+    const out: Array<{ key: string; label: string; total: number }> = [];
+    for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
-      days.push({ key, label: d.toLocaleDateString("pt-BR", { weekday: "short" }), total: 0 });
+      out.push({ key, label: d.toLocaleDateString("pt-BR", { weekday: "short" }), total: 0 });
     }
-    for (const tx of postedTx) {
-      const key = tx.sold_at.slice(0, 10);
-      const day = days.find((item) => item.key === key);
-      if (day) day.total += Number(tx.amount || 0);
-    }
-    const max = Math.max(1, ...days.map((d) => d.total));
-    return days.map((d) => ({ ...d, ratio: d.total / max }));
+    postedTx.forEach((tx) => {
+      const item = out.find((d) => d.key === tx.sold_at.slice(0, 10));
+      if (item) item.total += Number(tx.amount || 0);
+    });
+    return out;
   }, [postedTx]);
 
-  const alerts = useMemo(() => {
-    const out: string[] = [];
-    if (pendingReceiptCount > 0) out.push(`${pendingReceiptCount} comprovante(s) pendente(s) de cartão.`);
-    const pendingAdjustments = adjustments.filter((a) => a.status === "pending").length;
-    if (pendingAdjustments > 0) out.push(`${pendingAdjustments} solicitação(ões) de ajuste aguardando análise.`);
-    if (kpis.openShifts > 0) out.push(`${kpis.openShifts} turno(s) aberto(s) no momento.`);
-    if (out.length === 0) out.push("Operação estável. Nenhum alerta crítico agora.");
-    return out;
-  }, [adjustments, kpis.openShifts, pendingReceiptCount]);
-
-  const searchNormalized = cadSearch.trim().toLowerCase();
-  const filteredCompanies = useMemo(() => companies.filter((i) => !searchNormalized || `${i.name}`.toLowerCase().includes(searchNormalized)), [companies, searchNormalized]);
-  const filteredBooths = useMemo(() => booths.filter((i) => !searchNormalized || `${i.code} ${i.name} ${i.location ?? ""}`.toLowerCase().includes(searchNormalized)), [booths, searchNormalized]);
-  const filteredOperators = useMemo(() => operators.filter((i) => !searchNormalized || `${i.full_name}`.toLowerCase().includes(searchNormalized)), [operators, searchNormalized]);
-  const filteredCategories = useMemo(() => categories.filter((i) => !searchNormalized || `${i.name}`.toLowerCase().includes(searchNormalized)), [categories, searchNormalized]);
-  const filteredSubcategories = useMemo(() => subcategories.filter((i) => !searchNormalized || `${i.name} ${categoryNameById.get(i.category_id) ?? ""}`.toLowerCase().includes(searchNormalized)), [subcategories, searchNormalized, categoryNameById]);
-  const filteredLinks = useMemo(
-    () =>
-      links.filter((i) => {
-        if (!searchNormalized) return true;
-        const op = operatorNameById.get(i.operator_id) ?? i.operator_id;
-        const booth = boothNameById.get(i.booth_id) ?? i.booth_id;
-        return `${op} ${booth}`.toLowerCase().includes(searchNormalized);
-      }),
-    [links, searchNormalized, operatorNameById, boothNameById]
-  );
-
-  const finDateStart = useMemo(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - Number(finPeriodDays || 30));
-    date.setHours(0, 0, 0, 0);
-    return date.toISOString();
-  }, [finPeriodDays]);
-
-  const filteredAdjustments = useMemo(
-    () => adjustments.filter((item) => item.created_at >= finDateStart && (finAdjustmentStatus === "all" || item.status === finAdjustmentStatus)),
-    [adjustments, finDateStart, finAdjustmentStatus]
-  );
-
-  const filteredCashClosings = useMemo(() => cashClosings.filter((item) => item.created_at >= finDateStart), [cashClosings, finDateStart]);
-
-  const reportPeriodTx = useMemo(() => {
-    const start = new Date(`${reportFrom}T00:00:00`).toISOString();
-    const end = new Date(`${reportTo}T23:59:59`).toISOString();
-    return postedTx.filter((tx) => tx.sold_at >= start && tx.sold_at <= end);
-  }, [postedTx, reportFrom, reportTo]);
-
-  const reportSummary = useMemo(() => {
-    const revenue = reportPeriodTx.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
-    const commission = reportPeriodTx.reduce((acc, tx) => acc + Number(tx.commission_amount || 0), 0);
-    const ticket = reportPeriodTx.length ? revenue / reportPeriodTx.length : 0;
-    return { revenue, commission, ticket, count: reportPeriodTx.length };
-  }, [reportPeriodTx]);
-
-  function groupBy(items: TransactionBase[], keyFactory: (tx: TransactionBase) => string) {
-    const map = new Map<string, { label: string; qty: number; total: number; commission: number }>();
-    for (const tx of items) {
-      const label = keyFactory(tx);
-      const prev = map.get(label) ?? { label, qty: 0, total: 0, commission: 0 };
-      prev.qty += 1;
-      prev.total += Number(tx.amount || 0);
-      prev.commission += Number(tx.commission_amount || 0);
-      map.set(label, prev);
-    }
-    return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }
-
-  const reportByOperator = useMemo(() => groupBy(reportPeriodTx, (tx) => operatorNameById.get(tx.operator_id || "") ?? "Não informado"), [reportPeriodTx, operatorNameById]);
-  const reportByBooth = useMemo(() => groupBy(reportPeriodTx, (tx) => boothNameById.get(tx.booth_id || "") ?? "Não informado"), [reportPeriodTx, boothNameById]);
-  const reportByCategory = useMemo(
-    () => groupBy(reportPeriodTx, (tx) => `${categoryNameById.get(tx.category_id || "") ?? "Sem categoria"} / ${subcategoryNameById.get(tx.subcategory_id || "") ?? "Sem subcategoria"}`),
-    [reportPeriodTx, categoryNameById, subcategoryNameById]
-  );
-
-  async function loadAuthAndGuard() {
-    setAuthLoading(true);
-    try {
-      const { data } = await supabase.auth.getUser();
-      const authUserId = data.user?.id;
-      if (!authUserId) {
-        router.replace("/login");
-        return;
-      }
-
-      const profileRes = await supabase.from("profiles").select("role,active").eq("user_id", authUserId).single();
-      if (profileRes.error || !profileRes.data) {
-        router.replace("/login");
-        return;
-      }
-
-      const profile = profileRes.data as { role: "admin" | "operator"; active?: boolean | null };
-      if (profile.active === false) {
-        await supabase.auth.signOut();
-        router.replace("/login");
-        return;
-      }
-      if (profile.role !== "admin") {
-        router.replace("/rebuild/operator");
-        return;
-      }
-
-      setUserId(authUserId);
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function loadCadastros() {
-    setCadState({ loading: true, error: null, warning: null });
-    try {
-      const [companiesRes, boothsRes, categoriesRes, subcategoriesRes, operatorsRes, linksRes] = await Promise.all([
-        supabase.from("companies").select("id,name,commission_percent,active").order("name"),
-        supabase.from("booths").select("id,code,name,location,active").order("name"),
-        supabase.from("transaction_categories").select("id,name,active").order("name"),
-        supabase.from("transaction_subcategories").select("id,category_id,name,active").order("name"),
-        supabase.from("profiles").select("user_id,full_name,role,active").eq("role", "operator").order("full_name"),
-        supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("created_at", { ascending: false }),
-      ]);
-
-      const warnings: string[] = [];
-      if (companiesRes.error) warnings.push("Empresas indisponíveis no momento.");
-      if (boothsRes.error) warnings.push("Guichês indisponíveis no momento.");
-      if (categoriesRes.error) warnings.push("Categorias indisponíveis no momento.");
-      if (subcategoriesRes.error) warnings.push("Subcategorias indisponíveis no momento.");
-      if (operatorsRes.error) warnings.push("Operadores indisponíveis no momento.");
-      if (linksRes.error) warnings.push("Vínculos indisponíveis no momento.");
-
-      const loadedCategories = (categoriesRes.data as Category[] | null) ?? [];
-      setCompanies((companiesRes.data as Company[] | null) ?? []);
-      setBooths((boothsRes.data as Booth[] | null) ?? []);
-      setCategories(loadedCategories);
-      setSubcategories((subcategoriesRes.data as Subcategory[] | null) ?? []);
-      setOperators((operatorsRes.data as Profile[] | null) ?? []);
-      setLinks((linksRes.data as OperatorBooth[] | null) ?? []);
-
-      setSubCategoryParent((prev) => prev || loadedCategories[0]?.id || "");
-      setLinkOperatorId((prev) => prev || ((operatorsRes.data as Profile[] | null) ?? [])[0]?.user_id || "");
-      setLinkBoothId((prev) => prev || ((boothsRes.data as Booth[] | null) ?? [])[0]?.id || "");
-      setCadState({ loading: false, error: null, warning: warnings[0] ?? null });
-    } catch {
-      setCadState({ loading: false, error: "Falha ao carregar cadastros. Tente novamente.", warning: null });
-    }
-  }
-
-  async function loadDashboardAndReports() {
-    setDashState({ loading: true, error: null, warning: null });
-    setRelState({ loading: true, error: null, warning: null });
-    try {
-      const [txRes, shiftRes] = await Promise.all([
-        supabase
-          .from("transactions")
-          .select("id,sold_at,amount,commission_amount,payment_method,status,operator_id,booth_id,category_id,subcategory_id")
-          .gte("sold_at", queryRangeStart)
-          .order("sold_at", { ascending: false })
-          .limit(3000),
-        supabase.from("shifts").select("id,status,opened_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120),
-      ]);
-
-      const warnings: string[] = [];
-      if (txRes.error) warnings.push("Lançamentos indisponíveis para parte dos indicadores.");
-      if (shiftRes.error) warnings.push("Turnos indisponíveis no momento.");
-
-      const txList = (txRes.data as TransactionBase[] | null) ?? [];
-      const txIds = txList.map((tx) => tx.id);
-      const receiptRes = txIds.length ? await supabase.from("transaction_receipts").select("id,transaction_id").in("transaction_id", txIds) : ({ data: [], error: null } as any);
-      if (receiptRes.error) warnings.push("Comprovantes indisponíveis no momento.");
-
-      setTransactions(txList);
-      setReceipts((receiptRes.data as Receipt[] | null) ?? []);
-      setShifts((shiftRes.data as Shift[] | null) ?? []);
-
-      setDashState({ loading: false, error: null, warning: warnings[0] ?? null });
-      setRelState({ loading: false, error: null, warning: warnings[0] ?? null });
-    } catch {
-      setDashState({ loading: false, error: "Falha ao carregar dashboard.", warning: null });
-      setRelState({ loading: false, error: "Falha ao carregar relatórios.", warning: null });
-    }
-  }
-
-  async function loadFinanceiro() {
-    setFinState({ loading: true, error: null, warning: null });
-    try {
-      const [adjRes, closingRes] = await Promise.all([
-        supabase.from("adjustment_requests").select("id,transaction_id,requested_by,reason,status,created_at").order("created_at", { ascending: false }).limit(120),
-        supabase.from("shift_cash_closings").select("id,shift_id,booth_id,user_id,expected_cash,declared_cash,difference,created_at").order("created_at", { ascending: false }).limit(120),
-      ]);
-      const warnings: string[] = [];
-      if (adjRes.error) warnings.push("Solicitações de ajuste indisponíveis no momento.");
-      if (closingRes.error) warnings.push("Fechamentos de caixa indisponíveis no momento.");
-
-      setAdjustments((adjRes.data as AdjustmentRequest[] | null) ?? []);
-      setCashClosings((closingRes.data as CashClosing[] | null) ?? []);
-      setFinState({ loading: false, error: null, warning: warnings[0] ?? null });
-    } catch {
-      setFinState({ loading: false, error: "Falha ao carregar financeiro.", warning: null });
-    }
-  }
-
-  async function refreshAllSections() {
-    await Promise.all([loadCadastros(), loadDashboardAndReports(), loadFinanceiro()]);
-  }
+  const chartPath = useMemo(() => {
+    const max = Math.max(1, ...chartDays.map((d) => d.total));
+    const width = 760;
+    const height = 220;
+    const step = width / Math.max(1, chartDays.length - 1);
+    const points = chartDays.map((d, idx) => {
+      const x = idx * step;
+      const y = height - (d.total / max) * 200 - 10;
+      return { x, y };
+    });
+    if (!points.length) return { line: "", area: "" };
+    const line = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+    const area = `${line} L ${width},${height} L 0,${height} Z`;
+    return { line, area };
+  }, [chartDays]);
 
   useEffect(() => {
-    loadAuthAndGuard();
-  }, []);
+    async function guard() {
+      setAuthLoading(true);
+      try {
+        const { data } = await supabase.auth.getUser();
+        const authUserId = data.user?.id;
+        if (!authUserId) return router.replace("/login");
+
+        const profileRes = await supabase.from("profiles").select("role,active").eq("user_id", authUserId).single();
+        if (profileRes.error || !profileRes.data) return router.replace("/login");
+
+        const profile = profileRes.data as { role: "admin" | "operator"; active?: boolean | null };
+        if (profile.active === false) {
+          await supabase.auth.signOut();
+          return router.replace("/login");
+        }
+        if (profile.role !== "admin") return router.replace("/rebuild/operator");
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+
+    guard();
+  }, [router]);
 
   useEffect(() => {
-    if (!authLoading && userId) refreshAllSections();
-  }, [authLoading, userId]);
+    if (authLoading) return;
 
-  useEffect(() => {
-    if (!authLoading && userId) loadDashboardAndReports();
-  }, [queryRangeStart, authLoading, userId]);
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const from = new Date();
+        from.setDate(from.getDate() - 90);
+        from.setHours(0, 0, 0, 0);
 
-  async function createCompany(e: FormEvent) { e.preventDefault(); if (!companyName.trim()) return; setBusyKey("company-create"); setFeedback(null); const res = await supabase.from("companies").insert({ name: companyName.trim(), commission_percent: Number(companyCommission || 0), active: true }); setBusyKey(null); if (res.error) return setFeedback(`Não foi possível criar empresa.`); setCompanyName(""); setCompanyCommission("10"); setFeedback("Empresa criada com sucesso."); await Promise.all([loadCadastros(), loadDashboardAndReports()]); }
-  async function toggleCompany(item: Company) { setBusyKey(`company-${item.id}`); const res = await supabase.from("companies").update({ active: !item.active }).eq("id", item.id); setBusyKey(null); if (res.error) return setFeedback("Falha ao atualizar empresa."); await loadCadastros(); }
-  async function createBooth(e: FormEvent) { e.preventDefault(); if (!boothCode.trim() || !boothName.trim()) return; setBusyKey("booth-create"); const res = await supabase.from("booths").insert({ code: boothCode.trim(), name: boothName.trim(), location: boothLocation.trim() || null, active: true }); setBusyKey(null); if (res.error) return setFeedback("Não foi possível criar guichê."); setBoothCode(""); setBoothName(""); setBoothLocation(""); setFeedback("Guichê criado com sucesso."); await loadCadastros(); }
-  async function toggleBooth(item: Booth) { setBusyKey(`booth-${item.id}`); const res = await supabase.from("booths").update({ active: !item.active }).eq("id", item.id); setBusyKey(null); if (res.error) return setFeedback("Falha ao atualizar guichê."); await loadCadastros(); }
-  async function createCategory(e: FormEvent) { e.preventDefault(); if (!categoryName.trim()) return; setBusyKey("category-create"); const res = await supabase.from("transaction_categories").insert({ name: categoryName.trim(), active: true }); setBusyKey(null); if (res.error) return setFeedback("Não foi possível criar categoria."); setCategoryName(""); setFeedback("Categoria criada com sucesso."); await loadCadastros(); }
-  async function createSubcategory(e: FormEvent) { e.preventDefault(); if (!subCategoryName.trim() || !subCategoryParent) return; setBusyKey("subcategory-create"); const res = await supabase.from("transaction_subcategories").insert({ name: subCategoryName.trim(), category_id: subCategoryParent, active: true }); setBusyKey(null); if (res.error) return setFeedback("Não foi possível criar subcategoria."); setSubCategoryName(""); setFeedback("Subcategoria criada com sucesso."); await loadCadastros(); }
-  async function toggleCategory(item: Category) { setBusyKey(`category-${item.id}`); const res = await supabase.from("transaction_categories").update({ active: !item.active }).eq("id", item.id); setBusyKey(null); if (res.error) return setFeedback("Falha ao atualizar categoria."); await loadCadastros(); }
-  async function toggleSubcategory(item: Subcategory) { setBusyKey(`subcategory-${item.id}`); const res = await supabase.from("transaction_subcategories").update({ active: !item.active }).eq("id", item.id); setBusyKey(null); if (res.error) return setFeedback("Falha ao atualizar subcategoria."); await loadCadastros(); }
-  async function toggleOperator(item: Profile) { setBusyKey(`operator-${item.user_id}`); const res = await supabase.from("profiles").update({ active: !item.active }).eq("user_id", item.user_id); setBusyKey(null); if (res.error) return setFeedback("Falha ao atualizar operador."); await loadCadastros(); }
-  async function createLink(e: FormEvent) { e.preventDefault(); if (!linkOperatorId || !linkBoothId) return; setBusyKey("link-create"); const res = await supabase.from("operator_booths").upsert({ operator_id: linkOperatorId, booth_id: linkBoothId, active: true }, { onConflict: "operator_id,booth_id" }); setBusyKey(null); if (res.error) return setFeedback("Não foi possível criar vínculo."); setFeedback("Vínculo salvo com sucesso."); await loadCadastros(); }
-  async function toggleLink(item: OperatorBooth) { setBusyKey(`link-${item.id}`); const res = await supabase.from("operator_booths").update({ active: !item.active }).eq("id", item.id); setBusyKey(null); if (res.error) return setFeedback("Falha ao atualizar vínculo."); await loadCadastros(); }
-  async function reviewAdjustment(item: AdjustmentRequest, nextStatus: "approved" | "rejected") { if (!userId) return; setBusyKey(`adj-${item.id}-${nextStatus}`); const res = await supabase.from("adjustment_requests").update({ status: nextStatus, reviewed_by: userId, reviewed_at: new Date().toISOString() }).eq("id", item.id); setBusyKey(null); if (res.error) return setFeedback("Falha ao revisar ajuste."); await Promise.all([loadFinanceiro(), loadDashboardAndReports()]); }
+        const [opsRes, txRes, shiftsRes, adjRes] = await Promise.all([
+          supabase.from("profiles").select("user_id,full_name,role,active").eq("role", "operator").order("full_name"),
+          supabase
+            .from("transactions")
+            .select("id,sold_at,amount,commission_amount,payment_method,status,operator_id")
+            .gte("sold_at", from.toISOString())
+            .order("sold_at", { ascending: false })
+            .limit(600),
+          supabase.from("shifts").select("id,status,opened_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(150),
+          supabase.from("adjustment_requests").select("id,transaction_id,requested_by,reason,status,created_at").order("created_at", { ascending: false }).limit(120),
+        ]);
 
-  function exportConsolidadoCsv() {
-    downloadCsv(`relatorio-consolidado-${reportFrom}-${reportTo}.csv`, ["Período", "Receita", "Comissão", "Ticket Médio", "Qtd Vendas"], [[`${reportFrom} a ${reportTo}`, reportSummary.revenue.toFixed(2), reportSummary.commission.toFixed(2), reportSummary.ticket.toFixed(2), reportSummary.count]]);
-  }
-  function exportGroupedCsv(title: string, rows: Array<{ label: string; qty: number; total: number; commission: number }>) {
-    downloadCsv(`${title}-${reportFrom}-${reportTo}.csv`, ["Grupo", "Quantidade", "Receita", "Comissão"], rows.map((r) => [r.label, r.qty, r.total.toFixed(2), r.commission.toFixed(2)]));
-  }
+        if (opsRes.error || txRes.error || shiftsRes.error || adjRes.error) {
+          setError("Não foi possível carregar o dashboard administrativo.");
+          return;
+        }
 
-  if (authLoading) {
-    return <div className="rb-page"><SectionHeader title="Painel Administrativo" subtitle="Validando acesso e preparando módulos." /><LoadingState title="Verificando acesso" message="Confirmando sessão e permissões do administrador." /></div>;
-  }
+        const txList = (txRes.data as TransactionBase[] | null) ?? [];
+        const txIds = txList.map((t) => t.id);
+        const recRes = txIds.length
+          ? await supabase.from("transaction_receipts").select("id,transaction_id").in("transaction_id", txIds)
+          : ({ data: [], error: null } as { data: Receipt[]; error: null });
+
+        setOperators((opsRes.data as Profile[] | null) ?? []);
+        setTransactions(txList);
+        setShifts((shiftsRes.data as Shift[] | null) ?? []);
+        setAdjustments((adjRes.data as AdjustmentRequest[] | null) ?? []);
+        setReceipts((recRes.data as Receipt[] | null) ?? []);
+      } catch {
+        setError("Falha inesperada ao carregar os dados.");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, [authLoading]);
+
+  if (authLoading || loading) return <div className="text-sm text-slate-500">Carregando dashboard...</div>;
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>;
 
   return (
-    <div className="rb-page">
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="rb-card-description" style={{ marginTop: 0 }}>Central Viagens</p>
-            <h2 className="rb-card-title">Dashboard Administrativo</h2>
-          </div>
-          <p className="text-sm text-slate-500">Navegue pelo menu lateral para alternar entre Dashboard, Histórico, Relatórios e Sistema.</p>
+    <div className="max-w-7xl mx-auto space-y-6">
+      {activeSection !== "dashboard" ? (
+        <div className="rounded-xl border border-slate-100 bg-white p-6 shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)]">
+          <h2 className="text-lg font-bold text-slate-900">{sections.find((s) => s.key === activeSection)?.label}</h2>
+          <p className="mt-1 text-sm text-slate-500">Use o menu lateral para voltar ao dashboard visual completo.</p>
         </div>
-      </Card>
+      ) : null}
 
-      {feedback ? <Card><p className="rb-card-description" style={{ marginTop: 0 }}>{feedback}</p></Card> : null}
-
-      {activeSection === "dashboard" && (dashState.loading ? <LoadingState title="Carregando dashboard" message="Consolidando indicadores e alertas operacionais." /> : dashState.error ? <ErrorState title="Falha no dashboard" message={dashState.error} /> : (
+      {activeSection === "dashboard" && (
         <>
-          {dashState.warning ? <Card><p className="text-sm text-amber-700">{dashState.warning}</p></Card> : null}
-          <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Indicadores executivos">
-            <Card className="h-[140px]"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Receita</p><h3 className="mt-2 text-3xl font-extrabold text-slate-900">{brl(kpis.revenue)}</h3></div><div className="rounded-lg bg-blue-50 p-2 text-sky-600"><Wallet size={20} /></div></div><div className="mt-3 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700"><TrendingUp size={12} /> fluxo postado</div></Card>
-            <Card className="h-[140px]"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Comissão Estimada</p><h3 className="mt-2 text-3xl font-extrabold text-slate-900">{brl(kpis.commission)}</h3></div><div className="rounded-lg bg-indigo-50 p-2 text-indigo-600"><Percent size={20} /></div></div><div className="mt-3 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">sobre vendas postadas</div></Card>
-            <Card className="h-[140px]"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ticket Médio</p><h3 className="mt-2 text-3xl font-extrabold text-slate-900">{brl(kpis.averageTicket)}</h3></div><div className="rounded-lg bg-amber-50 p-2 text-amber-600"><Receipt size={20} /></div></div><div className="mt-3 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700"><TrendingDown size={12} /> {postedTx.length} vendas</div></Card>
-            <Card className="h-[140px]"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Turnos Abertos</p><h3 className="mt-2 text-3xl font-extrabold text-slate-900">{kpis.openShifts}</h3></div><div className="rounded-lg bg-emerald-50 p-2 text-emerald-600"><Store size={20} /></div></div><div className="mt-3 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">{pendingReceiptCount} comprovantes pendentes</div></Card>
-          </section>
-          <section className="rb-grid-3" aria-label="Gráfico e alertas">
-            <Card className="md:col-span-2"><CardTitle>Receita diária (últimos 7 dias)</CardTitle><CardDescription>Evolução simples para leitura rápida da operação.</CardDescription><div className="mt-4 grid grid-cols-7 gap-2">{chartData.map((item) => <div key={item.key} className="flex flex-col items-center gap-2"><div className="h-28 w-full rounded-xl border border-slate-200 bg-slate-50 p-1 flex items-end"><div className="w-full rounded-lg bg-blue-500/90" style={{ height: `${Math.max(6, item.ratio * 100)}%`, transition: "height 220ms ease" }} /></div><span className="text-xs text-slate-500">{item.label}</span><span className="text-xs font-semibold text-slate-700">{brl(item.total)}</span></div>)}</div></Card>
-            <Card><CardTitle>Alertas operacionais</CardTitle><CardDescription>Foco no que precisa de atenção imediata.</CardDescription><div className="mt-4 space-y-2">{alerts.map((item) => <div key={item} className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-amber-900 inline-flex items-start gap-2 w-full"><AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{item}</span></div>)}</div></Card>
-          </section>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+            <div className="bg-white p-5 rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 h-[140px]">
+              <div className="flex justify-between items-start"><div><p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Receita Hoje</p><h3 className="text-3xl font-extrabold text-slate-900 mt-2">{brl(kpis.revenue)}</h3></div><div className="p-2 bg-blue-50 text-[#0da2e7] rounded-lg"><span className="material-symbols-outlined text-[24px]">payments</span></div></div>
+              <div className="flex items-center mt-2"><span className="bg-emerald-50 text-emerald-600 text-xs font-bold px-2 py-0.5 rounded-full">Dados reais</span></div>
+            </div>
+            <div className="bg-white p-5 rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 h-[140px]">
+              <div className="flex justify-between items-start"><div><p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Comissão Estimada</p><h3 className="text-3xl font-extrabold text-slate-900 mt-2">{brl(kpis.commission)}</h3></div><div className="p-2 bg-indigo-50 text-indigo-500 rounded-lg"><span className="material-symbols-outlined text-[24px]">percent</span></div></div>
+              <div className="flex items-center mt-2"><span className="bg-indigo-50 text-indigo-600 text-xs font-bold px-2 py-0.5 rounded-full">Hoje</span></div>
+            </div>
+            <div className="bg-white p-5 rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 h-[140px]">
+              <div className="flex justify-between items-start"><div><p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Ticket Médio</p><h3 className="text-3xl font-extrabold text-slate-900 mt-2">{brl(kpis.avgTicket)}</h3></div><div className="p-2 bg-amber-50 text-amber-500 rounded-lg"><span className="material-symbols-outlined text-[24px]">receipt</span></div></div>
+              <div className="flex items-center mt-2"><span className="bg-red-50 text-red-600 text-xs font-bold px-2 py-0.5 rounded-full">{txToday.length} venda(s)</span></div>
+            </div>
+            <div className="bg-white p-5 rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 h-[140px]">
+              <div className="flex justify-between items-start"><div><p className="text-slate-500 text-xs font-semibold uppercase tracking-wide">Turnos Abertos</p><h3 className="text-3xl font-extrabold text-slate-900 mt-2">{kpis.openShifts}</h3></div><div className="p-2 bg-emerald-50 text-emerald-500 rounded-lg"><span className="material-symbols-outlined text-[24px]">storefront</span></div></div>
+              <div className="flex items-center mt-2"><span className="bg-amber-50 text-amber-600 text-xs font-bold px-2 py-0.5 rounded-full">{pendingAdjustments.length} pendente(s)</span></div>
+            </div>
+          </div>
 
-          <Card className="rb-admin-transactions">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>Últimas transações</CardTitle>
-                <CardDescription>Movimento recente da operação com dados reais.</CardDescription>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 p-6">
+              <div className="flex items-center justify-between mb-6"><div><h2 className="text-lg font-bold text-slate-900">Evolução de Receita</h2><p className="text-sm text-slate-500">Últimos 7 dias</p></div></div>
+              <div className="relative h-64 w-full">
+                <div className="absolute inset-0 flex flex-col justify-between text-xs text-slate-400">
+                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">máx</span><div className="h-px bg-slate-100 w-full"></div></div>
+                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">75%</span><div className="h-px bg-slate-100 w-full"></div></div>
+                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">50%</span><div className="h-px bg-slate-100 w-full"></div></div>
+                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">25%</span><div className="h-px bg-slate-100 w-full"></div></div>
+                  <div className="flex w-full items-center"><span className="w-10 text-right pr-2">0</span><div className="h-px bg-slate-100 w-full"></div></div>
+                </div>
+                <svg className="absolute inset-0 left-10 h-full w-[calc(100%-2.5rem)]" viewBox="0 0 760 220" preserveAspectRatio="none">
+                  <defs><linearGradient id="gradient-real" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#0da2e7" stopOpacity="0.2" /><stop offset="100%" stopColor="#0da2e7" stopOpacity="0" /></linearGradient></defs>
+                  <path d={chartPath.area} fill="url(#gradient-real)" />
+                  <path d={chartPath.line} fill="none" stroke="#0da2e7" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <div className="absolute -bottom-6 left-10 right-0 flex justify-between text-xs font-medium text-slate-400 px-2">
+                  {chartDays.map((d) => <span key={d.key}>{d.label}</span>)}
+                </div>
               </div>
             </div>
-            <div className="mt-4 rb-table-wrap">
-              <table className="rb-table">
-                <thead className="text-left text-slate-500">
-                  <tr>
-                    <th className="py-2">ID</th>
-                    <th>Data/Hora</th>
-                    <th>Operador</th>
-                    <th>Método</th>
-                    <th>Status</th>
-                    <th className="text-right">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {postedTx.slice(0, 8).map((tx) => (
-                    <tr key={tx.id} className="border-t border-slate-200">
-                      <td className="py-2 font-mono text-xs text-slate-400">#{tx.id.slice(0, 8)}</td>
-                      <td>{dt(tx.sold_at)}</td>
-                      <td>{operatorNameById.get(tx.operator_id || "") || "Não informado"}</td>
-                      <td>{paymentMethodLabel(tx.payment_method)}</td>
-                      <td>
-                        <span className="rb-badge rb-badge-success">Confirmado</span>
-                      </td>
-                      <td className="text-right font-semibold">{brl(Number(tx.amount || 0))}</td>
+
+            <div className="bg-white rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 flex flex-col overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50"><h3 className="font-bold text-slate-900 flex items-center gap-2"><span className="material-symbols-outlined text-amber-500">warning</span>Atenção Necessária</h3><span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{alerts.length}</span></div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                {alerts.map((alert) => (
+                  <div key={alert.title + alert.ref} className="p-3 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-all">
+                    <div className="flex justify-between items-start mb-1"><p className="text-sm font-semibold text-slate-800">{alert.title}</p><span className="text-[10px] text-slate-400 font-mono">{alert.ref}</span></div>
+                    <p className="text-xs text-slate-500">{alert.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-[0_4px_6px_-1px_rgba(15,23,42,0.05)] border border-slate-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between"><h3 className="font-bold text-lg text-slate-900">Últimas Transações</h3></div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead><tr className="bg-slate-50/50 text-xs uppercase tracking-wider text-slate-500 border-b border-slate-100"><th className="px-6 py-3 font-semibold w-24">ID</th><th className="px-6 py-3 font-semibold">Data/Hora</th><th className="px-6 py-3 font-semibold">Operador</th><th className="px-6 py-3 font-semibold">Método</th><th className="px-6 py-3 font-semibold text-right">Valor</th><th className="px-6 py-3 font-semibold text-center">Status</th></tr></thead>
+                <tbody className="text-sm divide-y divide-slate-100">
+                  {postedTx.slice(0, 8).map((tx, idx) => (
+                    <tr key={tx.id} className={`hover:bg-blue-50/30 transition-colors ${idx % 2 ? "bg-slate-50/30" : ""}`}>
+                      <td className="px-6 py-3 font-mono text-slate-400 text-xs">#{tx.id.slice(0, 8)}</td>
+                      <td className="px-6 py-3 text-slate-600">{new Date(tx.sold_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td>
+                      <td className="px-6 py-3 font-medium text-slate-900">{operatorNameById.get(tx.operator_id || "") || "Não informado"}</td>
+                      <td className="px-6 py-3 text-slate-600"><div className="flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px] text-slate-400">{paymentIcon(tx.payment_method)}</span>{paymentLabel(tx.payment_method)}</div></td>
+                      <td className="px-6 py-3 text-right font-bold text-slate-900">{brl(Number(tx.amount || 0))}</td>
+                      <td className="px-6 py-3 text-center"><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Confirmado</span></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              {postedTx.length === 0 ? <div className="pt-4"><EmptyState title="Sem transações" message="As transações aparecerão aqui conforme os lançamentos." /></div> : null}
             </div>
-          </Card>
+          </div>
         </>
-      ))}
-
-      {activeSection === "configuracoes" && (cadState.loading ? <LoadingState title="Carregando configurações" message="Sincronizando empresas, guichês e categorias do sistema." /> : cadState.error ? <ErrorState title="Falha nas configurações" message={cadState.error} /> : (
-        <section className="rb-grid-3" aria-label="Configurações e cadastros">
-          <Card className="md:col-span-3"><div className="flex items-center gap-3"><Search size={16} /><input className="field" value={cadSearch} onChange={(e) => setCadSearch(e.target.value)} placeholder="Buscar em empresas, guichês, operadores, categorias, subcategorias e vínculos" /></div>{cadState.warning ? <p className="text-xs text-amber-700 mt-2">{cadState.warning}</p> : null}</Card>
-
-          <Card><CardTitle>Empresas</CardTitle><CardDescription>Cadastro comercial com comissão e status operacional.</CardDescription><form className="mt-4 space-y-3" onSubmit={createCompany}><input className="field" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Nome da empresa" required /><input className="field" type="number" min="0" max="100" step="0.001" value={companyCommission} onChange={(e) => setCompanyCommission(e.target.value)} placeholder="Comissão (%)" required /><button className="btn-primary" disabled={busyKey === "company-create"}>{busyKey === "company-create" ? "Salvando..." : "Criar empresa"}</button></form><div className="mt-4 space-y-2">{filteredCompanies.length === 0 ? <EmptyState title="Sem empresas" message="Nenhum resultado para a busca atual." /> : filteredCompanies.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3 flex items-center justify-between gap-2"><div><p className="text-sm font-semibold">{item.name}</p><p className="text-xs text-slate-500">Comissão: {Number(item.commission_percent || 0).toFixed(3)}%</p></div><button className="btn-ghost" disabled={busyKey === `company-${item.id}`} onClick={() => toggleCompany(item)}>{item.active ? "Desativar" : "Ativar"}</button></div>)}</div></Card>
-
-          <Card><CardTitle>Guichês</CardTitle><CardDescription>Cadastro de pontos de atendimento com controle de status.</CardDescription><form className="mt-4 space-y-3" onSubmit={createBooth}><input className="field" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} placeholder="Código" required /><input className="field" value={boothName} onChange={(e) => setBoothName(e.target.value)} placeholder="Nome do guichê" required /><input className="field" value={boothLocation} onChange={(e) => setBoothLocation(e.target.value)} placeholder="Localização (opcional)" /><button className="btn-primary" disabled={busyKey === "booth-create"}>{busyKey === "booth-create" ? "Salvando..." : "Criar guichê"}</button></form><div className="mt-4 space-y-2">{filteredBooths.length === 0 ? <EmptyState title="Sem guichês" message="Nenhum resultado para a busca atual." /> : filteredBooths.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3 flex items-center justify-between gap-2"><div><p className="text-sm font-semibold">{item.name} <span className="text-slate-400">({item.code})</span></p><p className="text-xs text-slate-500">{item.location || "Sem localização informada"}</p></div><button className="btn-ghost" disabled={busyKey === `booth-${item.id}`} onClick={() => toggleBooth(item)}>{item.active ? "Desativar" : "Ativar"}</button></div>)}</div></Card>
-
-          <Card><CardTitle>Categorias e Subcategorias</CardTitle><CardDescription>Estrutura de classificação para lançamentos.</CardDescription><form className="mt-4 space-y-3" onSubmit={createCategory}><input className="field" value={categoryName} onChange={(e) => setCategoryName(e.target.value)} placeholder="Nova categoria" required /><button className="btn-primary" disabled={busyKey === "category-create"}>{busyKey === "category-create" ? "Salvando..." : "Criar categoria"}</button></form><form className="mt-4 space-y-3" onSubmit={createSubcategory}><select className="field" value={subCategoryParent} onChange={(e) => setSubCategoryParent(e.target.value)} required><option value="">Categoria da subcategoria</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input className="field" value={subCategoryName} onChange={(e) => setSubCategoryName(e.target.value)} placeholder="Nova subcategoria" required /><button className="btn-primary" disabled={busyKey === "subcategory-create"}>{busyKey === "subcategory-create" ? "Salvando..." : "Criar subcategoria"}</button></form><div className="mt-4 space-y-2">{filteredCategories.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">{item.name}</p><button className="btn-ghost" disabled={busyKey === `category-${item.id}`} onClick={() => toggleCategory(item)}>{item.active ? "Desativar" : "Ativar"}</button></div><div className="mt-2 space-y-2">{filteredSubcategories.filter((sub) => sub.category_id === item.id).map((sub) => <div key={sub.id} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5 flex items-center justify-between gap-2"><span className="text-xs text-slate-700">{sub.name}</span><button className="text-xs text-blue-700" disabled={busyKey === `subcategory-${sub.id}`} onClick={() => toggleSubcategory(sub)}>{sub.active ? "Desativar" : "Ativar"}</button></div>)}</div></div>)}{filteredCategories.length === 0 ? <EmptyState title="Sem categorias" message="Nenhum resultado para a busca atual." /> : null}</div></Card>
-
-          <Card className="md:col-span-2"><CardTitle>Operadores</CardTitle><CardDescription>Gestão de perfis operacionais e vínculo com guichês.</CardDescription><div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Nome</th><th>Status</th><th>Ação</th></tr></thead><tbody>{filteredOperators.map((item) => <tr key={item.user_id} className="border-t border-slate-200"><td className="py-2">{item.full_name}</td><td>{item.active ? "Ativo" : "Inativo"}</td><td><button className="btn-ghost" disabled={busyKey === `operator-${item.user_id}`} onClick={() => toggleOperator(item)}>{item.active ? "Desativar" : "Ativar"}</button></td></tr>)}</tbody></table>{filteredOperators.length === 0 ? <EmptyState title="Sem operadores" message="Nenhum resultado para a busca atual." /> : null}</div><div className="mt-5 rounded-xl border border-slate-200 p-4"><p className="text-sm font-semibold">Vínculo operador ↔ guichê</p><form className="mt-3 grid gap-3 md:grid-cols-3" onSubmit={createLink}><select className="field" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)} required><option value="">Operador</option>{operators.map((item) => <option key={item.user_id} value={item.user_id}>{item.full_name}</option>)}</select><select className="field" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)} required><option value="">Guichê</option>{booths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="btn-primary" disabled={busyKey === "link-create"}>{busyKey === "link-create" ? "Salvando..." : "Salvar vínculo"}</button></form><div className="mt-3 space-y-2">{filteredLinks.length === 0 ? <EmptyState title="Sem vínculos" message="Nenhum resultado para a busca atual." /> : filteredLinks.map((item) => <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 flex items-center justify-between gap-2"><p className="text-sm text-slate-700">{(operatorNameById.get(item.operator_id) || item.operator_id)} → {(boothNameById.get(item.booth_id) || item.booth_id)}</p><button className="btn-ghost" disabled={busyKey === `link-${item.id}`} onClick={() => toggleLink(item)}>{item.active ? "Desativar" : "Ativar"}</button></div>)}</div></div></Card>
-
-          <Card><CardTitle>Resumo de cadastro</CardTitle><CardDescription>Panorama rápido dos cadastros ativos.</CardDescription><div className="mt-4 space-y-2 text-sm"><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Building2 size={14} /> Empresas ativas</span><b>{companies.filter((i) => i.active).length}</b></div><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Store size={14} /> Guichês ativos</span><b>{booths.filter((i) => i.active).length}</b></div><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><UserCog size={14} /> Operadores ativos</span><b>{operators.filter((i) => i.active).length}</b></div></div></Card>
-        </section>
-      ))}
-
-      {activeSection === "usuarios" && (cadState.loading ? <LoadingState title="Carregando usuários" message="Sincronizando operadores e vínculos com guichês." /> : cadState.error ? <ErrorState title="Falha nos usuários" message={cadState.error} /> : (
-        <section className="rb-grid-3" aria-label="Usuários e vínculos">
-          <Card className="md:col-span-3"><div className="flex items-center gap-3"><Search size={16} /><input className="field" value={cadSearch} onChange={(e) => setCadSearch(e.target.value)} placeholder="Buscar operadores e vínculos" /></div>{cadState.warning ? <p className="text-xs text-amber-700 mt-2">{cadState.warning}</p> : null}</Card>
-          <Card className="md:col-span-2"><CardTitle>Operadores</CardTitle><CardDescription>Gestão de perfis operacionais.</CardDescription><div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Nome</th><th>Status</th><th>Ação</th></tr></thead><tbody>{filteredOperators.map((item) => <tr key={item.user_id} className="border-t border-slate-200"><td className="py-2">{item.full_name}</td><td>{item.active ? "Ativo" : "Inativo"}</td><td><button className="btn-ghost" disabled={busyKey === `operator-${item.user_id}`} onClick={() => toggleOperator(item)}>{item.active ? "Desativar" : "Ativar"}</button></td></tr>)}</tbody></table>{filteredOperators.length === 0 ? <EmptyState title="Sem operadores" message="Nenhum resultado para a busca atual." /> : null}</div></Card>
-          <Card><CardTitle>Resumo de usuários</CardTitle><CardDescription>Painel rápido da base operacional.</CardDescription><div className="mt-4 space-y-2 text-sm"><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><UserCog size={14} /> Operadores ativos</span><b>{operators.filter((i) => i.active).length}</b></div><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Store size={14} /> Vínculos ativos</span><b>{links.filter((i) => i.active).length}</b></div></div></Card>
-          <Card className="md:col-span-3"><CardTitle>Vínculo operador ↔ guichê</CardTitle><CardDescription>Controle de alocação por ponto de atendimento.</CardDescription><form className="mt-3 grid gap-3 md:grid-cols-3" onSubmit={createLink}><select className="field" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)} required><option value="">Operador</option>{operators.map((item) => <option key={item.user_id} value={item.user_id}>{item.full_name}</option>)}</select><select className="field" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)} required><option value="">Guichê</option>{booths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="btn-primary" disabled={busyKey === "link-create"}>{busyKey === "link-create" ? "Salvando..." : "Salvar vínculo"}</button></form><div className="mt-3 space-y-2">{filteredLinks.length === 0 ? <EmptyState title="Sem vínculos" message="Nenhum resultado para a busca atual." /> : filteredLinks.map((item) => <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 flex items-center justify-between gap-2"><p className="text-sm text-slate-700">{(operatorNameById.get(item.operator_id) || item.operator_id)} → {(boothNameById.get(item.booth_id) || item.booth_id)}</p><button className="btn-ghost" disabled={busyKey === `link-${item.id}`} onClick={() => toggleLink(item)}>{item.active ? "Desativar" : "Ativar"}</button></div>)}</div></Card>
-        </section>
-      ))}
-
-      {activeSection === "historico" && (finState.loading ? <LoadingState title="Carregando histórico" message="Buscando transações e pendências operacionais." /> : finState.error ? <ErrorState title="Falha no histórico" message={finState.error} /> : (
-        <section className="rb-grid-3" aria-label="Histórico e pendências">
-          <Card className="md:col-span-3 rb-admin-transactions">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle>Histórico de transações</CardTitle>
-                <CardDescription>Tabela consolidada dos últimos lançamentos postados.</CardDescription>
-              </div>
-            </div>
-            <div className="mt-4 rb-table-wrap">
-              <table className="rb-table">
-                <thead className="text-left text-slate-500">
-                  <tr>
-                    <th className="py-2">ID</th>
-                    <th>Data/Hora</th>
-                    <th>Operador</th>
-                    <th>Método</th>
-                    <th>Status</th>
-                    <th className="text-right">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {postedTx.slice(0, 30).map((tx) => (
-                    <tr key={tx.id} className="border-t border-slate-200">
-                      <td className="py-2 font-mono text-xs text-slate-400">#{tx.id.slice(0, 8)}</td>
-                      <td>{dt(tx.sold_at)}</td>
-                      <td>{operatorNameById.get(tx.operator_id || "") || "Não informado"}</td>
-                      <td>{paymentMethodLabel(tx.payment_method)}</td>
-                      <td><span className="rb-badge rb-badge-success">Confirmado</span></td>
-                      <td className="text-right font-semibold">{brl(Number(tx.amount || 0))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {postedTx.length === 0 ? <div className="pt-4"><EmptyState title="Sem transações" message="As transações aparecerão aqui conforme os lançamentos." /></div> : null}
-            </div>
-          </Card>
-
-          <Card className="md:col-span-3"><div className="grid md:grid-cols-3 gap-3"><div><p className="text-sm text-slate-600">Período (dias)</p><select className="field mt-1" value={finPeriodDays} onChange={(e) => setFinPeriodDays(e.target.value)}><option value="7">Últimos 7 dias</option><option value="15">Últimos 15 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option></select></div><div><p className="text-sm text-slate-600">Status dos ajustes</p><select className="field mt-1" value={finAdjustmentStatus} onChange={(e) => setFinAdjustmentStatus(e.target.value as any)}><option value="all">Todos</option><option value="pending">Pendentes</option><option value="approved">Aprovados</option><option value="rejected">Rejeitados</option></select></div></div>{finState.warning ? <p className="text-xs text-amber-700 mt-2">{finState.warning}</p> : null}</Card>
-          <Card className="md:col-span-2"><CardTitle>Ajustes</CardTitle><CardDescription>Gestão por período e status, com ações rápidas.</CardDescription><div className="mt-4 space-y-2">{filteredAdjustments.length === 0 ? <EmptyState title="Sem ajustes no filtro" message="Não há solicitações de ajuste para os filtros atuais." /> : filteredAdjustments.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-semibold">Transação: {item.transaction_id}</p><p className="text-xs text-slate-500 mt-1">Solicitante: {operatorNameById.get(item.requested_by) || item.requested_by} • {dt(item.created_at)} • {item.status.toUpperCase()}</p><p className="text-sm text-slate-700 mt-2">{item.reason}</p>{item.status === "pending" ? <div className="mt-3 flex gap-2"><button className="btn-primary" disabled={busyKey === `adj-${item.id}-approved`} onClick={() => reviewAdjustment(item, "approved")}>Aprovar</button><button className="btn-ghost" disabled={busyKey === `adj-${item.id}-rejected`} onClick={() => reviewAdjustment(item, "rejected")}>Rejeitar</button></div> : null}</div>)}</div></Card>
-          <Card><CardTitle>Caixa / Fechamentos</CardTitle><CardDescription>Últimos fechamentos no período selecionado.</CardDescription>{filteredCashClosings.length === 0 ? <div className="mt-4"><EmptyState title="Sem fechamentos" message="Nenhum fechamento encontrado para o período selecionado." /></div> : <div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Data</th><th>Guichê</th><th>Operador</th><th>Diferença</th></tr></thead><tbody>{filteredCashClosings.map((item) => <tr key={item.id} className="border-t border-slate-200"><td className="py-2">{dt(item.created_at)}</td><td>{(item.booth_id && boothNameById.get(item.booth_id)) || "-"}</td><td>{(item.user_id && operatorNameById.get(item.user_id)) || "-"}</td><td>{brl(Number(item.difference || 0))}</td></tr>)}</tbody></table></div>}</Card>
-        </section>
-      ))}
-
-      {activeSection === "relatorios" && (relState.loading ? <LoadingState title="Carregando relatórios" message="Consolidando análises por período, operador, guichê e categoria." /> : relState.error ? <ErrorState title="Falha nos relatórios" message={relState.error} /> : (
-        <section className="rb-grid-3" aria-label="Relatórios e exportações">
-          <Card className="md:col-span-3"><div className="grid md:grid-cols-3 gap-3"><div><p className="text-sm text-slate-600">Data inicial</p><input className="field mt-1" type="date" value={reportFrom} onChange={(e) => setReportFrom(e.target.value)} /></div><div><p className="text-sm text-slate-600">Data final</p><input className="field mt-1" type="date" value={reportTo} onChange={(e) => setReportTo(e.target.value)} /></div><div className="flex items-end"><button className="btn-primary w-full inline-flex justify-center items-center gap-2" onClick={exportConsolidadoCsv}><Download size={16} /> Exportar consolidado CSV</button></div></div></Card>
-
-          <Card><CardTitle>Consolidado do período</CardTitle><CardDescription>Receita, comissão e ticket médio.</CardDescription><div className="mt-4 space-y-2 text-sm"><div className="flex justify-between"><span>Receita</span><b>{brl(reportSummary.revenue)}</b></div><div className="flex justify-between"><span>Comissão</span><b>{brl(reportSummary.commission)}</b></div><div className="flex justify-between"><span>Ticket médio</span><b>{brl(reportSummary.ticket)}</b></div><div className="flex justify-between"><span>Vendas</span><b>{reportSummary.count}</b></div></div></Card>
-
-          <Card><div className="flex items-center justify-between gap-2"><div><CardTitle>Por operador</CardTitle><CardDescription>Ranking por receita.</CardDescription></div><button className="btn-ghost inline-flex items-center gap-2" onClick={() => exportGroupedCsv("relatorio-por-operador", reportByOperator)}><Download size={14} /> CSV</button></div><div className="mt-4 space-y-2">{reportByOperator.slice(0, 7).map((r) => <div key={r.label} className="rounded-lg border border-slate-200 p-2 text-sm"><div className="flex justify-between gap-2"><span className="truncate">{r.label}</span><b>{brl(r.total)}</b></div><div className="text-xs text-slate-500">{r.qty} venda(s)</div></div>)}{reportByOperator.length === 0 ? <EmptyState title="Sem dados" message="Não há vendas no período selecionado." /> : null}</div></Card>
-
-          <Card><div className="flex items-center justify-between gap-2"><div><CardTitle>Por guichê</CardTitle><CardDescription>Desempenho por ponto de atendimento.</CardDescription></div><button className="btn-ghost inline-flex items-center gap-2" onClick={() => exportGroupedCsv("relatorio-por-guiche", reportByBooth)}><Download size={14} /> CSV</button></div><div className="mt-4 space-y-2">{reportByBooth.slice(0, 7).map((r) => <div key={r.label} className="rounded-lg border border-slate-200 p-2 text-sm"><div className="flex justify-between gap-2"><span className="truncate">{r.label}</span><b>{brl(r.total)}</b></div><div className="text-xs text-slate-500">{r.qty} venda(s)</div></div>)}{reportByBooth.length === 0 ? <EmptyState title="Sem dados" message="Não há vendas no período selecionado." /> : null}</div></Card>
-
-          <Card className="md:col-span-2"><div className="flex items-center justify-between gap-2"><div><CardTitle>Por categoria / subcategoria</CardTitle><CardDescription>Visão analítica por tipo de venda.</CardDescription></div><button className="btn-ghost inline-flex items-center gap-2" onClick={() => exportGroupedCsv("relatorio-por-categoria", reportByCategory)}><Download size={14} /> CSV</button></div><div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Grupo</th><th>Qtd</th><th>Receita</th><th>Comissão</th></tr></thead><tbody>{reportByCategory.slice(0, 60).map((r) => <tr key={r.label} className="border-t border-slate-200"><td className="py-2">{r.label}</td><td>{r.qty}</td><td>{brl(r.total)}</td><td>{brl(r.commission)}</td></tr>)}</tbody></table>{reportByCategory.length === 0 ? <EmptyState title="Sem dados" message="Não há vendas no período selecionado." /> : null}</div></Card>
-        </section>
-      ))}
+      )}
     </div>
   );
 }
