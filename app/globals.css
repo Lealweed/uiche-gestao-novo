@@ -520,8 +520,58 @@ body {
     display: grid;
     gap: var(--rb-space-2);
     place-items: start;
-    background: var(--rb-surface-soft);
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
     min-height: 170px;
+  }
+
+  .rb-table thead {
+    background: #f8fafc;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.72rem;
+  }
+
+  .rb-table th,
+  .rb-table td {
+    padding: 0.7rem 0.75rem;
+  }
+
+  .rb-table tbody tr {
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .rb-table tbody tr:hover {
+    background: rgba(219, 234, 254, 0.22);
+  }
+
+  .rb-operator-layout {
+    display: grid;
+    gap: var(--rb-space-4);
+    grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr);
+    align-items: start;
+  }
+
+  .rb-operator-main,
+  .rb-operator-side,
+  .rb-operator-feed,
+  .rb-operator-history,
+  .rb-admin-transactions {
+    border-radius: 1rem;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+  }
+
+  .rb-operator-side {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  }
+
+  .rb-admin-header .rb-section-title {
+    font-size: 1.6rem;
+    letter-spacing: -0.01em;
+  }
+
+  .rb-admin-transactions .rb-card-title {
+    font-size: 1.1rem;
   }
 
   .rb-state-card-error {
@@ -564,6 +614,12 @@ body {
 
     .rb-main-wrap {
       padding: var(--rb-space-5);
+    }
+  }
+
+  @media (max-width: 1100px) {
+    .rb-operator-layout {
+      grid-template-columns: 1fr;
     }
   }
 

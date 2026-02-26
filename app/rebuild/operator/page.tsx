@@ -503,8 +503,8 @@ export default function RebuildOperatorPage() {
         </Card>
       )}
 
-      <section className="rb-grid-3" aria-label="Fluxo operacional">
-        <Card className="md:col-span-2">
+      <section className="rb-operator-layout" aria-label="Fluxo operacional">
+        <Card className="rb-operator-main">
           <CardTitle>Novo lançamento</CardTitle>
           <CardDescription>Registre empresa, categoria, método, valor e observações.</CardDescription>
           <form onSubmit={submitTransaction} className="mt-4 grid gap-3 md:grid-cols-2">
@@ -558,7 +558,7 @@ export default function RebuildOperatorPage() {
           </form>
         </Card>
 
-        <Card>
+        <Card className="rb-operator-side">
           <CardTitle>Caixa PDV</CardTitle>
           <CardDescription>Registre suprimento, sangria e ajuste do turno.</CardDescription>
           <form onSubmit={submitCashMovement} className="mt-4 space-y-3">
@@ -582,7 +582,7 @@ export default function RebuildOperatorPage() {
         </Card>
       </section>
 
-      <Card>
+      <Card className="rb-operator-feed">
         <div className="flex items-center justify-between gap-3">
           <div>
             <CardTitle>Comprovantes pendentes</CardTitle>
@@ -613,7 +613,7 @@ export default function RebuildOperatorPage() {
         )}
       </Card>
 
-      <Card>
+      <Card className="rb-operator-history">
         <CardTitle>Lançamentos do turno</CardTitle>
         <CardDescription>Histórico operacional do turno atual.</CardDescription>
 
@@ -627,7 +627,7 @@ export default function RebuildOperatorPage() {
           </div>
         ) : (
           <div className="mt-4 overflow-auto">
-            <table className="w-full text-sm">
+            <table className="rb-table w-full text-sm">
               <thead className="text-left text-slate-500">
                 <tr>
                   <th className="py-2">Hora</th>

@@ -391,7 +391,7 @@ export default function RebuildAdminPage() {
 
   return (
     <div className="rb-page">
-      <SectionHeader title="Painel Administrativo" subtitle="Operação moderna com cadastros, financeiro e relatórios executivos com exportação." />
+      <SectionHeader title="Painel Administrativo" subtitle="Cadastros, financeiro e relatórios executivos em uma visão unificada." className="rb-admin-header" />
       {feedback ? <Card><p className="rb-card-description" style={{ marginTop: 0 }}>{feedback}</p></Card> : null}
 
       {dashState.loading ? <LoadingState title="Carregando dashboard" message="Consolidando indicadores e alertas operacionais." /> : dashState.error ? <ErrorState title="Falha no dashboard" message={dashState.error} /> : (
@@ -409,7 +409,7 @@ export default function RebuildAdminPage() {
             <Card><CardTitle>Alertas operacionais</CardTitle><CardDescription>Foco no que precisa de atenção imediata.</CardDescription><div className="mt-4 space-y-2">{alerts.map((item) => <div key={item} className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-amber-900 inline-flex items-start gap-2 w-full"><AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{item}</span></div>)}</div></Card>
           </section>
 
-          <Card>
+          <Card className="rb-admin-transactions">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle>Últimas transações</CardTitle>
@@ -417,7 +417,7 @@ export default function RebuildAdminPage() {
               </div>
             </div>
             <div className="mt-4 overflow-auto">
-              <table className="w-full text-sm">
+              <table className="rb-table w-full text-sm">
                 <thead className="text-left text-slate-500">
                   <tr>
                     <th className="py-2">Data/Hora</th>
