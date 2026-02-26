@@ -39,9 +39,7 @@ const brl = (value: number) => value.toLocaleString("pt-BR", { style: "currency"
 
 export default function RebuildAdminPage() {
   const router = useRouter();
-
-  const sectionParam = (typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("section") as AdminSection | null) : null);
-  const activeSection: AdminSection = sectionParam && sectionParam in sections ? sectionParam : "dashboard";
+  const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
 
   const [authLoading, setAuthLoading] = useState(true);
   const [ui, setUi] = useState<UiState>({ loading: true, error: null });
@@ -70,6 +68,18 @@ export default function RebuildAdminPage() {
   const [historicoDateFilter, setHistoricoDateFilter] = useState("");
   const [reportBoothFilter, setReportBoothFilter] = useState("");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("");
+
+  useEffect(() => {
+    const syncSectionFromHash = () => {
+      const raw = window.location.hash.replace("#", "") as AdminSection | "";
+      const nextSection: AdminSection = raw && raw in sections ? (raw as AdminSection) : "dashboard";
+      setActiveSection(nextSection);
+    };
+
+    syncSectionFromHash();
+    window.addEventListener("hashchange", syncSectionFromHash);
+    return () => window.removeEventListener("hashchange", syncSectionFromHash);
+  }, []);
 
   const operatorMap = useMemo(() => new Map(profiles.map((p) => [p.user_id, p.full_name])), [profiles]);
   const boothMap = useMemo(() => new Map(booths.map((b) => [b.id, `${b.code} - ${b.name}`])), [booths]);

@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 const primaryNavigation = [
-  { href: "/rebuild/admin", label: "Dashboard", icon: "grid_view", section: "dashboard" },
-  { href: "/rebuild/admin?section=controle-turno", label: "Controle de Turno", icon: "point_of_sale", section: "controle-turno" },
-  { href: "/rebuild/admin?section=historico", label: "Histórico", icon: "receipt_long", section: "historico" },
-  { href: "/rebuild/admin?section=relatorios", label: "Relatórios", icon: "analytics", section: "relatorios" },
+  { href: "/rebuild/admin#dashboard", label: "Dashboard", icon: "grid_view", section: "dashboard" },
+  { href: "/rebuild/admin#controle-turno", label: "Controle de Turno", icon: "point_of_sale", section: "controle-turno" },
+  { href: "/rebuild/admin#historico", label: "Histórico", icon: "receipt_long", section: "historico" },
+  { href: "/rebuild/admin#relatorios", label: "Relatórios", icon: "analytics", section: "relatorios" },
 ] as const;
 
 const systemNavigation = [
-  { href: "/rebuild/admin?section=usuarios", label: "Usuários", icon: "group", section: "usuarios" },
-  { href: "/rebuild/admin?section=configuracoes", label: "Configurações", icon: "settings", section: "configuracoes" },
+  { href: "/rebuild/admin#usuarios", label: "Usuários", icon: "group", section: "usuarios" },
+  { href: "/rebuild/admin#configuracoes", label: "Configurações", icon: "settings", section: "configuracoes" },
 ] as const;
 
 const adminSectionLabels: Record<string, string> = {
@@ -26,7 +27,17 @@ const adminSectionLabels: Record<string, string> = {
 
 export function RebuildShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const currentSection = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("section") || "dashboard" : "dashboard";
+  const [currentSection, setCurrentSection] = useState("dashboard");
+
+  useEffect(() => {
+    const readHash = () => {
+      const raw = window.location.hash.replace("#", "").trim();
+      setCurrentSection(raw || "dashboard");
+    };
+    readHash();
+    window.addEventListener("hashchange", readHash);
+    return () => window.removeEventListener("hashchange", readHash);
+  }, []);
 
   const activeLabel = pathname.includes("/operator")
     ? "Controle de Turno"
