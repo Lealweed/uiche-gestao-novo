@@ -1,4 +1,16 @@
 "use client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export default function AdminLegacyRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/rebuild/admin");
+  }, [router]);
+  return null;
+}
+
+/* LEGACY ADMIN (temporarily disabled)
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -2366,3 +2378,5 @@ function BarRow({ label, value, max }: { label: string; value: number; max: numb
 }
 
 
+
+*/

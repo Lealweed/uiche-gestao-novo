@@ -1,4 +1,16 @@
 "use client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export default function OperatorLegacyRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/rebuild/operator");
+  }, [router]);
+  return null;
+}
+
+/* LEGACY OPERATOR (temporarily disabled)
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -946,3 +958,5 @@ function PaymentMixBars({ data }: { data: Array<{ label: string; value: number; 
 
 
 
+
+*/
