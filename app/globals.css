@@ -545,6 +545,80 @@ body {
     background: rgba(219, 234, 254, 0.22);
   }
 
+  .rb-payment-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  .rb-payment-pix {
+    color: #0f766e;
+    background: #ccfbf1;
+    border-color: #99f6e4;
+  }
+
+  .rb-payment-credit {
+    color: #3730a3;
+    background: #e0e7ff;
+    border-color: #c7d2fe;
+  }
+
+  .rb-payment-debit {
+    color: #1d4ed8;
+    background: #dbeafe;
+    border-color: #bfdbfe;
+  }
+
+  .rb-payment-cash {
+    color: #92400e;
+    background: #fef3c7;
+    border-color: #fde68a;
+  }
+
+  .rb-pending-feed {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .rb-pending-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+
+  .rb-pending-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    margin-top: 0.9rem;
+    margin-left: 2px;
+    background: #f59e0b;
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.15);
+  }
+
+  .rb-pending-line {
+    position: absolute;
+    left: 6px;
+    top: 1.55rem;
+    bottom: -0.85rem;
+    width: 2px;
+    background: linear-gradient(180deg, rgba(245, 158, 11, 0.4), rgba(245, 158, 11, 0.1));
+  }
+
+  .rb-pending-content {
+    border: 1px solid #fde68a;
+    background: linear-gradient(180deg, #fffbeb 0%, #fff7d6 100%);
+    border-radius: 0.9rem;
+    padding: 0.85rem;
+  }
+
   .rb-operator-layout {
     display: grid;
     gap: var(--rb-space-4);
@@ -598,6 +672,53 @@ body {
 
   .rb-spin {
     animation: rb-spin 1.1s linear infinite;
+  }
+
+  @media (min-width: 1024px) and (max-width: 1280px) {
+    .rb-shell {
+      grid-template-columns: 224px 1fr;
+    }
+
+    .rb-sidebar {
+      padding: 0.8rem 0.65rem;
+    }
+
+    .rb-main-wrap {
+      padding: 1.1rem;
+      gap: 0.85rem;
+    }
+
+    .rb-main,
+    .rb-page {
+      gap: var(--rb-space-4);
+    }
+
+    .rb-card {
+      padding: 0.95rem;
+    }
+
+    .rb-card-description {
+      font-size: 0.9rem;
+    }
+
+    .rb-stat-grid,
+    .rb-grid-3 {
+      gap: 0.75rem;
+    }
+
+    .rb-stat-value {
+      font-size: 1.45rem;
+    }
+
+    .rb-operator-layout {
+      grid-template-columns: minmax(0, 1.45fr) minmax(270px, 1fr);
+      gap: 0.75rem;
+    }
+
+    .rb-table th,
+    .rb-table td {
+      padding: 0.55rem 0.5rem;
+    }
   }
 
   @media (max-width: 1024px) {

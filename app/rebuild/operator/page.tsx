@@ -40,6 +40,13 @@ function brl(value: number) {
   return `R$ ${Number(value || 0).toFixed(2)}`;
 }
 
+function paymentMethodMeta(method: "pix" | "credit" | "debit" | "cash") {
+  if (method === "credit") return { label: "Crédito", className: "rb-payment-badge rb-payment-credit" };
+  if (method === "debit") return { label: "Débito", className: "rb-payment-badge rb-payment-debit" };
+  if (method === "cash") return { label: "Dinheiro", className: "rb-payment-badge rb-payment-cash" };
+  return { label: "PIX", className: "rb-payment-badge rb-payment-pix" };
+}
+
 export default function RebuildOperatorPage() {
   const router = useRouter();
 
@@ -596,19 +603,33 @@ export default function RebuildOperatorPage() {
             <EmptyState title="Sem pendências de comprovante" message="Todas as transações de cartão estão com comprovante anexado." />
           </div>
         ) : (
-          <div className="mt-4 grid gap-2">
-            {pendingReceiptTxs.slice(0, 8).map((tx) => (
-              <div key={`pending-${tx.id}`} className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">{tx.company_name} • {brl(tx.amount)}</p>
-                  <p className="text-xs text-slate-600">{tx.payment_method.toUpperCase()} • {new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+          <div className="mt-4 rb-pending-feed">
+            {pendingReceiptTxs.slice(0, 8).map((tx, idx) => {
+              const payment = paymentMethodMeta(tx.payment_method);
+              return (
+                <div key={`pending-${tx.id}`} className="rb-pending-item">
+                  <div className="rb-pending-dot" aria-hidden />
+                  <div className="rb-pending-content">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-800">{tx.company_name}</p>
+                      <span className={payment.className}>{payment.label}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                      <span>{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+                      <span>•</span>
+                      <span>{brl(tx.amount)}</span>
+                    </div>
+                    <div className="mt-3">
+                      <label className="btn-ghost cursor-pointer text-sm">
+                        {uploadingTxId === tx.id ? "Enviando..." : "Anexar comprovante"}
+                        <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id} onChange={(e) => uploadReceipt(tx.id, e)} />
+                      </label>
+                    </div>
+                  </div>
+                  {idx < Math.min(pendingReceiptTxs.length, 8) - 1 ? <div className="rb-pending-line" aria-hidden /> : null}
                 </div>
-                <label className="btn-ghost cursor-pointer text-sm">
-                  {uploadingTxId === tx.id ? "Enviando..." : "Anexar comprovante"}
-                  <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id} onChange={(e) => uploadReceipt(tx.id, e)} />
-                </label>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -647,7 +668,7 @@ export default function RebuildOperatorPage() {
                     <tr key={tx.id} className="border-t border-slate-200">
                       <td className="py-2">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
                       <td>{tx.company_name}</td>
-                      <td>{tx.payment_method.toUpperCase()}</td>
+                      <td><span className={paymentMethodMeta(tx.payment_method).className}>{paymentMethodMeta(tx.payment_method).label}</span></td>
                       <td>{brl(tx.amount)}</td>
                       <td>{tx.ticket_reference ?? "-"}</td>
                       <td>
