@@ -60,6 +60,13 @@ function dt(value: string) {
   return new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+function paymentMethodLabel(method: "pix" | "credit" | "debit" | "cash") {
+  if (method === "credit") return "Crédito";
+  if (method === "debit") return "Débito";
+  if (method === "cash") return "Dinheiro";
+  return "PIX";
+}
+
 function csvEscape(value: string | number) {
   const text = String(value ?? "");
   return `"${text.replace(/"/g, '""')}"`;
@@ -401,6 +408,42 @@ export default function RebuildAdminPage() {
             <Card className="md:col-span-2"><CardTitle>Receita diária (últimos 7 dias)</CardTitle><CardDescription>Evolução simples para leitura rápida da operação.</CardDescription><div className="mt-4 grid grid-cols-7 gap-2">{chartData.map((item) => <div key={item.key} className="flex flex-col items-center gap-2"><div className="h-28 w-full rounded-xl border border-slate-200 bg-slate-50 p-1 flex items-end"><div className="w-full rounded-lg bg-blue-500/90" style={{ height: `${Math.max(6, item.ratio * 100)}%`, transition: "height 220ms ease" }} /></div><span className="text-xs text-slate-500">{item.label}</span><span className="text-xs font-semibold text-slate-700">{brl(item.total)}</span></div>)}</div></Card>
             <Card><CardTitle>Alertas operacionais</CardTitle><CardDescription>Foco no que precisa de atenção imediata.</CardDescription><div className="mt-4 space-y-2">{alerts.map((item) => <div key={item} className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-amber-900 inline-flex items-start gap-2 w-full"><AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{item}</span></div>)}</div></Card>
           </section>
+
+          <Card>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle>Últimas transações</CardTitle>
+                <CardDescription>Movimento recente da operação com dados reais.</CardDescription>
+              </div>
+            </div>
+            <div className="mt-4 overflow-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-slate-500">
+                  <tr>
+                    <th className="py-2">Data/Hora</th>
+                    <th>Operador</th>
+                    <th>Método</th>
+                    <th>Status</th>
+                    <th className="text-right">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {postedTx.slice(0, 8).map((tx) => (
+                    <tr key={tx.id} className="border-t border-slate-200">
+                      <td className="py-2">{dt(tx.sold_at)}</td>
+                      <td>{operatorNameById.get(tx.operator_id || "") || "Não informado"}</td>
+                      <td>{paymentMethodLabel(tx.payment_method)}</td>
+                      <td>
+                        <span className="inline-flex rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-xs text-emerald-700">Confirmado</span>
+                      </td>
+                      <td className="text-right font-semibold">{brl(Number(tx.amount || 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {postedTx.length === 0 ? <div className="pt-4"><EmptyState title="Sem transações" message="As transações aparecerão aqui conforme os lançamentos." /></div> : null}
+            </div>
+          </Card>
         </>
       )}
 
