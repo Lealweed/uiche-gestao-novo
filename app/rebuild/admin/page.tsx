@@ -132,12 +132,13 @@ export default function RebuildAdminPage() {
   const categoryNameById = useMemo(() => new Map(categories.map((item) => [item.id, item.name])), [categories]);
   const subcategoryNameById = useMemo(() => new Map(subcategories.map((item) => [item.id, item.name])), [subcategories]);
 
-  const rangeStart = useMemo(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 29);
-    date.setHours(0, 0, 0, 0);
-    return date.toISOString();
-  }, []);
+  const queryRangeStart = useMemo(() => {
+    const reportStart = new Date(`${reportFrom}T00:00:00`);
+    const finStart = new Date();
+    finStart.setDate(finStart.getDate() - (Number(finPeriodDays) - 1));
+    finStart.setHours(0, 0, 0, 0);
+    return (reportStart < finStart ? reportStart : finStart).toISOString();
+  }, [reportFrom, finPeriodDays]);
 
   const postedTx = useMemo(() => transactions.filter((tx) => tx.status === "posted"), [transactions]);
 
@@ -248,18 +249,35 @@ export default function RebuildAdminPage() {
 
   async function loadAuthAndGuard() {
     setAuthLoading(true);
-    const { data } = await supabase.auth.getUser();
-    const authUserId = data.user?.id;
-    if (!authUserId) return router.replace("/login");
+    try {
+      const { data } = await supabase.auth.getUser();
+      const authUserId = data.user?.id;
+      if (!authUserId) {
+        router.replace("/login");
+        return;
+      }
 
-    const profileRes = await supabase.from("profiles").select("role,active").eq("user_id", authUserId).single();
-    if (profileRes.error || !profileRes.data) return router.replace("/login");
+      const profileRes = await supabase.from("profiles").select("role,active").eq("user_id", authUserId).single();
+      if (profileRes.error || !profileRes.data) {
+        router.replace("/login");
+        return;
+      }
 
-    const profile = profileRes.data as { role: "admin" | "operator" };
-    if (profile.role !== "admin") return router.replace("/rebuild/operator");
+      const profile = profileRes.data as { role: "admin" | "operator"; active?: boolean | null };
+      if (profile.active === false) {
+        await supabase.auth.signOut();
+        router.replace("/login");
+        return;
+      }
+      if (profile.role !== "admin") {
+        router.replace("/rebuild/operator");
+        return;
+      }
 
-    setUserId(authUserId);
-    setAuthLoading(false);
+      setUserId(authUserId);
+    } finally {
+      setAuthLoading(false);
+    }
   }
 
   async function loadCadastros() {
@@ -307,7 +325,7 @@ export default function RebuildAdminPage() {
         supabase
           .from("transactions")
           .select("id,sold_at,amount,commission_amount,payment_method,status,operator_id,booth_id,category_id,subcategory_id")
-          .gte("sold_at", rangeStart)
+          .gte("sold_at", queryRangeStart)
           .order("sold_at", { ascending: false })
           .limit(3000),
         supabase.from("shifts").select("id,status,opened_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120),
@@ -365,6 +383,10 @@ export default function RebuildAdminPage() {
     if (!authLoading && userId) refreshAllSections();
   }, [authLoading, userId]);
 
+  useEffect(() => {
+    if (!authLoading && userId) loadDashboardAndReports();
+  }, [queryRangeStart, authLoading, userId]);
+
   async function createCompany(e: FormEvent) { e.preventDefault(); if (!companyName.trim()) return; setBusyKey("company-create"); setFeedback(null); const res = await supabase.from("companies").insert({ name: companyName.trim(), commission_percent: Number(companyCommission || 0), active: true }); setBusyKey(null); if (res.error) return setFeedback(`Não foi possível criar empresa.`); setCompanyName(""); setCompanyCommission("10"); setFeedback("Empresa criada com sucesso."); await Promise.all([loadCadastros(), loadDashboardAndReports()]); }
   async function toggleCompany(item: Company) { setBusyKey(`company-${item.id}`); const res = await supabase.from("companies").update({ active: !item.active }).eq("id", item.id); setBusyKey(null); if (res.error) return setFeedback("Falha ao atualizar empresa."); await loadCadastros(); }
   async function createBooth(e: FormEvent) { e.preventDefault(); if (!boothCode.trim() || !boothName.trim()) return; setBusyKey("booth-create"); const res = await supabase.from("booths").insert({ code: boothCode.trim(), name: boothName.trim(), location: boothLocation.trim() || null, active: true }); setBusyKey(null); if (res.error) return setFeedback("Não foi possível criar guichê."); setBoothCode(""); setBoothName(""); setBoothLocation(""); setFeedback("Guichê criado com sucesso."); await loadCadastros(); }
@@ -416,8 +438,8 @@ export default function RebuildAdminPage() {
                 <CardDescription>Movimento recente da operação com dados reais.</CardDescription>
               </div>
             </div>
-            <div className="mt-4 overflow-auto">
-              <table className="rb-table w-full text-sm">
+            <div className="mt-4 rb-table-wrap">
+              <table className="rb-table">
                 <thead className="text-left text-slate-500">
                   <tr>
                     <th className="py-2">Data/Hora</th>
@@ -434,7 +456,7 @@ export default function RebuildAdminPage() {
                       <td>{operatorNameById.get(tx.operator_id || "") || "Não informado"}</td>
                       <td>{paymentMethodLabel(tx.payment_method)}</td>
                       <td>
-                        <span className="inline-flex rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-xs text-emerald-700">Confirmado</span>
+                        <span className="rb-badge rb-badge-success">Confirmado</span>
                       </td>
                       <td className="text-right font-semibold">{brl(Number(tx.amount || 0))}</td>
                     </tr>
@@ -457,7 +479,7 @@ export default function RebuildAdminPage() {
 
           <Card><CardTitle>Categorias e Subcategorias</CardTitle><CardDescription>Estrutura de classificação para lançamentos.</CardDescription><form className="mt-4 space-y-3" onSubmit={createCategory}><input className="field" value={categoryName} onChange={(e) => setCategoryName(e.target.value)} placeholder="Nova categoria" required /><button className="btn-primary" disabled={busyKey === "category-create"}>{busyKey === "category-create" ? "Salvando..." : "Criar categoria"}</button></form><form className="mt-4 space-y-3" onSubmit={createSubcategory}><select className="field" value={subCategoryParent} onChange={(e) => setSubCategoryParent(e.target.value)} required><option value="">Categoria da subcategoria</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><input className="field" value={subCategoryName} onChange={(e) => setSubCategoryName(e.target.value)} placeholder="Nova subcategoria" required /><button className="btn-primary" disabled={busyKey === "subcategory-create"}>{busyKey === "subcategory-create" ? "Salvando..." : "Criar subcategoria"}</button></form><div className="mt-4 space-y-2">{filteredCategories.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3"><div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">{item.name}</p><button className="btn-ghost" disabled={busyKey === `category-${item.id}`} onClick={() => toggleCategory(item)}>{item.active ? "Desativar" : "Ativar"}</button></div><div className="mt-2 space-y-2">{filteredSubcategories.filter((sub) => sub.category_id === item.id).map((sub) => <div key={sub.id} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1.5 flex items-center justify-between gap-2"><span className="text-xs text-slate-700">{sub.name}</span><button className="text-xs text-blue-700" disabled={busyKey === `subcategory-${sub.id}`} onClick={() => toggleSubcategory(sub)}>{sub.active ? "Desativar" : "Ativar"}</button></div>)}</div></div>)}{filteredCategories.length === 0 ? <EmptyState title="Sem categorias" message="Nenhum resultado para a busca atual." /> : null}</div></Card>
 
-          <Card className="md:col-span-2"><CardTitle>Operadores</CardTitle><CardDescription>Gestão de perfis operacionais e vínculo com guichês.</CardDescription><div className="mt-4 overflow-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-2">Nome</th><th>Status</th><th>Ação</th></tr></thead><tbody>{filteredOperators.map((item) => <tr key={item.user_id} className="border-t border-slate-200"><td className="py-2">{item.full_name}</td><td>{item.active ? "Ativo" : "Inativo"}</td><td><button className="btn-ghost" disabled={busyKey === `operator-${item.user_id}`} onClick={() => toggleOperator(item)}>{item.active ? "Desativar" : "Ativar"}</button></td></tr>)}</tbody></table>{filteredOperators.length === 0 ? <EmptyState title="Sem operadores" message="Nenhum resultado para a busca atual." /> : null}</div><div className="mt-5 rounded-xl border border-slate-200 p-4"><p className="text-sm font-semibold">Vínculo operador ↔ guichê</p><form className="mt-3 grid gap-3 md:grid-cols-3" onSubmit={createLink}><select className="field" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)} required><option value="">Operador</option>{operators.map((item) => <option key={item.user_id} value={item.user_id}>{item.full_name}</option>)}</select><select className="field" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)} required><option value="">Guichê</option>{booths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="btn-primary" disabled={busyKey === "link-create"}>{busyKey === "link-create" ? "Salvando..." : "Salvar vínculo"}</button></form><div className="mt-3 space-y-2">{filteredLinks.length === 0 ? <EmptyState title="Sem vínculos" message="Nenhum resultado para a busca atual." /> : filteredLinks.map((item) => <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 flex items-center justify-between gap-2"><p className="text-sm text-slate-700">{(operatorNameById.get(item.operator_id) || item.operator_id)} → {(boothNameById.get(item.booth_id) || item.booth_id)}</p><button className="btn-ghost" disabled={busyKey === `link-${item.id}`} onClick={() => toggleLink(item)}>{item.active ? "Desativar" : "Ativar"}</button></div>)}</div></div></Card>
+          <Card className="md:col-span-2"><CardTitle>Operadores</CardTitle><CardDescription>Gestão de perfis operacionais e vínculo com guichês.</CardDescription><div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Nome</th><th>Status</th><th>Ação</th></tr></thead><tbody>{filteredOperators.map((item) => <tr key={item.user_id} className="border-t border-slate-200"><td className="py-2">{item.full_name}</td><td>{item.active ? "Ativo" : "Inativo"}</td><td><button className="btn-ghost" disabled={busyKey === `operator-${item.user_id}`} onClick={() => toggleOperator(item)}>{item.active ? "Desativar" : "Ativar"}</button></td></tr>)}</tbody></table>{filteredOperators.length === 0 ? <EmptyState title="Sem operadores" message="Nenhum resultado para a busca atual." /> : null}</div><div className="mt-5 rounded-xl border border-slate-200 p-4"><p className="text-sm font-semibold">Vínculo operador ↔ guichê</p><form className="mt-3 grid gap-3 md:grid-cols-3" onSubmit={createLink}><select className="field" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)} required><option value="">Operador</option>{operators.map((item) => <option key={item.user_id} value={item.user_id}>{item.full_name}</option>)}</select><select className="field" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)} required><option value="">Guichê</option>{booths.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><button className="btn-primary" disabled={busyKey === "link-create"}>{busyKey === "link-create" ? "Salvando..." : "Salvar vínculo"}</button></form><div className="mt-3 space-y-2">{filteredLinks.length === 0 ? <EmptyState title="Sem vínculos" message="Nenhum resultado para a busca atual." /> : filteredLinks.map((item) => <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 flex items-center justify-between gap-2"><p className="text-sm text-slate-700">{(operatorNameById.get(item.operator_id) || item.operator_id)} → {(boothNameById.get(item.booth_id) || item.booth_id)}</p><button className="btn-ghost" disabled={busyKey === `link-${item.id}`} onClick={() => toggleLink(item)}>{item.active ? "Desativar" : "Ativar"}</button></div>)}</div></div></Card>
 
           <Card><CardTitle>Resumo de cadastro</CardTitle><CardDescription>Panorama rápido dos cadastros ativos.</CardDescription><div className="mt-4 space-y-2 text-sm"><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Building2 size={14} /> Empresas ativas</span><b>{companies.filter((i) => i.active).length}</b></div><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Store size={14} /> Guichês ativos</span><b>{booths.filter((i) => i.active).length}</b></div><div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><UserCog size={14} /> Operadores ativos</span><b>{operators.filter((i) => i.active).length}</b></div></div></Card>
         </section>
@@ -467,7 +489,7 @@ export default function RebuildAdminPage() {
         <section className="rb-grid-3" aria-label="Financeiro e administração">
           <Card className="md:col-span-3"><div className="grid md:grid-cols-3 gap-3"><div><p className="text-sm text-slate-600">Período (dias)</p><select className="field mt-1" value={finPeriodDays} onChange={(e) => setFinPeriodDays(e.target.value)}><option value="7">Últimos 7 dias</option><option value="15">Últimos 15 dias</option><option value="30">Últimos 30 dias</option><option value="90">Últimos 90 dias</option></select></div><div><p className="text-sm text-slate-600">Status dos ajustes</p><select className="field mt-1" value={finAdjustmentStatus} onChange={(e) => setFinAdjustmentStatus(e.target.value as any)}><option value="all">Todos</option><option value="pending">Pendentes</option><option value="approved">Aprovados</option><option value="rejected">Rejeitados</option></select></div></div>{finState.warning ? <p className="text-xs text-amber-700 mt-2">{finState.warning}</p> : null}</Card>
           <Card className="md:col-span-2"><CardTitle>Ajustes</CardTitle><CardDescription>Gestão por período e status, com ações rápidas.</CardDescription><div className="mt-4 space-y-2">{filteredAdjustments.length === 0 ? <EmptyState title="Sem ajustes no filtro" message="Não há solicitações de ajuste para os filtros atuais." /> : filteredAdjustments.map((item) => <div key={item.id} className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-semibold">Transação: {item.transaction_id}</p><p className="text-xs text-slate-500 mt-1">Solicitante: {operatorNameById.get(item.requested_by) || item.requested_by} • {dt(item.created_at)} • {item.status.toUpperCase()}</p><p className="text-sm text-slate-700 mt-2">{item.reason}</p>{item.status === "pending" ? <div className="mt-3 flex gap-2"><button className="btn-primary" disabled={busyKey === `adj-${item.id}-approved`} onClick={() => reviewAdjustment(item, "approved")}>Aprovar</button><button className="btn-ghost" disabled={busyKey === `adj-${item.id}-rejected`} onClick={() => reviewAdjustment(item, "rejected")}>Rejeitar</button></div> : null}</div>)}</div></Card>
-          <Card><CardTitle>Caixa / Fechamentos</CardTitle><CardDescription>Últimos fechamentos no período selecionado.</CardDescription>{filteredCashClosings.length === 0 ? <div className="mt-4"><EmptyState title="Sem fechamentos" message="Nenhum fechamento encontrado para o período selecionado." /></div> : <div className="mt-4 overflow-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-2">Data</th><th>Guichê</th><th>Operador</th><th>Diferença</th></tr></thead><tbody>{filteredCashClosings.map((item) => <tr key={item.id} className="border-t border-slate-200"><td className="py-2">{dt(item.created_at)}</td><td>{(item.booth_id && boothNameById.get(item.booth_id)) || "-"}</td><td>{(item.user_id && operatorNameById.get(item.user_id)) || "-"}</td><td>{brl(Number(item.difference || 0))}</td></tr>)}</tbody></table></div>}</Card>
+          <Card><CardTitle>Caixa / Fechamentos</CardTitle><CardDescription>Últimos fechamentos no período selecionado.</CardDescription>{filteredCashClosings.length === 0 ? <div className="mt-4"><EmptyState title="Sem fechamentos" message="Nenhum fechamento encontrado para o período selecionado." /></div> : <div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Data</th><th>Guichê</th><th>Operador</th><th>Diferença</th></tr></thead><tbody>{filteredCashClosings.map((item) => <tr key={item.id} className="border-t border-slate-200"><td className="py-2">{dt(item.created_at)}</td><td>{(item.booth_id && boothNameById.get(item.booth_id)) || "-"}</td><td>{(item.user_id && operatorNameById.get(item.user_id)) || "-"}</td><td>{brl(Number(item.difference || 0))}</td></tr>)}</tbody></table></div>}</Card>
         </section>
       )}
 
@@ -481,7 +503,7 @@ export default function RebuildAdminPage() {
 
           <Card><div className="flex items-center justify-between gap-2"><div><CardTitle>Por guichê</CardTitle><CardDescription>Desempenho por ponto de atendimento.</CardDescription></div><button className="btn-ghost inline-flex items-center gap-2" onClick={() => exportGroupedCsv("relatorio-por-guiche", reportByBooth)}><Download size={14} /> CSV</button></div><div className="mt-4 space-y-2">{reportByBooth.slice(0, 7).map((r) => <div key={r.label} className="rounded-lg border border-slate-200 p-2 text-sm"><div className="flex justify-between gap-2"><span className="truncate">{r.label}</span><b>{brl(r.total)}</b></div><div className="text-xs text-slate-500">{r.qty} venda(s)</div></div>)}{reportByBooth.length === 0 ? <EmptyState title="Sem dados" message="Não há vendas no período selecionado." /> : null}</div></Card>
 
-          <Card className="md:col-span-2"><div className="flex items-center justify-between gap-2"><div><CardTitle>Por categoria / subcategoria</CardTitle><CardDescription>Visão analítica por tipo de venda.</CardDescription></div><button className="btn-ghost inline-flex items-center gap-2" onClick={() => exportGroupedCsv("relatorio-por-categoria", reportByCategory)}><Download size={14} /> CSV</button></div><div className="mt-4 overflow-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-2">Grupo</th><th>Qtd</th><th>Receita</th><th>Comissão</th></tr></thead><tbody>{reportByCategory.slice(0, 60).map((r) => <tr key={r.label} className="border-t border-slate-200"><td className="py-2">{r.label}</td><td>{r.qty}</td><td>{brl(r.total)}</td><td>{brl(r.commission)}</td></tr>)}</tbody></table>{reportByCategory.length === 0 ? <EmptyState title="Sem dados" message="Não há vendas no período selecionado." /> : null}</div></Card>
+          <Card className="md:col-span-2"><div className="flex items-center justify-between gap-2"><div><CardTitle>Por categoria / subcategoria</CardTitle><CardDescription>Visão analítica por tipo de venda.</CardDescription></div><button className="btn-ghost inline-flex items-center gap-2" onClick={() => exportGroupedCsv("relatorio-por-categoria", reportByCategory)}><Download size={14} /> CSV</button></div><div className="mt-4 rb-table-wrap"><table className="rb-table"><thead className="text-left text-slate-500"><tr><th className="py-2">Grupo</th><th>Qtd</th><th>Receita</th><th>Comissão</th></tr></thead><tbody>{reportByCategory.slice(0, 60).map((r) => <tr key={r.label} className="border-t border-slate-200"><td className="py-2">{r.label}</td><td>{r.qty}</td><td>{brl(r.total)}</td><td>{brl(r.commission)}</td></tr>)}</tbody></table>{reportByCategory.length === 0 ? <EmptyState title="Sem dados" message="Não há vendas no período selecionado." /> : null}</div></Card>
         </section>
       )}
     </div>

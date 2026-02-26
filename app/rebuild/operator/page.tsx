@@ -189,8 +189,14 @@ export default function RebuildOperatorPage() {
         throw new Error("Perfil do usuário não encontrado.");
       }
 
-      if ((profile as Profile).role === "admin") {
+      const typedProfile = profile as Profile;
+      if (typedProfile.role === "admin") {
         router.replace("/rebuild/admin");
+        return;
+      }
+      if (typedProfile.active === false) {
+        await supabase.auth.signOut();
+        router.replace("/login");
         return;
       }
 
@@ -647,8 +653,8 @@ export default function RebuildOperatorPage() {
             <EmptyState title="Sem lançamentos" message="Os lançamentos aparecerão aqui após o primeiro registro." />
           </div>
         ) : (
-          <div className="mt-4 overflow-auto">
-            <table className="rb-table w-full text-sm">
+          <div className="mt-4 rb-table-wrap">
+            <table className="rb-table">
               <thead className="text-left text-slate-500">
                 <tr>
                   <th className="py-2">Hora</th>
@@ -675,9 +681,9 @@ export default function RebuildOperatorPage() {
                         {!needsReceipt ? (
                           <span className="text-slate-500">Não obrigatório</span>
                         ) : hasReceipt ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-600"><HandCoins size={14} /> OK</span>
+                          <span className="rb-badge rb-badge-success inline-flex items-center gap-1"><HandCoins size={14} /> OK</span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-amber-600"><Receipt size={14} /> Pendente</span>
+                          <span className="rb-badge rb-badge-warning inline-flex items-center gap-1"><Receipt size={14} /> Pendente</span>
                         )}
                       </td>
                     </tr>
