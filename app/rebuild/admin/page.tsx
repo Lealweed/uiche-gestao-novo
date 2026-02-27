@@ -88,6 +88,7 @@ export default function RebuildAdminPage() {
   const categoryMap = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
 
   const operators = useMemo(() => profiles.filter((p) => p.role === "operator"), [profiles]);
+  const users = useMemo(() => profiles, [profiles]);
   const openShifts = useMemo(() => shifts.filter((s) => s.status === "open"), [shifts]);
   const closedShifts = useMemo(() => shifts.filter((s) => s.status === "closed"), [shifts]);
   const pendingByOperator = useMemo(() => {
@@ -232,6 +233,13 @@ export default function RebuildAdminPage() {
     await loadAll();
   }
 
+  async function updateUserRole(userId: string, role: "admin" | "operator") {
+    const res = await supabase.from("profiles").update({ role }).eq("user_id", userId);
+    if (res.error) return setNotice(`Não foi possível atualizar o papel do usuário: ${res.error.message}`);
+    setNotice("Papel de usuário atualizado com sucesso.");
+    await loadAll();
+  }
+
   async function createCompany() {
     if (!companyName.trim()) return setNotice("Informe o nome da empresa.");
     const res = await supabase.from("companies").insert({ name: companyName.trim(), active: true });
@@ -272,8 +280,20 @@ export default function RebuildAdminPage() {
 
   async function createLink() {
     if (!linkOperatorId || !linkBoothId) return setNotice("Selecione operador e guichê para vincular.");
-    const exists = links.some((l) => l.operator_id === linkOperatorId && l.booth_id === linkBoothId);
-    if (exists) return setNotice("Esse vínculo já existe.");
+
+    const existingLink = links.find((l) => l.operator_id === linkOperatorId && l.booth_id === linkBoothId);
+    if (existingLink?.active) return setNotice("Esse vínculo já existe e está ativo.");
+
+    if (existingLink && !existingLink.active) {
+      const reactivate = await supabase.from("operator_booths").update({ active: true }).eq("id", existingLink.id);
+      if (reactivate.error) return setNotice(`Não foi possível reativar o vínculo: ${reactivate.error.message}`);
+      setLinkOperatorId("");
+      setLinkBoothId("");
+      setNotice("Vínculo reativado com sucesso.");
+      await loadAll();
+      return;
+    }
+
     const res = await supabase.from("operator_booths").insert({ operator_id: linkOperatorId, booth_id: linkBoothId, active: true });
     if (res.error) return setNotice(`Não foi possível criar o vínculo: ${res.error.message}`);
     setLinkOperatorId("");
@@ -404,18 +424,28 @@ export default function RebuildAdminPage() {
       )}
 
       {activeSection === "usuarios" && (
-        <SectionBox title="Usuários" subtitle="Gestão de perfis de operador ativos/inativos.">
-          {operators.length === 0 ? <Empty text="Nenhum operador cadastrado." /> : (
+        <SectionBox title="Usuários" subtitle="Gestão de perfis ativos/inativos e papel de acesso.">
+          {users.length === 0 ? <Empty text="Nenhum usuário cadastrado." /> : (
             <div className="space-y-2">
-              {operators.map((op) => (
-                <div key={op.user_id} className="rounded-lg border p-3 flex items-center justify-between">
+              {users.map((u) => (
+                <div key={u.user_id} className="rounded-lg border p-3 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="font-semibold text-slate-900">{op.full_name}</p>
-                    <p className="text-xs text-slate-500">{op.user_id}</p>
+                    <p className="font-semibold text-slate-900">{u.full_name || "Sem nome"}</p>
+                    <p className="text-xs text-slate-500">{u.user_id}</p>
                   </div>
-                  <button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => toggleRow("profiles", "user_id", op.user_id, op.active !== false, `Usuário ${op.active === false ? "ativado" : "inativado"} com sucesso.`)}>
-                    {op.active === false ? "Ativar" : "Inativar"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="rounded-lg border px-3 py-1.5 text-sm"
+                      value={u.role}
+                      onChange={(e) => updateUserRole(u.user_id, e.target.value as "admin" | "operator")}
+                    >
+                      <option value="operator">Operador</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    <button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => toggleRow("profiles", "user_id", u.user_id, u.active !== false, `Usuário ${u.active === false ? "ativado" : "inativado"} com sucesso.`)}>
+                      {u.active === false ? "Ativar" : "Inativar"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
