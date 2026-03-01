@@ -28,7 +28,13 @@ const systemNavigation = [
   { href: "/rebuild/admin#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },
 ] as const;
 
-const operatorNavigation = [{ href: "/rebuild/operator", label: "Painel Operador", Icon: Ticket }] as const;
+const operatorNavigation = [
+  { href: "/rebuild/operator#dashboard", label: "Dashboard Admin", section: "dashboard", Icon: LayoutDashboard },
+  { href: "/rebuild/operator#controle-caixa", label: "Controle de Caixa", section: "controle-caixa", Icon: Ticket },
+  { href: "/rebuild/operator#transacoes", label: "Transações", section: "transacoes", Icon: ScanSearch },
+  { href: "/rebuild/operator#clientes", label: "Clientes", section: "clientes", Icon: Users },
+  { href: "/rebuild/operator#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },
+] as const;
 const financeiroNavigation = [{ href: "/rebuild/financeiro", label: "Painel Financeiro", Icon: Grid2x2 }] as const;
 
 const adminSectionLabels: Record<string, string> = {
@@ -40,13 +46,21 @@ const adminSectionLabels: Record<string, string> = {
   configuracoes: "Configurações",
 };
 
+const operatorSectionLabels: Record<string, string> = {
+  dashboard: "Dashboard Admin",
+  "controle-caixa": "Controle de Caixa",
+  transacoes: "Transações",
+  clientes: "Clientes",
+  configuracoes: "Configurações",
+};
+
 export function RebuildShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [currentSection, setCurrentSection] = useState("dashboard");
 
   useEffect(() => {
-    if (!pathname.startsWith("/rebuild/admin")) {
+    if (!pathname.startsWith("/rebuild/admin") && !pathname.startsWith("/rebuild/operator")) {
       setCurrentSection("dashboard");
       return;
     }
@@ -61,9 +75,11 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("hashchange", readHash);
   }, [pathname]);
 
-  const activeLabel = pathname.includes("/financeiro") ? "Painel Financeiro" : pathname.includes("/operator")
-    ? "Painel Operador"
-    : adminSectionLabels[currentSection] || "Dashboard";
+  const activeLabel = pathname.includes("/financeiro")
+    ? "Painel Financeiro"
+    : pathname.includes("/operator")
+      ? operatorSectionLabels[currentSection] || "Painel Operador"
+      : adminSectionLabels[currentSection] || "Dashboard";
 
   const isOperatorRoute = pathname.startsWith("/rebuild/operator");
   const mainNav = isOperatorRoute ? operatorNavigation : primaryNavigation;

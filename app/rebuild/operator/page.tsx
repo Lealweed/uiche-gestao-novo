@@ -48,8 +48,11 @@ function paymentMethodMeta(method: "pix" | "credit" | "debit" | "cash") {
   return { label: "PIX", className: "rb-payment-badge rb-payment-pix" };
 }
 
+type OperatorSection = "dashboard" | "controle-caixa" | "transacoes" | "clientes" | "configuracoes";
+
 export default function RebuildOperatorPage() {
   const router = useRouter();
+  const [activeSection, setActiveSection] = useState<OperatorSection>("dashboard");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +128,21 @@ export default function RebuildOperatorPage() {
 
   const dailyGoal = 5000;
   const goalProgress = Math.min(100, Math.round((totalSales / dailyGoal) * 100));
+
+  useEffect(() => {
+    const syncSectionFromHash = () => {
+      const raw = window.location.hash.replace("#", "") as OperatorSection | "";
+      const valid: OperatorSection[] = ["dashboard", "controle-caixa", "transacoes", "clientes", "configuracoes"];
+      setActiveSection(valid.includes(raw as OperatorSection) ? (raw as OperatorSection) : "dashboard");
+    };
+    syncSectionFromHash();
+    window.addEventListener("hashchange", syncSectionFromHash);
+    window.addEventListener("rebuild:section-change", syncSectionFromHash as EventListener);
+    return () => {
+      window.removeEventListener("hashchange", syncSectionFromHash);
+      window.removeEventListener("rebuild:section-change", syncSectionFromHash as EventListener);
+    };
+  }, []);
 
   const sideHistory = useMemo(() => {
     const txEntries = transactions.map((tx) => ({
@@ -607,6 +625,15 @@ export default function RebuildOperatorPage() {
         subtitle="Abra/encerre turno, registre lançamentos, anexe comprovantes e controle o caixa em tempo real."
       />
 
+      <div className="flex flex-wrap gap-2 mb-4">
+        <button className={`btn-ghost ${activeSection === "dashboard" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "dashboard"; }}>Dashboard</button>
+        <button className={`btn-ghost ${activeSection === "controle-caixa" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "controle-caixa"; }}>Controle de Caixa</button>
+        <button className={`btn-ghost ${activeSection === "transacoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "transacoes"; }}>Transações</button>
+        <button className={`btn-ghost ${activeSection === "clientes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "clientes"; }}>Clientes</button>
+        <button className={`btn-ghost ${activeSection === "configuracoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "configuracoes"; }}>Configurações</button>
+      </div>
+
+      <div className={activeSection === "dashboard" ? "block" : "hidden"}>
       <section className="rb-stat-grid" aria-label="Resumo do turno">
         <StatCard
           label="Status do turno"
@@ -825,6 +852,77 @@ export default function RebuildOperatorPage() {
           </Card>
         </aside>
       </section>
+      </div>
+
+      {activeSection === "controle-caixa" && (
+        <Card>
+          <CardTitle>Controle de Caixa</CardTitle>
+          <CardDescription>Resumo completo de movimentos do caixa por turno.</CardDescription>
+          <div className="grid md:grid-cols-4 gap-3 mt-3">
+            <StatCard label="Suprimento" value={brl(cashTotals.suprimento)} icon={<BanknoteArrowUp size={16} />} />
+            <StatCard label="Sangria" value={brl(cashTotals.sangria)} icon={<BanknoteArrowDown size={16} />} />
+            <StatCard label="Ajuste" value={brl(cashTotals.ajuste)} icon={<HandCoins size={16} />} />
+            <StatCard label="Saldo" value={brl(cashTotals.saldo)} icon={<Wallet size={16} />} />
+          </div>
+          <div className="mt-4 overflow-auto max-h-[360px]">
+            <table className="w-full text-sm">
+              <thead><tr className="text-slate-500"><th className="text-left py-2">Data</th><th className="text-left">Tipo</th><th className="text-right">Valor</th><th className="text-left">Obs</th></tr></thead>
+              <tbody>
+                {cashMovements.map((m) => (
+                  <tr key={m.id} className="border-t"><td className="py-2">{new Date(m.created_at).toLocaleString("pt-BR")}</td><td>{m.movement_type}</td><td className="text-right">{brl(Number(m.amount || 0))}</td><td>{m.note || "-"}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {activeSection === "transacoes" && (
+        <Card>
+          <CardTitle>Transações do Turno</CardTitle>
+          <CardDescription>Lista completa de lançamentos do operador.</CardDescription>
+          <div className="mt-4 overflow-auto max-h-[420px]">
+            <table className="w-full text-sm">
+              <thead><tr className="text-slate-500"><th className="text-left py-2">Data</th><th className="text-left">Empresa</th><th className="text-left">Pagamento</th><th className="text-right">Valor</th><th className="text-left">Comprovante</th></tr></thead>
+              <tbody>
+                {transactions.map((tx) => (
+                  <tr key={tx.id} className="border-t">
+                    <td className="py-2">{new Date(tx.sold_at).toLocaleString("pt-BR")}</td>
+                    <td>{tx.company_name}</td>
+                    <td>{paymentMethodMeta(tx.payment_method).label}</td>
+                    <td className="text-right">{brl(Number(tx.amount || 0))}</td>
+                    <td>{tx.receipt_count > 0 ? "OK" : "Pendente"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {activeSection === "clientes" && (
+        <Card>
+          <CardTitle>Empresas / Fornecedores</CardTitle>
+          <CardDescription>Opções disponíveis para lançamento no PDV.</CardDescription>
+          {companies.length === 0 ? <EmptyState title="Sem empresas" message="Cadastre empresas no painel administrativo." /> : (
+            <div className="mt-3 grid md:grid-cols-2 gap-2">
+              {companies.map((c) => <div key={c.id} className="rounded-lg border px-3 py-2 text-sm text-slate-700">{c.name}</div>)}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {activeSection === "configuracoes" && (
+        <Card>
+          <CardTitle>Configurações do Operador</CardTitle>
+          <CardDescription>Dados de perfil e vínculo operacional.</CardDescription>
+          <div className="mt-3 grid md:grid-cols-2 gap-3 text-sm">
+            <div className="rounded-lg border p-3"><p className="text-slate-500">Usuário</p><p className="font-semibold">{userId || "-"}</p></div>
+            <div className="rounded-lg border p-3"><p className="text-slate-500">Guichês vinculados</p><p className="font-semibold">{booths.length}</p></div>
+            <div className="rounded-lg border p-3 md:col-span-2"><p className="text-slate-500">Lista de guichês</p><p className="font-semibold">{booths.map((b) => b.booth_name).join(", ") || "Nenhum guichê vinculado"}</p></div>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
