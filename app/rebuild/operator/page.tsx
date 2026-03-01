@@ -35,6 +35,7 @@ type TxBase = {
   company_id: string | null;
 };
 type TxView = TxBase & { company_name: string; receipt_count: number };
+type SectionWarning = { section: string; message: string };
 
 function brl(value: number) {
   return `R$ ${Number(value || 0).toFixed(2)}`;
@@ -54,6 +55,18 @@ export default function RebuildOperatorPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [sectionWarnings, setSectionWarnings] = useState<SectionWarning[]>([]);
+  const [availability, setAvailability] = useState({
+    operatorBooths: true,
+    booths: true,
+    companies: true,
+    categories: true,
+    subcategories: true,
+    shifts: true,
+    transactions: true,
+    receipts: true,
+    cashMovements: true,
+  });
 
   const [userId, setUserId] = useState<string | null>(null);
   const [shift, setShift] = useState<Shift | null>(null);
@@ -109,6 +122,32 @@ export default function RebuildOperatorPage() {
     return { suprimento, sangria, ajuste, saldo: suprimento - sangria + ajuste + totals.cash };
   }, [cashMovements, totals.cash]);
 
+  function addWarning(section: string, message: string) {
+    setSectionWarnings((prev) => {
+      if (prev.some((item) => item.section === section && item.message === message)) return prev;
+      return [...prev, { section, message }];
+    });
+  }
+
+  function isMissingStructure(message: string) {
+    const lower = message.toLowerCase();
+    return lower.includes("does not exist") || lower.includes("schema cache") || lower.includes("could not find");
+  }
+
+  async function safeLoadArray<T>(
+    section: string,
+    promise: PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+    onMissing?: () => void
+  ) {
+    const res = await promise;
+    if (res.error) {
+      addWarning(section, res.error.message);
+      if (isMissingStructure(res.error.message)) onMissing?.();
+      return [] as T[];
+    }
+    return (res.data ?? []) as T[];
+  }
+
   async function loadTransactions(shiftId: string) {
     const txRes = await supabase
       .from("transactions")
@@ -118,7 +157,7 @@ export default function RebuildOperatorPage() {
       .order("sold_at", { ascending: false })
       .limit(120);
 
-    if (txRes.error) throw new Error(`Falha ao carregar lançamentos: ${txRes.error.message}`);
+    if (txRes.error) { addWarning("Lançamentos", txRes.error.message); if (isMissingStructure(txRes.error.message)) setAvailability((prev) => ({ ...prev, transactions: false })); setTransactions([]); return; }
 
     const baseTxs = (txRes.data as TxBase[] | null) ?? [];
     const txIds = baseTxs.map((t) => t.id);
@@ -133,8 +172,8 @@ export default function RebuildOperatorPage() {
         : Promise.resolve({ data: [], error: null } as any),
     ]);
 
-    if (receiptRes.error) throw new Error(`Falha ao carregar comprovantes: ${receiptRes.error.message}`);
-    if (companyRes.error) throw new Error(`Falha ao carregar empresas dos lançamentos: ${companyRes.error.message}`);
+    if (receiptRes.error) { addWarning("Comprovantes", receiptRes.error.message); if (isMissingStructure(receiptRes.error.message)) setAvailability((prev) => ({ ...prev, receipts: false })); }
+    if (companyRes.error) { addWarning("Empresas", companyRes.error.message); if (isMissingStructure(companyRes.error.message)) setAvailability((prev) => ({ ...prev, companies: false })); }
 
     const receiptCountByTx = new Map<string, number>();
     for (const item of (receiptRes.data as Array<{ id: string; transaction_id: string }> | null) ?? []) {
@@ -142,7 +181,7 @@ export default function RebuildOperatorPage() {
     }
 
     const companyNameById = new Map<string, string>(
-      (((companyRes.data as Array<{ id: string; name: string }> | null) ?? [])).map((c) => [c.id, c.name])
+      (((companyRes.data as Array<{ id: string; name: string }> | null) ?? []).map((c) => [c.id, c.name]))
     );
 
     setTransactions(
@@ -162,13 +201,24 @@ export default function RebuildOperatorPage() {
       .order("created_at", { ascending: false })
       .limit(120);
 
-    if (res.error) throw new Error(`Falha ao carregar caixa: ${res.error.message}`);
+    if (res.error) { addWarning("Caixa PDV", res.error.message); if (isMissingStructure(res.error.message)) setAvailability((prev) => ({ ...prev, cashMovements: false })); setCashMovements([]); return; }
     setCashMovements((res.data as CashMovement[] | null) ?? []);
   }
 
   async function bootstrap() {
     setLoading(true);
     setError(null);
+    setAvailability({
+      operatorBooths: true,
+      booths: true,
+      companies: true,
+      categories: true,
+      subcategories: true,
+      shifts: true,
+      transactions: true,
+      receipts: true,
+      cashMovements: true,
+    });
 
     try {
       const { data: authData } = await supabase.auth.getUser();
@@ -202,34 +252,28 @@ export default function RebuildOperatorPage() {
 
       setUserId(authUserId);
 
-      const [boothLinksRes, boothRes, companiesRes, categoriesRes, subcategoriesRes, shiftRes] = await Promise.all([
-        supabase.from("operator_booths").select("booth_id").eq("operator_id", authUserId).eq("active", true),
-        supabase.from("booths").select("id,name").eq("active", true),
-        supabase.from("companies").select("id,name").eq("active", true).order("name"),
-        supabase.from("transaction_categories").select("id,name").eq("active", true).order("name"),
-        supabase.from("transaction_subcategories").select("id,name,category_id").eq("active", true).order("name"),
-        supabase.from("shifts").select("id,booth_id,status").eq("operator_id", authUserId).eq("status", "open").maybeSingle(),
+      setSectionWarnings([]);
+
+      const [links, allBooths, loadedCompanies, loadedCategories, loadedSubcategories] = await Promise.all([
+        safeLoadArray<BoothLink>("Guichês do operador", supabase.from("operator_booths").select("booth_id").eq("operator_id", authUserId).eq("active", true), () => setAvailability((prev) => ({ ...prev, operatorBooths: false }))),
+        safeLoadArray<Booth>("Guichês", supabase.from("booths").select("id,name").eq("active", true), () => setAvailability((prev) => ({ ...prev, booths: false }))),
+        safeLoadArray<Company>("Empresas", supabase.from("companies").select("id,name").eq("active", true).order("name"), () => setAvailability((prev) => ({ ...prev, companies: false }))),
+        safeLoadArray<Category>("Categorias", supabase.from("transaction_categories").select("id,name").eq("active", true).order("name"), () => setAvailability((prev) => ({ ...prev, categories: false }))),
+        safeLoadArray<Subcategory>("Subcategorias", supabase.from("transaction_subcategories").select("id,name,category_id").eq("active", true).order("name"), () => setAvailability((prev) => ({ ...prev, subcategories: false }))),
       ]);
 
-      if (boothLinksRes.error) throw new Error(`Falha ao carregar guichês do operador: ${boothLinksRes.error.message}`);
-      if (boothRes.error) throw new Error(`Falha ao carregar guichês: ${boothRes.error.message}`);
-      if (companiesRes.error) throw new Error(`Falha ao carregar empresas: ${companiesRes.error.message}`);
-      if (categoriesRes.error) throw new Error(`Falha ao carregar categorias: ${categoriesRes.error.message}`);
-      if (subcategoriesRes.error) throw new Error(`Falha ao carregar subcategorias: ${subcategoriesRes.error.message}`);
-      if (shiftRes.error) throw new Error(`Falha ao carregar turno atual: ${shiftRes.error.message}`);
+      const shiftRes = await supabase.from("shifts").select("id,booth_id,status").eq("operator_id", authUserId).eq("status", "open").maybeSingle();
+      if (shiftRes.error) {
+        addWarning("Turno", shiftRes.error.message);
+        if (isMissingStructure(shiftRes.error.message)) setAvailability((prev) => ({ ...prev, shifts: false }));
+      }
 
-      const links = (boothLinksRes.data as BoothLink[] | null) ?? [];
-      const allBooths = (boothRes.data as Booth[] | null) ?? [];
       const boothMap = new Map(allBooths.map((b) => [b.id, b.name]));
       const hydratedBooths = links.map((l) => ({ booth_id: l.booth_id, booth_name: boothMap.get(l.booth_id) ?? l.booth_id }));
 
       setBooths(hydratedBooths);
       setBoothId(hydratedBooths[0]?.booth_id ?? "");
-
-      const loadedCategories = (categoriesRes.data as Category[] | null) ?? [];
-      const loadedSubcategories = (subcategoriesRes.data as Subcategory[] | null) ?? [];
-
-      setCompanies((companiesRes.data as Company[] | null) ?? []);
+      setCompanies(loadedCompanies);
       setCategories(loadedCategories);
       setSubcategories(loadedSubcategories);
 
@@ -237,7 +281,7 @@ export default function RebuildOperatorPage() {
       setCategoryId(firstCategory);
       setSubcategoryId(loadedSubcategories.find((sub) => sub.category_id === firstCategory)?.id ?? "");
 
-      const openShift = shiftRes.data as Shift | null;
+      const openShift = (shiftRes.data as Shift | null) ?? null;
       setShift(openShift);
 
       if (openShift) {
@@ -258,6 +302,11 @@ export default function RebuildOperatorPage() {
   }, []);
 
   async function openShift() {
+    if (!userId) {
+      setFeedback("Sessão inválida. Faça login novamente.");
+      return;
+    }
+
     if (!boothId) {
       setFeedback("Selecione um guichê para abrir o turno.");
       return;
@@ -268,13 +317,26 @@ export default function RebuildOperatorPage() {
 
     const { data, error: rpcError } = await supabase.rpc("open_shift", { p_booth_id: boothId, p_ip: null });
 
+    let newShift: Shift | null = null;
     if (rpcError) {
+      const fallback = await supabase.from("shifts").insert({ booth_id: boothId, operator_id: userId, status: "open" }).select("id,booth_id,status").single();
+      if (fallback.error) {
+        setBusy(null);
+        setFeedback(`Não foi possível abrir o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`);
+        return;
+      }
+      newShift = fallback.data as Shift;
+      addWarning("Turno", "RPC open_shift indisponível. Foi usado fallback direto na tabela shifts.");
+    } else {
+      newShift = data as Shift;
+    }
+
+    if (!newShift) {
       setBusy(null);
-      setFeedback(`Não foi possível abrir o turno: ${rpcError.message}`);
+      setFeedback("Não foi possível determinar o turno aberto.");
       return;
     }
 
-    const newShift = data as Shift;
     setShift(newShift);
     await Promise.all([loadTransactions(newShift.id), loadCashMovements(newShift.id)]);
 
@@ -297,9 +359,13 @@ export default function RebuildOperatorPage() {
     const { error: rpcError } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: null });
 
     if (rpcError) {
-      setBusy(null);
-      setFeedback(`Não foi possível encerrar o turno: ${rpcError.message}`);
-      return;
+      const fallback = await supabase.from("shifts").update({ status: "closed", closed_at: new Date().toISOString() }).eq("id", shift.id).eq("status", "open");
+      if (fallback.error) {
+        setBusy(null);
+        setFeedback(`Não foi possível encerrar o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`);
+        return;
+      }
+      addWarning("Turno", "RPC close_shift indisponível. Foi usado fallback direto na tabela shifts.");
     }
 
     setShift(null);
@@ -314,6 +380,11 @@ export default function RebuildOperatorPage() {
 
     if (!shift || !userId) {
       setFeedback("Abra um turno para lançar vendas.");
+      return;
+    }
+
+    if (!availability.transactions || !availability.companies || !availability.categories || !availability.subcategories) {
+      setFeedback("Lançamentos indisponíveis até corrigir as tabelas base (transactions, companies, transaction_categories e transaction_subcategories). Consulte RECOVERY.md.");
       return;
     }
 
@@ -362,6 +433,11 @@ export default function RebuildOperatorPage() {
       return;
     }
 
+    if (!availability.cashMovements) {
+      setFeedback("Caixa PDV indisponível até corrigir a tabela cash_movements. Consulte RECOVERY.md.");
+      return;
+    }
+
     if (!cashAmount) {
       setFeedback("Informe o valor do movimento de caixa.");
       return;
@@ -395,6 +471,10 @@ export default function RebuildOperatorPage() {
 
   async function uploadReceipt(txId: string, ev: ChangeEvent<HTMLInputElement>) {
     if (!userId) return;
+    if (!availability.receipts) {
+      setFeedback("Comprovantes indisponíveis até corrigir a tabela transaction_receipts/bucket payment-receipts. Consulte RECOVERY.md.");
+      return;
+    }
 
     const file = ev.target.files?.[0];
     if (!file) return;
@@ -481,6 +561,18 @@ export default function RebuildOperatorPage() {
         </Card>
       ) : null}
 
+      {sectionWarnings.length > 0 ? (
+        <Card>
+          <CardTitle>Avisos de recuperação</CardTitle>
+          <CardDescription>Algumas seções operam com limitação até o banco estar completo.</CardDescription>
+          <ul className="mt-3 list-disc pl-5 text-sm text-amber-700 space-y-1">
+            {sectionWarnings.map((warning) => (
+              <li key={`${warning.section}-${warning.message}`}>{warning.section}: {warning.message}</li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
       {!shift ? (
         <Card>
           <CardTitle>Abertura de turno</CardTitle>
@@ -494,11 +586,13 @@ export default function RebuildOperatorPage() {
                 </option>
               ))}
             </select>
-            <button className="btn-primary" disabled={busy === "open-shift" || booths.length === 0} onClick={openShift}>
+            <button className="btn-primary" disabled={busy === "open-shift" || booths.length === 0 || !availability.shifts} onClick={openShift}>
               {busy === "open-shift" ? "Abrindo..." : "Abrir turno"}
             </button>
           </div>
-          {booths.length === 0 ? (
+          {!availability.shifts ? (
+            <p className="rb-card-description mt-3">Abertura de turno indisponível enquanto a tabela <code>shifts</code> não estiver disponível.</p>
+          ) : booths.length === 0 ? (
             <p className="rb-card-description mt-3">Você não possui guichê vinculado. Solicite liberação ao administrador.</p>
           ) : null}
         </Card>
@@ -564,7 +658,7 @@ export default function RebuildOperatorPage() {
             <textarea className="field md:col-span-2" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observação" rows={3} />
 
             <div className="md:col-span-2">
-              <button className="btn-primary" disabled={!shift || busy === "transaction"}>
+              <button className="btn-primary" disabled={!shift || busy === "transaction" || !availability.transactions || !availability.companies || !availability.categories || !availability.subcategories}>
                 {busy === "transaction" ? "Salvando..." : "Salvar lançamento"}
               </button>
             </div>
@@ -582,7 +676,7 @@ export default function RebuildOperatorPage() {
             </select>
             <input className="field" type="number" min="0" step="0.01" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} placeholder="Valor" disabled={!shift} />
             <input className="field" value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Observação" disabled={!shift} />
-            <button className="btn-primary" disabled={!shift || busy === "cash"}>{busy === "cash" ? "Registrando..." : "Registrar"}</button>
+            <button className="btn-primary" disabled={!shift || busy === "cash" || !availability.cashMovements}>{busy === "cash" ? "Registrando..." : "Registrar"}</button>
           </form>
 
           <div className="mt-4 space-y-2 text-sm">
@@ -697,3 +791,18 @@ export default function RebuildOperatorPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
