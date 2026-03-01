@@ -80,7 +80,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] text-slate-700 antialiased overflow-hidden">
-      <aside className="w-[260px] bg-slate-900 text-white flex flex-col flex-shrink-0 z-20 shadow-xl relative">
+      <aside className="hidden lg:flex w-[260px] bg-slate-900 text-white flex-col flex-shrink-0 z-20 shadow-xl relative">
         <div className="h-16 flex items-center px-6 border-b border-slate-800/50">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center size-8 rounded-lg bg-gradient-to-br from-[#0da2e7] to-blue-600 shadow-lg shadow-blue-500/20">
@@ -186,8 +186,30 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 md:p-8 scroll-smooth">{children}</div>
+        <div className="lg:hidden border-b border-slate-200 bg-white px-4 py-3">
+          <div className="flex gap-2 overflow-x-auto">
+            {mainNav.map((item) => {
+              const active = isNavActive(item.href, "section" in item ? item.section : undefined);
+              return (
+                <button
+                  key={`mobile-${item.href}`}
+                  type="button"
+                  onClick={() => navigate(item.href, "section" in item ? item.section : undefined)}
+                  className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                    active ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth">{children}</div>
       </main>
     </div>
   );
 }
+
+
