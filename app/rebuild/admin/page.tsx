@@ -23,6 +23,8 @@ type Booth = { id: string; code: string; name: string; active: boolean };
 type Category = { id: string; name: string; active: boolean };
 type Subcategory = { id: string; name: string; category_id: string; active: boolean };
 type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
+type TimePunch = { id: string; user_id?: string | null; booth_id?: string | null; punch_type: string; punched_at: string; note?: string | null };
+type CashMovement = { id: string; user_id?: string | null; booth_id?: string | null; movement_type: string; amount: number; created_at: string; note?: string | null };
 
 type UiState = { loading: boolean; error: string | null };
 type SectionWarning = { section: string; message: string };
@@ -56,6 +58,8 @@ export default function RebuildAdminPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [links, setLinks] = useState<OperatorBooth[]>([]);
+  const [timePunches, setTimePunches] = useState<TimePunch[]>([]);
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
 
   const [companyName, setCompanyName] = useState("");
   const [boothCode, setBoothCode] = useState("");
@@ -65,6 +69,9 @@ export default function RebuildAdminPage() {
   const [subCategoryParentId, setSubCategoryParentId] = useState("");
   const [linkOperatorId, setLinkOperatorId] = useState("");
   const [linkBoothId, setLinkBoothId] = useState("");
+  const [newUserId, setNewUserId] = useState("");
+  const [newUserName, setNewUserName] = useState("");
+  const [newUserRole, setNewUserRole] = useState<"operator" | "financeiro" | "tenant_admin">("operator");
 
   const [historicoOperatorFilter, setHistoricoOperatorFilter] = useState("");
   const [historicoStatusFilter, setHistoricoStatusFilter] = useState("");
@@ -226,7 +233,7 @@ export default function RebuildAdminPage() {
     }
 
     try {
-      const [nextProfiles, nextShifts, nextTxs, nextCompanies, nextBooths, nextCategories, nextSubcategories, nextLinks] = await Promise.all([
+      const [nextProfiles, nextShifts, nextTxs, nextCompanies, nextBooths, nextCategories, nextSubcategories, nextLinks, nextPunches, nextCash] = await Promise.all([
         loadChunk<Profile>("Usuários", supabase.from("profiles").select("user_id,full_name,role,active,tenant_id").order("full_name")),
         loadChunk<Shift>("Controle de turno", supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120)),
         loadChunk<Tx>("Histórico", supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400)),
@@ -234,7 +241,9 @@ export default function RebuildAdminPage() {
         loadChunk<Booth>("Guichês", supabase.from("booths").select("id,code,name,active").order("name")),
         loadChunk<Category>("Categorias", supabase.from("transaction_categories").select("id,name,active").order("name")),
         loadChunk<Subcategory>("Subcategorias", supabase.from("transaction_subcategories").select("id,name,category_id,active").order("name")),
-        loadChunk<OperatorBooth>("Vínculos operador↔guichê", supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250)),
+        loadChunk<OperatorBooth>("Vínculos operador-guichê", supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250)),
+        loadChunk<TimePunch>("Ponto", supabase.from("time_punches").select("id,user_id,booth_id,punch_type,punched_at,note").order("punched_at", { ascending: false }).limit(300)),
+        loadChunk<CashMovement>("Caixa PDV", supabase.from("cash_movements").select("id,user_id,booth_id,movement_type,amount,created_at,note").order("created_at", { ascending: false }).limit(300)),
       ]);
 
       setProfiles(nextProfiles);
@@ -245,6 +254,8 @@ export default function RebuildAdminPage() {
       setCategories(nextCategories);
       setSubcategories(nextSubcategories);
       setLinks(nextLinks);
+      setTimePunches(nextPunches);
+      setCashMovements(nextCash);
       setSectionWarnings(warnings);
       setUi({ loading: false, error: null });
     } catch {
@@ -267,6 +278,27 @@ export default function RebuildAdminPage() {
     const res = await supabase.from("profiles").update({ role }).eq("user_id", userId);
     if (res.error) return setNotice(`Não foi possível atualizar o papel do usuário: ${res.error.message}`);
     setNotice("Papel de usuário atualizado com sucesso.");
+    await loadAll();
+  }
+
+
+  async function createUserProfile() {
+    const userId = newUserId.trim();
+    const fullName = newUserName.trim();
+    if (!userId || !fullName) return setNotice("Informe ID do usuário e nome completo.");
+
+    const res = await supabase.from("profiles").upsert({
+      user_id: userId,
+      full_name: fullName,
+      role: newUserRole,
+      active: true,
+    });
+
+    if (res.error) return setNotice(`Não foi possível criar o usuário: ${res.error.message}`);
+    setNewUserId("");
+    setNewUserName("");
+    setNewUserRole("operator");
+    setNotice("Usuário criado/atualizado com sucesso.");
     await loadAll();
   }
 
@@ -381,18 +413,58 @@ export default function RebuildAdminPage() {
       )}
 
       {activeSection === "controle-turno" && (
-        <SectionBox title="Controle de Turno" subtitle="Visão de turnos abertos, fechados recentes e pendências por operador.">
-          {shifts.length === 0 ? <Empty text="Nenhum turno encontrado." /> : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <MiniList title="Turnos abertos" items={openShifts.slice(0, 12).map((s) => `${operatorMap.get(s.operator_id || "") || "Sem operador"} • ${boothMap.get(s.booth_id || "") || "Sem guichê"}`)} />
-              <MiniList title="Turnos fechados recentes" items={closedShifts.slice(0, 12).map((s) => `${operatorMap.get(s.operator_id || "") || "Sem operador"} • ${new Date(s.opened_at).toLocaleString("pt-BR")}`)} />
-              <MiniList title="Pendências" items={pendingByOperator.slice(0, 12).map((p) => `${operatorMap.get(p.operatorId) || "Sem operador"}: ${p.total} turno(s) aberto(s)`)} />
+        <SectionBox title="Controle de Turno" subtitle="Visão de turnos, ponto e caixa PDV por operador.">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div className="rounded-lg border p-3">
+              <p className="font-semibold text-slate-800 mb-2">Turnos abertos</p>
+              {openShifts.length === 0 ? <p className="text-sm text-slate-500">Nenhum turno aberto.</p> : (
+                <ul className="space-y-1 text-sm text-slate-700">
+                  {openShifts.slice(0, 20).map((s) => <li key={s.id}>{operatorMap.get(s.operator_id || "") || "Sem operador"} • {boothMap.get(s.booth_id || "") || "Sem guichê"} • {new Date(s.opened_at).toLocaleString("pt-BR")}</li>)}
+                </ul>
+              )}
             </div>
-          )}
+            <div className="rounded-lg border p-3">
+              <p className="font-semibold text-slate-800 mb-2">Turnos fechados recentes</p>
+              {closedShifts.length === 0 ? <p className="text-sm text-slate-500">Nenhum turno fechado recente.</p> : (
+                <ul className="space-y-1 text-sm text-slate-700">
+                  {closedShifts.slice(0, 20).map((s) => <li key={s.id}>{operatorMap.get(s.operator_id || "") || "Sem operador"} • {boothMap.get(s.booth_id || "") || "Sem guichê"} • {new Date(s.closed_at || s.opened_at).toLocaleString("pt-BR")}</li>)}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-lg border p-3">
+              <p className="font-semibold text-slate-800 mb-2">Ponto de todos os operadores</p>
+              {timePunches.length === 0 ? <Empty text="Sem registros de ponto." /> : (
+                <div className="max-h-64 overflow-auto space-y-1 text-sm">
+                  {timePunches.slice(0, 80).map((p) => (
+                    <div key={p.id} className="flex justify-between border-b py-1">
+                      <span>{operatorMap.get(p.user_id || "") || "Sem operador"} • {p.punch_type}</span>
+                      <span className="text-slate-500">{new Date(p.punched_at).toLocaleString("pt-BR")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="font-semibold text-slate-800 mb-2">Caixa PDV por operador</p>
+              {cashMovements.length === 0 ? <Empty text="Sem movimentos de caixa." /> : (
+                <div className="max-h-64 overflow-auto space-y-1 text-sm">
+                  {cashMovements.slice(0, 80).map((c) => (
+                    <div key={c.id} className="flex justify-between border-b py-1">
+                      <span>{operatorMap.get(c.user_id || "") || "Sem operador"} • {c.movement_type}</span>
+                      <span className="text-slate-500">{brl(Number(c.amount || 0))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </SectionBox>
       )}
 
-      {activeSection === "historico" && (
+{activeSection === "historico" && (
         <SectionBox title="Histórico" subtitle="Tabela de transações com filtros básicos.">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
             <select className="border rounded-lg px-3 py-2" value={historicoOperatorFilter} onChange={(e) => setHistoricoOperatorFilter(e.target.value)}>
@@ -458,13 +530,26 @@ export default function RebuildAdminPage() {
       )}
 
       {activeSection === "usuarios" && canManageUsers && (
-        <SectionBox title="Usuários" subtitle="Gestão de perfis ativos/inativos e papel de acesso.">
+        <SectionBox title="Usuários" subtitle="Gestão de perfis (criação, papel e status).">
+          <div className="rounded-lg border p-3 mb-4">
+            <p className="font-semibold text-slate-800 mb-2">Novo usuário</p>
+            <div className="grid md:grid-cols-4 gap-2">
+              <input className="border rounded-lg px-3 py-2" placeholder="ID do usuário (UUID)" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" placeholder="Nome completo" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
+              <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "tenant_admin" | "operator" | "financeiro")}>
+                <option value="operator">Operador</option>
+                <option value="financeiro">Financeiro</option>
+                <option value="tenant_admin">Admin do Tenant</option>
+              </select>
+              <button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createUserProfile}>Criar/Atualizar</button>
+            </div>
+          </div>
           {users.length === 0 ? <Empty text="Nenhum usuário cadastrado." /> : (
             <div className="space-y-2">
               {users.map((u) => (
-                <div key={u.user_id} className="rounded-lg border p-3 flex flex-wrap items-center justify-between gap-3">
+                <div key={u.user_id} className="rounded-lg border p-2 flex items-center justify-between gap-3">
                   <div>
-                    <p className="font-semibold text-slate-900">{u.full_name || "Sem nome"}</p>
+                    <p className="font-medium text-slate-800">{u.full_name || "Sem nome"}</p>
                     <p className="text-xs text-slate-500">{u.user_id}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -488,7 +573,7 @@ export default function RebuildAdminPage() {
         </SectionBox>
       )}
 
-      {activeSection === "configuracoes" && canManageUsers && (
+{activeSection === "configuracoes" && canManageUsers && (
         <SectionBox title="Configurações" subtitle="Gestão de empresas, guichês, categorias, subcategorias e vínculos operador↔guichê.">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CrudPanel title="Empresas" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createCompany}>Cadastrar</button></div>} items={companies.map((c) => ({ id: c.id, label: c.name, active: c.active, onToggle: () => toggleRow("companies", "id", c.id, c.active, "Empresa atualizada com sucesso.") }))} />
