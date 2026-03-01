@@ -38,7 +38,7 @@ type TxView = TxBase & { company_name: string; receipt_count: number };
 type SectionWarning = { section: string; message: string };
 
 function brl(value: number) {
-  return `R$ ${Number(value || 0).toFixed(2)}`;
+  return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function paymentMethodMeta(method: "pix" | "credit" | "debit" | "cash") {
@@ -319,14 +319,35 @@ export default function RebuildOperatorPage() {
 
     let newShift: Shift | null = null;
     if (rpcError) {
-      const fallback = await supabase.from("shifts").insert({ booth_id: boothId, operator_id: userId, status: "open" }).select("id,booth_id,status").single();
-      if (fallback.error) {
+      const existingOpenShift = await supabase
+        .from("shifts")
+        .select("id,booth_id,status")
+        .eq("operator_id", userId)
+        .eq("status", "open")
+        .order("opened_at", { ascending: false })
+        .limit(1);
+
+      if (existingOpenShift.error) {
         setBusy(null);
-        setFeedback(`Não foi possível abrir o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`);
+        setFeedback(`Não foi possível abrir o turno: ${rpcError.message}. Falha ao verificar turno existente: ${existingOpenShift.error.message}`);
         return;
       }
-      newShift = fallback.data as Shift;
-      addWarning("Turno", "RPC open_shift indisponível. Foi usado fallback direto na tabela shifts.");
+
+      const existingShift = ((existingOpenShift.data as Shift[] | null) ?? [])[0] ?? null;
+
+      if (existingShift) {
+        newShift = existingShift;
+        addWarning("Turno", "RPC open_shift indisponível. Turno aberto existente foi reutilizado.");
+      } else {
+        const fallback = await supabase.from("shifts").insert({ booth_id: boothId, operator_id: userId, status: "open" }).select("id,booth_id,status").single();
+        if (fallback.error) {
+          setBusy(null);
+          setFeedback(`Não foi possível abrir o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`);
+          return;
+        }
+        newShift = fallback.data as Shift;
+        addWarning("Turno", "RPC open_shift indisponível. Foi usado fallback direto na tabela shifts.");
+      }
     } else {
       newShift = data as Shift;
     }
