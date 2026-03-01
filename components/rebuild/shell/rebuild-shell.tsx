@@ -29,6 +29,7 @@ const systemNavigation = [
 ] as const;
 
 const operatorNavigation = [{ href: "/rebuild/operator", label: "Painel Operador", Icon: Ticket }] as const;
+const financeiroNavigation = [{ href: "/rebuild/financeiro", label: "Painel Financeiro", Icon: Grid2x2 }] as const;
 
 const adminSectionLabels: Record<string, string> = {
   dashboard: "Dashboard",
@@ -60,7 +61,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("hashchange", readHash);
   }, [pathname]);
 
-  const activeLabel = pathname.includes("/operator")
+  const activeLabel = pathname.includes("/financeiro") ? "Painel Financeiro" : pathname.includes("/operator")
     ? "Painel Operador"
     : adminSectionLabels[currentSection] || "Dashboard";
 
@@ -217,5 +218,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+
 
 
