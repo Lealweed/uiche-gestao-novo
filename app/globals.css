@@ -969,3 +969,48 @@ body {
     @apply text-sm text-red-600 rounded-lg border border-red-200 bg-red-50 px-3 py-2;
   }
 }
+
+@layer components {
+  .rb-dashboard-stack { @apply space-y-5; }
+  .rb-kpi-grid { @apply grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4; }
+  .rb-kpi-card {
+    @apply rounded-2xl border border-slate-200 bg-white p-5;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+  }
+  .rb-kpi-label { @apply text-xs font-semibold uppercase tracking-[0.08em] text-slate-500; }
+  .rb-kpi-value { @apply mt-2 text-[1.65rem] leading-none font-bold text-slate-900; }
+  .rb-kpi-hint { @apply mt-3 text-xs text-slate-500; }
+  .rb-dashboard-main-grid { @apply grid grid-cols-1 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,1fr)] gap-4; }
+  .rb-panel {
+    @apply rounded-2xl border border-slate-200 bg-white p-5;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  }
+  .rb-panel-head { @apply flex items-start justify-between gap-3 mb-4; }
+  .rb-panel-title { @apply text-base font-bold text-slate-900; }
+  .rb-panel-subtitle { @apply text-sm text-slate-500; }
+  .rb-panel-total { @apply text-sm font-semibold text-sky-600 bg-sky-50 border border-sky-200 rounded-lg px-3 py-1; }
+  .rb-chart-wrap { @apply w-full; }
+  .rb-chart-svg { width: 100%; height: 220px; }
+  .rb-chart-grid { stroke: #e2e8f0; stroke-width: 1; }
+  .rb-chart-line { fill: none; stroke: #0284c7; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .rb-chart-dot { fill: #fff; stroke: #0284c7; stroke-width: 2.5; }
+  .rb-chart-labels { @apply mt-2 grid grid-cols-7 text-[11px] text-slate-500; }
+  .rb-chart-labels span { @apply text-center; }
+  .rb-chart-fallback { @apply mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2; }
+  .rb-alert-panel { @apply h-full; }
+  .rb-alert-list { @apply space-y-3; }
+  .rb-alert-item { @apply flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3; }
+  .rb-alert-dot { @apply mt-1 h-2.5 w-2.5 rounded-full; }
+  .rb-alert-dot-alta { @apply bg-red-500; box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.16); }
+  .rb-alert-dot-media { @apply bg-amber-500; box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.16); }
+  .rb-alert-dot-baixa { @apply bg-emerald-500; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.16); }
+  .rb-alert-title { @apply text-sm font-semibold text-slate-800; }
+  .rb-alert-detail { @apply text-xs text-slate-500 mt-1; }
+  .rb-dashboard-table-wrap { @apply overflow-x-auto rounded-xl border border-slate-200; }
+  .rb-dashboard-table { @apply w-full text-sm; }
+  .rb-dashboard-table thead { @apply bg-slate-50 text-slate-500 uppercase text-[11px] tracking-[0.08em]; }
+  .rb-dashboard-table th { @apply px-4 py-3 text-left font-semibold; }
+  .rb-dashboard-table td { @apply px-4 py-3 text-slate-700 border-t border-slate-100; }
+  .rb-dashboard-table tbody tr:hover { @apply bg-sky-50/50; }
+  .rb-table-empty { @apply text-center text-sm text-slate-500 py-6; }
+}

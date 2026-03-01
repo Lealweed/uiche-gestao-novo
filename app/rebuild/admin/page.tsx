@@ -123,6 +123,105 @@ export default function RebuildAdminPage() {
     return Array.from(map.entries()).map(([operatorId, total]) => ({ operatorId, total })).sort((a, b) => b.total - a.total);
   }, [openShifts]);
 
+  const postedTxs = useMemo(() => txs.filter((t) => t.status === "posted"), [txs]);
+
+  const dashboardCards = useMemo(() => {
+    const today = new Date();
+    const startMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const endMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+
+    const monthRevenue = postedTxs.reduce((sum, tx) => {
+      const soldAt = new Date(tx.sold_at);
+      if (soldAt >= startMonth && soldAt < endMonth) return sum + Number(tx.amount || 0);
+      return sum;
+    }, 0);
+
+    return [
+      { label: "Receita do mês", value: brl(monthRevenue), hint: "Mês atual" },
+      { label: "Transações hoje", value: String(txs.filter((tx) => tx.sold_at.slice(0, 10) === new Date().toISOString().slice(0, 10)).length), hint: "Últimas 24 horas" },
+      { label: "Turnos abertos", value: String(openShifts.length), hint: `${closedShifts.length} fechados` },
+      { label: "Operadores ativos", value: String(operators.length), hint: `${booths.filter((b) => b.active).length} guichês ativos` },
+    ];
+  }, [postedTxs, txs, openShifts.length, closedShifts.length, operators.length, booths]);
+
+  const revenueSeries7d = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const byDate = new Map<string, number>();
+
+    postedTxs.forEach((tx) => {
+      const key = tx.sold_at.slice(0, 10);
+      byDate.set(key, (byDate.get(key) || 0) + Number(tx.amount || 0));
+    });
+
+    const points = Array.from({ length: 7 }).map((_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() - (6 - index));
+      const key = date.toISOString().slice(0, 10);
+      return {
+        date: key,
+        label: date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+        value: byDate.get(key) || 0,
+      };
+    });
+
+    if (points.every((point) => point.value === 0)) {
+      return points.map((point, index) => ({
+        ...point,
+        value: [120, 160, 140, 190, 170, 220, 210][index],
+        fallback: true,
+      }));
+    }
+
+    return points;
+  }, [postedTxs]);
+
+  const dashboardAlerts = useMemo(() => {
+    const alerts: Array<{ title: string; detail: string; level: "alta" | "media" | "baixa" }> = [];
+
+    if (openShifts.length > 0) {
+      alerts.push({
+        title: "Turnos em aberto",
+        detail: `${openShifts.length} turno(s) aguardando fechamento.`,
+        level: openShifts.length >= 3 ? "alta" : "media",
+      });
+    }
+
+    const voidedCount = txs.filter((tx) => tx.status === "voided").length;
+    if (voidedCount > 0) {
+      alerts.push({
+        title: "Transações canceladas",
+        detail: `${voidedCount} registro(s) cancelado(s) no período carregado.`,
+        level: voidedCount >= 10 ? "alta" : "media",
+      });
+    }
+
+    const unlinkedOperators = operators.filter((op) => !links.some((link) => link.operator_id === op.user_id && link.active));
+    if (unlinkedOperators.length > 0) {
+      alerts.push({
+        title: "Operadores sem vínculo",
+        detail: `${unlinkedOperators.length} operador(es) sem guichê ativo.`,
+        level: "baixa",
+      });
+    }
+
+    if (alerts.length === 0) {
+      alerts.push({
+        title: "Tudo sob controle",
+        detail: "Nenhum alerta crítico no momento.",
+        level: "baixa",
+      });
+    }
+
+    return alerts.slice(0, 4);
+  }, [openShifts.length, txs, operators, links]);
+
+  const latestTransactions = useMemo(() => {
+    return [...txs]
+      .sort((a, b) => new Date(b.sold_at).getTime() - new Date(a.sold_at).getTime())
+      .slice(0, 7);
+  }, [txs]);
+
   const filteredHistorico = useMemo(() => {
     return txs.filter((t) => {
       if (historicoOperatorFilter && t.operator_id !== historicoOperatorFilter) return false;
@@ -404,11 +503,90 @@ export default function RebuildAdminPage() {
       ) : null}
 
       {activeSection === "dashboard" && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card title="Operadores" value={String(operators.length)} />
-          <Card title="Turnos abertos" value={String(openShifts.length)} />
-          <Card title="Transações (90d)" value={String(txs.length)} />
-          <Card title="Receita lançada" value={brl(txs.filter((t) => t.status === "posted").reduce((a, t) => a + Number(t.amount || 0), 0))} />
+        <div className="rb-dashboard-stack">
+          <div className="rb-kpi-grid">
+            {dashboardCards.map((card) => (
+              <div key={card.label} className="rb-kpi-card">
+                <p className="rb-kpi-label">{card.label}</p>
+                <p className="rb-kpi-value">{card.value}</p>
+                <p className="rb-kpi-hint">{card.hint}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rb-dashboard-main-grid">
+            <section className="rb-panel rb-chart-panel">
+              <div className="rb-panel-head">
+                <div>
+                  <h3 className="rb-panel-title">Evolução de Receita</h3>
+                  <p className="rb-panel-subtitle">Últimos 7 dias</p>
+                </div>
+                <span className="rb-panel-total">{brl(revenueSeries7d.reduce((sum, point) => sum + point.value, 0))}</span>
+              </div>
+              <RevenueChart points={revenueSeries7d} />
+              {revenueSeries7d.some((point) => "fallback" in point) ? (
+                <p className="rb-chart-fallback">Exibindo curva visual padrão porque não há dados recentes suficientes.</p>
+              ) : null}
+            </section>
+
+            <section className="rb-panel rb-alert-panel">
+              <h3 className="rb-panel-title">Atenção Necessária</h3>
+              <ul className="rb-alert-list">
+                {dashboardAlerts.map((alert, index) => (
+                  <li key={`${alert.title}-${index}`} className="rb-alert-item">
+                    <span className={`rb-alert-dot rb-alert-dot-${alert.level}`}></span>
+                    <div>
+                      <p className="rb-alert-title">{alert.title}</p>
+                      <p className="rb-alert-detail">{alert.detail}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
+
+          <section className="rb-panel rb-transactions-panel">
+            <div className="rb-panel-head">
+              <h3 className="rb-panel-title">Últimas Transações</h3>
+              <p className="rb-panel-subtitle">Movimentações mais recentes</p>
+            </div>
+            <div className="rb-dashboard-table-wrap">
+              <table className="rb-dashboard-table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Operador</th>
+                    <th>Guichê</th>
+                    <th>Pagamento</th>
+                    <th className="text-right">Valor</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latestTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="rb-table-empty">Sem transações para exibir.</td>
+                    </tr>
+                  ) : (
+                    latestTransactions.map((tx) => (
+                      <tr key={tx.id}>
+                        <td>{new Date(tx.sold_at).toLocaleString("pt-BR")}</td>
+                        <td>{operatorMap.get(tx.operator_id || "") || "Sem operador"}</td>
+                        <td>{boothMap.get(tx.booth_id || "") || "Sem guichê"}</td>
+                        <td><span className={`rb-payment-badge rb-payment-${tx.payment_method}`}>{tx.payment_method.toUpperCase()}</span></td>
+                        <td className="text-right font-semibold">{brl(Number(tx.amount || 0))}</td>
+                        <td>
+                          <span className={`rb-badge ${tx.status === "posted" ? "rb-badge-success" : "rb-badge-warning"}`}>
+                            {tx.status === "posted" ? "Lançado" : "Cancelado"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
       )}
 
@@ -604,6 +782,49 @@ function Empty({ text }: { text: string }) {
   return <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">{text}</div>;
 }
 
+function RevenueChart({ points }: { points: Array<{ label: string; value: number }> }) {
+  const width = 700;
+  const height = 240;
+  const padding = 28;
+  const maxValue = Math.max(...points.map((point) => point.value), 1);
+  const stepX = points.length > 1 ? (width - padding * 2) / (points.length - 1) : width - padding * 2;
+
+  const coords = points.map((point, index) => {
+    const x = padding + index * stepX;
+    const y = height - padding - (point.value / maxValue) * (height - padding * 2);
+    return { ...point, x, y };
+  });
+
+  const linePath = coords.map((coord, index) => `${index === 0 ? "M" : "L"} ${coord.x} ${coord.y}`).join(" ");
+  const areaPath = `${linePath} L ${coords[coords.length - 1].x} ${height - padding} L ${coords[0].x} ${height - padding} Z`;
+
+  return (
+    <div className="rb-chart-wrap">
+      <svg viewBox={`0 0 ${width} ${height}`} className="rb-chart-svg" preserveAspectRatio="none" role="img" aria-label="Evolução da receita nos últimos 7 dias">
+        <defs>
+          <linearGradient id="rbRevenueArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.38" />
+            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.05" />
+          </linearGradient>
+        </defs>
+        {[0, 1, 2, 3].map((line) => {
+          const y = padding + ((height - padding * 2) / 3) * line;
+          return <line key={line} x1={padding} y1={y} x2={width - padding} y2={y} className="rb-chart-grid" />;
+        })}
+        <path d={areaPath} fill="url(#rbRevenueArea)" />
+        <path d={linePath} className="rb-chart-line" />
+        {coords.map((coord) => (
+          <circle key={coord.label} cx={coord.x} cy={coord.y} r="4.4" className="rb-chart-dot" />
+        ))}
+      </svg>
+      <div className="rb-chart-labels">
+        {points.map((point) => (
+          <span key={point.label}>{point.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
 function MiniList({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="rounded-lg border p-3">
@@ -645,6 +866,9 @@ function CrudPanel({ title, createForm, items }: { title: string; createForm: Re
     </div>
   );
 }
+
+
+
 
 
 
