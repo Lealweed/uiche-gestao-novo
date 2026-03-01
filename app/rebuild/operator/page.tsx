@@ -48,11 +48,11 @@ function paymentMethodMeta(method: "pix" | "credit" | "debit" | "cash") {
   return { label: "PIX", className: "rb-payment-badge rb-payment-pix" };
 }
 
-type OperatorSection = "dashboard" | "controle-caixa" | "transacoes" | "clientes" | "configuracoes";
+type OperatorSection = "resumo" | "lancamentos" | "caixa-pdv" | "ponto-digital" | "configuracoes";
 
 export default function RebuildOperatorPage() {
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<OperatorSection>("dashboard");
+  const [activeSection, setActiveSection] = useState<OperatorSection>("resumo");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -132,8 +132,8 @@ export default function RebuildOperatorPage() {
   useEffect(() => {
     const syncSectionFromHash = () => {
       const raw = window.location.hash.replace("#", "") as OperatorSection | "";
-      const valid: OperatorSection[] = ["dashboard", "controle-caixa", "transacoes", "clientes", "configuracoes"];
-      setActiveSection(valid.includes(raw as OperatorSection) ? (raw as OperatorSection) : "dashboard");
+      const valid: OperatorSection[] = ["resumo", "lancamentos", "caixa-pdv", "ponto-digital", "configuracoes"];
+      setActiveSection(valid.includes(raw as OperatorSection) ? (raw as OperatorSection) : "resumo");
     };
     syncSectionFromHash();
     window.addEventListener("hashchange", syncSectionFromHash);
@@ -646,14 +646,14 @@ export default function RebuildOperatorPage() {
       />
 
       <div className="flex flex-wrap gap-2 mb-4">
-        <button className={`btn-ghost ${activeSection === "dashboard" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "dashboard"; }}>Resumo do Turno</button>
-        <button className={`btn-ghost ${activeSection === "transacoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "transacoes"; }}>Lançamentos</button>
-        <button className={`btn-ghost ${activeSection === "controle-caixa" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "controle-caixa"; }}>Caixa PDV</button>
-        <button className={`btn-ghost ${activeSection === "clientes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "clientes"; }}>Ponto Digital</button>
+        <button className={`btn-ghost ${activeSection === "resumo" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "resumo"; }}>Resumo do Turno</button>
+        <button className={`btn-ghost ${activeSection === "lancamentos" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "lancamentos"; }}>Lançamentos</button>
+        <button className={`btn-ghost ${activeSection === "caixa-pdv" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "caixa-pdv"; }}>Caixa PDV</button>
+        <button className={`btn-ghost ${activeSection === "ponto-digital" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "ponto-digital"; }}>Ponto Digital</button>
         <button className={`btn-ghost ${activeSection === "configuracoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "configuracoes"; }}>Configurações</button>
       </div>
 
-      <div className={activeSection === "dashboard" ? "block" : "hidden"}>
+      <div className={activeSection === "resumo" ? "block" : "hidden"}>
       <section className="rb-stat-grid" aria-label="Resumo do turno">
         <StatCard
           label="Status do turno"
@@ -874,7 +874,7 @@ export default function RebuildOperatorPage() {
       </section>
       </div>
 
-      {activeSection === "controle-caixa" && (
+      {activeSection === "caixa-pdv" && (
         <Card>
           <CardTitle>Controle de Caixa</CardTitle>
           <CardDescription>Resumo completo de movimentos do caixa por turno.</CardDescription>
@@ -897,7 +897,7 @@ export default function RebuildOperatorPage() {
         </Card>
       )}
 
-      {activeSection === "transacoes" && (
+      {activeSection === "lancamentos" && (
         <Card>
           <CardTitle>Transações do Turno</CardTitle>
           <CardDescription>Lista completa de lançamentos do operador.</CardDescription>
@@ -920,7 +920,7 @@ export default function RebuildOperatorPage() {
         </Card>
       )}
 
-      {activeSection === "clientes" && (
+      {activeSection === "ponto-digital" && (
         <Card>
           <CardTitle>Ponto Digital</CardTitle>
           <CardDescription>Registro rápido de jornada e histórico operacional do turno.</CardDescription>
@@ -948,6 +948,7 @@ export default function RebuildOperatorPage() {
     </div>
   );
 }
+
 
 
 
