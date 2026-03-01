@@ -81,9 +81,19 @@ export default function RebuildAdminPage() {
       setActiveSection(nextSection);
     };
 
+    const onSectionChange = (event: Event) => {
+      const custom = event as CustomEvent<string>;
+      const next = custom.detail as AdminSection | undefined;
+      if (next && next in sections) setActiveSection(next);
+    };
+
     syncSectionFromHash();
     window.addEventListener("hashchange", syncSectionFromHash);
-    return () => window.removeEventListener("hashchange", syncSectionFromHash);
+    window.addEventListener("rebuild:section-change", onSectionChange as EventListener);
+    return () => {
+      window.removeEventListener("hashchange", syncSectionFromHash);
+      window.removeEventListener("rebuild:section-change", onSectionChange as EventListener);
+    };
   }, []);
 
   const operatorMap = useMemo(() => new Map(profiles.map((p) => [p.user_id, p.full_name])), [profiles]);

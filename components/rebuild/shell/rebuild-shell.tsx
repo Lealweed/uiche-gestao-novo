@@ -76,7 +76,12 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   }
 
   function navigate(href: string, section?: string) {
-    if (section) setCurrentSection(section);
+    if (section) {
+      setCurrentSection(section);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("rebuild:section-change", { detail: section }));
+      }
+    }
     router.push(href);
   }
 
