@@ -204,9 +204,25 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               const active = isNavActive(item.href, "section" in item ? item.section : undefined);
               return (
                 <button
-                  key={`mobile-${item.href}`}
+                  key={`mobile-main-${item.href}`}
                   type="button"
                   onClick={() => navigate(item.href, "section" in item ? item.section : undefined)}
+                  className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                    active ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+
+            {systemNav.map((item) => {
+              const active = isNavActive(item.href, item.section);
+              return (
+                <button
+                  key={`mobile-system-${item.href}`}
+                  type="button"
+                  onClick={() => navigate(item.href, item.section)}
                   className={`whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                     active ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-600"
                   }`}
