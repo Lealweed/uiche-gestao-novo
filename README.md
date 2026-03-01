@@ -35,3 +35,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 3. Criar primeiro usuário admin no Auth
 4. Inserir role admin na tabela `profiles`
 5. Subir frontend e conectar domínio
+
+## Recuperação rápida (banco resetado)
+
+Se `/rebuild/admin` ou `/rebuild/operator` estiverem quebrando após reset de banco:
+
+1. Rode `supabase/migrations/2026-03-01-recovery-bootstrap.sql` no SQL Editor.
+2. Siga `RECOVERY.md` para criar perfis/vínculos e validar os fluxos.
+
