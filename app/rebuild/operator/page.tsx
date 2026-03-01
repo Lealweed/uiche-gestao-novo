@@ -11,7 +11,7 @@ import { ErrorState } from "@/components/rebuild/ui/error-state";
 import { LoadingState } from "@/components/rebuild/ui/loading-state";
 import { Card, CardDescription, CardTitle } from "@/components/rebuild/ui/card";
 
-type Profile = { role: "admin" | "operator"; active?: boolean | null };
+type Profile = { role: "tenant_admin" | "operator" | "financeiro" | "admin"; active?: boolean | null; tenant_id?: string | null };
 type BoothLink = { booth_id: string };
 type Booth = { id: string; name: string };
 type Shift = { id: string; booth_id: string; status: "open" | "closed" };
@@ -240,7 +240,7 @@ export default function RebuildOperatorPage() {
       }
 
       const typedProfile = profile as Profile;
-      if (typedProfile.role === "admin") {
+      if (typedProfile.role === "tenant_admin" || typedProfile.role === "admin" || typedProfile.role === "financeiro") {
         router.replace("/rebuild/admin");
         return;
       }
@@ -812,6 +812,9 @@ export default function RebuildOperatorPage() {
     </div>
   );
 }
+
+
+
 
 
 

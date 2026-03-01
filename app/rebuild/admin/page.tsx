@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase-client";
 
 type AdminSection = "dashboard" | "controle-turno" | "historico" | "relatorios" | "usuarios" | "configuracoes";
 
-type Profile = { user_id: string; full_name: string; role: "admin" | "operator"; active?: boolean | null };
+type Profile = { user_id: string; full_name: string; role: "tenant_admin" | "operator" | "financeiro" | "admin"; active?: boolean | null; tenant_id?: string | null };
 type Shift = { id: string; status: "open" | "closed"; opened_at: string; closed_at?: string | null; operator_id?: string | null; booth_id?: string | null };
 type Tx = {
   id: string;
@@ -43,6 +43,7 @@ export default function RebuildAdminPage() {
   const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
 
   const [authLoading, setAuthLoading] = useState(true);
+  const [sessionUserId, setSessionUserId] = useState("");
   const [ui, setUi] = useState<UiState>({ loading: true, error: null });
   const [notice, setNotice] = useState<string | null>(null);
   const [sectionWarnings, setSectionWarnings] = useState<SectionWarning[]>([]);
@@ -70,6 +71,8 @@ export default function RebuildAdminPage() {
   const [historicoDateFilter, setHistoricoDateFilter] = useState("");
   const [reportBoothFilter, setReportBoothFilter] = useState("");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("");
+  const [reportStartDate, setReportStartDate] = useState("");
+  const [reportEndDate, setReportEndDate] = useState("");
 
   useEffect(() => {
     const syncSectionFromHash = () => {
@@ -88,6 +91,7 @@ export default function RebuildAdminPage() {
   const categoryMap = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
 
   const operators = useMemo(() => profiles.filter((p) => p.role === "operator"), [profiles]);
+  const canManageUsers = useMemo(() => profiles.some((p) => p.user_id === sessionUserId && (p.role === "tenant_admin" || p.role === "admin")), [profiles, sessionUserId]);
   const users = useMemo(() => profiles, [profiles]);
   const openShifts = useMemo(() => shifts.filter((s) => s.status === "open"), [shifts]);
   const closedShifts = useMemo(() => shifts.filter((s) => s.status === "closed"), [shifts]);
@@ -115,7 +119,7 @@ export default function RebuildAdminPage() {
       if (reportCategoryFilter && t.category_id !== reportCategoryFilter) return false;
       return t.status === "posted";
     });
-  }, [txs, reportBoothFilter, reportCategoryFilter]);
+  }, [txs, reportBoothFilter, reportCategoryFilter, reportStartDate, reportEndDate]);
 
   const reportTotals = useMemo(() => {
     const total = filteredReportTx.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
@@ -162,11 +166,12 @@ export default function RebuildAdminPage() {
         if (!userId) return router.replace("/login");
 
         const profileRes = await supabase.from("profiles").select("role,active").eq("user_id", userId).single();
+        setSessionUserId(userId);
         if (profileRes.error || !profileRes.data || profileRes.data.active === false) {
           await supabase.auth.signOut();
           return router.replace("/login");
         }
-        if (profileRes.data.role !== "admin") return router.replace("/rebuild/operator");
+        if (!["tenant_admin", "admin", "financeiro"].includes(profileRes.data.role)) return router.replace("/rebuild/operator");
       } finally {
         setAuthLoading(false);
       }
@@ -197,7 +202,7 @@ export default function RebuildAdminPage() {
 
     try {
       const [nextProfiles, nextShifts, nextTxs, nextCompanies, nextBooths, nextCategories, nextSubcategories, nextLinks] = await Promise.all([
-        loadChunk<Profile>("Usuários", supabase.from("profiles").select("user_id,full_name,role,active").order("full_name")),
+        loadChunk<Profile>("Usuários", supabase.from("profiles").select("user_id,full_name,role,active,tenant_id").order("full_name")),
         loadChunk<Shift>("Controle de turno", supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120)),
         loadChunk<Tx>("Histórico", supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400)),
         loadChunk<Company>("Empresas", supabase.from("companies").select("id,name,active").order("name")),
@@ -233,7 +238,7 @@ export default function RebuildAdminPage() {
     await loadAll();
   }
 
-  async function updateUserRole(userId: string, role: "admin" | "operator") {
+  async function updateUserRole(userId: string, role: "tenant_admin" | "operator" | "financeiro") {
     const res = await supabase.from("profiles").update({ role }).eq("user_id", userId);
     if (res.error) return setNotice(`Não foi possível atualizar o papel do usuário: ${res.error.message}`);
     setNotice("Papel de usuário atualizado com sucesso.");
@@ -408,6 +413,8 @@ export default function RebuildAdminPage() {
               <option value="">Todas categorias</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+            <input className="border rounded-lg px-3 py-2" type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} />
+            <input className="border rounded-lg px-3 py-2" type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} />
             <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold" onClick={exportCsv}>Exportar CSV</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -423,7 +430,7 @@ export default function RebuildAdminPage() {
         </SectionBox>
       )}
 
-      {activeSection === "usuarios" && (
+      {activeSection === "usuarios" && canManageUsers && (
         <SectionBox title="Usuários" subtitle="Gestão de perfis ativos/inativos e papel de acesso.">
           {users.length === 0 ? <Empty text="Nenhum usuário cadastrado." /> : (
             <div className="space-y-2">
@@ -437,10 +444,11 @@ export default function RebuildAdminPage() {
                     <select
                       className="rounded-lg border px-3 py-1.5 text-sm"
                       value={u.role}
-                      onChange={(e) => updateUserRole(u.user_id, e.target.value as "admin" | "operator")}
+                      onChange={(e) => updateUserRole(u.user_id, e.target.value as "tenant_admin" | "operator" | "financeiro")}
                     >
                       <option value="operator">Operador</option>
-                      <option value="admin">Admin</option>
+                      <option value="tenant_admin">Admin do Tenant</option>
+                      <option value="financeiro">Financeiro</option>
                     </select>
                     <button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => toggleRow("profiles", "user_id", u.user_id, u.active !== false, `Usuário ${u.active === false ? "ativado" : "inativado"} com sucesso.`)}>
                       {u.active === false ? "Ativar" : "Inativar"}
@@ -453,7 +461,7 @@ export default function RebuildAdminPage() {
         </SectionBox>
       )}
 
-      {activeSection === "configuracoes" && (
+      {activeSection === "configuracoes" && canManageUsers && (
         <SectionBox title="Configurações" subtitle="Gestão de empresas, guichês, categorias, subcategorias e vínculos operador↔guichê.">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CrudPanel title="Empresas" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createCompany}>Cadastrar</button></div>} items={companies.map((c) => ({ id: c.id, label: c.name, active: c.active, onToggle: () => toggleRow("companies", "id", c.id, c.active, "Empresa atualizada com sucesso.") }))} />
@@ -525,3 +533,7 @@ function CrudPanel({ title, createForm, items }: { title: string; createForm: Re
     </div>
   );
 }
+
+
+
+
