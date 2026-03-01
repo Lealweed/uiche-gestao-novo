@@ -69,6 +69,8 @@ export default function RebuildAdminPage() {
   const [historicoOperatorFilter, setHistoricoOperatorFilter] = useState("");
   const [historicoStatusFilter, setHistoricoStatusFilter] = useState("");
   const [historicoDateFilter, setHistoricoDateFilter] = useState("");
+  const [historicoBoothFilter, setHistoricoBoothFilter] = useState("");
+  const [historicoCategoryFilter, setHistoricoCategoryFilter] = useState("");
   const [reportBoothFilter, setReportBoothFilter] = useState("");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("");
   const [reportStartDate, setReportStartDate] = useState("");
@@ -118,15 +120,28 @@ export default function RebuildAdminPage() {
     return txs.filter((t) => {
       if (historicoOperatorFilter && t.operator_id !== historicoOperatorFilter) return false;
       if (historicoStatusFilter && t.status !== historicoStatusFilter) return false;
+      if (historicoBoothFilter && t.booth_id !== historicoBoothFilter) return false;
+      if (historicoCategoryFilter && t.category_id !== historicoCategoryFilter) return false;
       if (historicoDateFilter && !t.sold_at.startsWith(historicoDateFilter)) return false;
       return true;
     });
-  }, [txs, historicoOperatorFilter, historicoStatusFilter, historicoDateFilter]);
+  }, [txs, historicoOperatorFilter, historicoStatusFilter, historicoBoothFilter, historicoCategoryFilter, historicoDateFilter]);
 
   const filteredReportTx = useMemo(() => {
     return txs.filter((t) => {
       if (reportBoothFilter && t.booth_id !== reportBoothFilter) return false;
       if (reportCategoryFilter && t.category_id !== reportCategoryFilter) return false;
+
+      const soldDate = new Date(t.sold_at);
+      if (reportStartDate) {
+        const start = new Date(`${reportStartDate}T00:00:00`);
+        if (soldDate < start) return false;
+      }
+      if (reportEndDate) {
+        const end = new Date(`${reportEndDate}T23:59:59`);
+        if (soldDate > end) return false;
+      }
+
       return t.status === "posted";
     });
   }, [txs, reportBoothFilter, reportCategoryFilter, reportStartDate, reportEndDate]);
@@ -379,7 +394,7 @@ export default function RebuildAdminPage() {
 
       {activeSection === "historico" && (
         <SectionBox title="Histórico" subtitle="Tabela de transações com filtros básicos.">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
             <select className="border rounded-lg px-3 py-2" value={historicoOperatorFilter} onChange={(e) => setHistoricoOperatorFilter(e.target.value)}>
               <option value="">Todos operadores</option>
               {operators.map((op) => <option key={op.user_id} value={op.user_id}>{op.full_name}</option>)}
@@ -389,6 +404,8 @@ export default function RebuildAdminPage() {
               <option value="posted">Lançado</option>
               <option value="voided">Cancelado</option>
             </select>
+            <select className="border rounded-lg px-3 py-2" value={historicoBoothFilter} onChange={(e) => setHistoricoBoothFilter(e.target.value)}><option value="">Todos guichês</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select>
+            <select className="border rounded-lg px-3 py-2" value={historicoCategoryFilter} onChange={(e) => setHistoricoCategoryFilter(e.target.value)}><option value="">Todas categorias</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             <input className="border rounded-lg px-3 py-2" type="date" value={historicoDateFilter} onChange={(e) => setHistoricoDateFilter(e.target.value)} />
           </div>
           {filteredHistorico.length === 0 ? <Empty text="Sem transações para os filtros selecionados." /> : (
