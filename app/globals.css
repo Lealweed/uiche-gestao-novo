@@ -766,6 +766,70 @@ body {
   .rb-operator-side {
     background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   }
+  .rb-form-label {
+    display: block;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #475569;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+  }
+
+  .rb-pay-methods {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .rb-pay-chip {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    border-radius: 0.7rem;
+    padding: 0.55rem 0.5rem;
+    font-weight: 700;
+    font-size: 0.84rem;
+    transition: 140ms ease;
+  }
+
+  .rb-pay-chip.is-active {
+    background: #dbeafe;
+    border-color: #60a5fa;
+    color: #1e3a8a;
+  }
+
+  .rb-upload-highlight {
+    border: 1px dashed #f59e0b;
+    background: linear-gradient(180deg, #fff8e8 0%, #fff 100%);
+    border-radius: 0.9rem;
+    padding: 0.8rem;
+  }
+
+  .rb-side-history-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 0.7rem;
+    padding: 0.6rem 0.7rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+    background: #fff;
+  }
+
+  .rb-goal-track {
+    width: 100%;
+    height: 11px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+  }
+
+  .rb-goal-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+  }
 
   .rb-admin-header .rb-section-title {
     font-size: 1.6rem;
@@ -1014,3 +1078,4 @@ body {
   .rb-dashboard-table tbody tr:hover { @apply bg-sky-50/50; }
   .rb-table-empty { @apply text-center text-sm text-slate-500 py-6; }
 }
+

@@ -85,6 +85,7 @@ export default function RebuildOperatorPage() {
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
   const [cashType, setCashType] = useState<"suprimento" | "sangria" | "ajuste">("suprimento");
   const [cashAmount, setCashAmount] = useState("");
@@ -121,6 +122,35 @@ export default function RebuildOperatorPage() {
     const ajuste = cashMovements.filter((m) => m.movement_type === "ajuste").reduce((acc, m) => acc + Number(m.amount || 0), 0);
     return { suprimento, sangria, ajuste, saldo: suprimento - sangria + ajuste + totals.cash };
   }, [cashMovements, totals.cash]);
+
+  const dailyGoal = 5000;
+  const goalProgress = Math.min(100, Math.round((totalSales / dailyGoal) * 100));
+
+  const sideHistory = useMemo(() => {
+    const txEntries = transactions.map((tx) => ({
+      id: `tx-${tx.id}`,
+      kind: "tx" as const,
+      label: tx.company_name || "Lançamento",
+      amount: Number(tx.amount || 0),
+      signedAmount: Number(tx.amount || 0),
+      payment: paymentMethodMeta(tx.payment_method).label,
+      at: tx.sold_at,
+    }));
+
+    const cashEntries = cashMovements.map((mov) => ({
+      id: `cash-${mov.id}`,
+      kind: "cash" as const,
+      label: mov.movement_type === "suprimento" ? "Suprimento" : mov.movement_type === "sangria" ? "Sangria" : "Ajuste",
+      amount: Number(mov.amount || 0),
+      signedAmount: mov.movement_type === "sangria" ? -Number(mov.amount || 0) : Number(mov.amount || 0),
+      payment: "Caixa",
+      at: mov.created_at,
+    }));
+
+    return [...txEntries, ...cashEntries]
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, 12);
+  }, [transactions, cashMovements]);
 
   function addWarning(section: string, message: string) {
     setSectionWarnings((prev) => {
@@ -417,7 +447,7 @@ export default function RebuildOperatorPage() {
     setBusy("transaction");
     setFeedback(null);
 
-    const { error: insertError } = await supabase.from("transactions").insert({
+    const insertRes = await supabase.from("transactions").insert({
       shift_id: shift.id,
       booth_id: shift.booth_id,
       operator_id: userId,
@@ -429,17 +459,27 @@ export default function RebuildOperatorPage() {
       ticket_reference: reference.trim() || null,
       note: note.trim() || null,
       commission_percent: null,
-    });
+    }).select("id").single();
 
-    if (insertError) {
+    if (insertRes.error || !insertRes.data?.id) {
       setBusy(null);
-      setFeedback(`Falha ao salvar lançamento: ${insertError.message}`);
+      setFeedback(`Falha ao salvar lançamento: ${insertRes.error?.message || "ID não retornado."}`);
       return;
+    }
+
+    if (receiptFile) {
+      const uploaded = await uploadReceiptFile(insertRes.data.id, receiptFile);
+      if (!uploaded.ok) {
+        setBusy(null);
+        setFeedback(uploaded.message);
+        return;
+      }
     }
 
     setAmount("");
     setReference("");
     setNote("");
+    setReceiptFile(null);
     await loadTransactions(shift.id);
 
     setBusy(null);
@@ -490,18 +530,11 @@ export default function RebuildOperatorPage() {
     setFeedback("Movimento de caixa registrado.");
   }
 
-  async function uploadReceipt(txId: string, ev: ChangeEvent<HTMLInputElement>) {
-    if (!userId) return;
+  async function uploadReceiptFile(txId: string, file: File) {
+    if (!userId) return { ok: false, message: "Sessão inválida. Faça login novamente." };
     if (!availability.receipts) {
-      setFeedback("Comprovantes indisponíveis até corrigir a tabela transaction_receipts/bucket payment-receipts. Consulte RECOVERY.md.");
-      return;
+      return { ok: false, message: "Comprovantes indisponíveis até corrigir transaction_receipts/payment-receipts. Consulte RECOVERY.md." };
     }
-
-    const file = ev.target.files?.[0];
-    if (!file) return;
-
-    setUploadingTxId(txId);
-    setFeedback(null);
 
     const ext = file.name.split(".").pop() || "jpg";
     const path = `${userId}/${txId}.${ext}`;
@@ -512,9 +545,7 @@ export default function RebuildOperatorPage() {
     });
 
     if (upload.error) {
-      setUploadingTxId(null);
-      setFeedback(`Falha no upload do comprovante: ${upload.error.message}`);
-      return;
+      return { ok: false, message: `Falha no upload do comprovante: ${upload.error.message}` };
     }
 
     const register = await supabase.from("transaction_receipts").upsert({
@@ -525,14 +556,30 @@ export default function RebuildOperatorPage() {
     });
 
     if (register.error) {
+      return { ok: false, message: `Falha ao registrar comprovante: ${register.error.message}` };
+    }
+
+    return { ok: true, message: "Comprovante enviado com sucesso." };
+  }
+
+  async function uploadReceipt(txId: string, ev: ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+
+    setUploadingTxId(txId);
+    setFeedback(null);
+
+    const uploaded = await uploadReceiptFile(txId, file);
+
+    if (!uploaded.ok) {
       setUploadingTxId(null);
-      setFeedback(`Falha ao registrar comprovante: ${register.error.message}`);
+      setFeedback(uploaded.message);
       return;
     }
 
     if (shift) await loadTransactions(shift.id);
     setUploadingTxId(null);
-    setFeedback("Comprovante enviado com sucesso.");
+    setFeedback(uploaded.message);
   }
 
   if (loading) {
@@ -633,9 +680,14 @@ export default function RebuildOperatorPage() {
 
       <section className="rb-operator-layout" aria-label="Fluxo operacional">
         <Card className="rb-operator-main">
-          <CardTitle>Novo lançamento</CardTitle>
-          <CardDescription>Registre empresa, categoria, método, valor e observações.</CardDescription>
-          <form onSubmit={submitTransaction} className="mt-4 grid gap-3 md:grid-cols-2">
+          <CardTitle>Novo Lançamento</CardTitle>
+          <CardDescription>Preencha os dados da transação e registre no turno atual.</CardDescription>
+
+          <form onSubmit={submitTransaction} className="mt-4 space-y-3">
+            <label className="rb-form-label">Valor da transação</label>
+            <input className="field" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="R$ 0,00" required />
+
+            <label className="rb-form-label">Empresa / Fornecedor</label>
             <select className="field" value={companyId} onChange={(e) => setCompanyId(e.target.value)} required>
               <option value="">Selecione a empresa</option>
               {companies.map((c) => (
@@ -643,175 +695,144 @@ export default function RebuildOperatorPage() {
               ))}
             </select>
 
-            <select
-              className="field"
-              value={categoryId}
-              onChange={(e) => {
-                const nextCategory = e.target.value;
-                setCategoryId(nextCategory);
-                setSubcategoryId(subcategories.find((s) => s.category_id === nextCategory)?.id ?? "");
-              }}
-              required
-            >
-              <option value="">Selecione a categoria</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="rb-form-label">Categoria</label>
+                <select
+                  className="field"
+                  value={categoryId}
+                  onChange={(e) => {
+                    const nextCategory = e.target.value;
+                    setCategoryId(nextCategory);
+                    setSubcategoryId(subcategories.find((s) => s.category_id === nextCategory)?.id ?? "");
+                  }}
+                  required
+                >
+                  <option value="">Selecione a categoria</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="rb-form-label">Subcategoria</label>
+                <select className="field" value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)} required>
+                  <option value="">Selecione a subcategoria</option>
+                  {filteredSubcategories.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <label className="rb-form-label">Ref / Reserva</label>
+            <input className="field" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ex.: RES-10293" />
+
+            <label className="rb-form-label">Método de pagamento</label>
+            <div className="rb-pay-methods">
+              {([
+                { id: "pix", label: "PIX" },
+                { id: "credit", label: "Crédito" },
+                { id: "debit", label: "Débito" },
+                { id: "cash", label: "Dinheiro" },
+              ] as const).map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  onClick={() => setPaymentMethod(item.id)}
+                  className={`rb-pay-chip ${paymentMethod === item.id ? "is-active" : ""}`}
+                >
+                  {item.label}
+                </button>
               ))}
-            </select>
+            </div>
 
-            <select className="field" value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)} required>
-              <option value="">Selecione a subcategoria</option>
-              {filteredSubcategories.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
+            <div className="rb-upload-highlight">
+              <p className="rb-form-label">Comprovante (opcional no lançamento)</p>
+              <label className="btn-ghost cursor-pointer text-sm inline-flex items-center gap-2">
+                <Receipt size={14} /> {receiptFile ? receiptFile.name : "Selecionar comprovante"}
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
+              </label>
+              {pendingReceiptTxs.length > 0 ? <p className="text-xs text-amber-700 mt-2">Pendências de cartão: {pendingReceiptTxs.length}</p> : null}
+            </div>
 
-            <select className="field" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}>
-              <option value="pix">PIX</option>
-              <option value="credit">Crédito</option>
-              <option value="debit">Débito</option>
-              <option value="cash">Dinheiro</option>
-            </select>
+            <label className="rb-form-label">Observações</label>
+            <textarea className="field" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observação" rows={3} />
 
-            <input className="field" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Valor" required />
-            <input className="field" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Referência" />
-
-            <textarea className="field md:col-span-2" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observação" rows={3} />
-
-            <div className="md:col-span-2">
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => { setAmount(""); setCompanyId(""); setReference(""); setNote(""); setReceiptFile(null); }}
+              >
+                Limpar
+              </button>
               <button className="btn-primary" disabled={!shift || busy === "transaction" || !availability.transactions || !availability.companies || !availability.categories || !availability.subcategories}>
-                {busy === "transaction" ? "Salvando..." : "Salvar lançamento"}
+                {busy === "transaction" ? "Registrando..." : "Registrar Lançamento"}
               </button>
             </div>
           </form>
         </Card>
 
-        <Card className="rb-operator-side">
-          <CardTitle>Caixa PDV</CardTitle>
-          <CardDescription>Registre suprimento, sangria e ajuste do turno.</CardDescription>
-          <form onSubmit={submitCashMovement} className="mt-4 space-y-3">
-            <select className="field" value={cashType} onChange={(e) => setCashType(e.target.value as typeof cashType)} disabled={!shift}>
-              <option value="suprimento">Suprimento</option>
-              <option value="sangria">Sangria</option>
-              <option value="ajuste">Ajuste</option>
-            </select>
-            <input className="field" type="number" min="0" step="0.01" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} placeholder="Valor" disabled={!shift} />
-            <input className="field" value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Observação" disabled={!shift} />
-            <button className="btn-primary" disabled={!shift || busy === "cash" || !availability.cashMovements}>{busy === "cash" ? "Registrando..." : "Registrar"}</button>
-          </form>
+        <aside className="rb-operator-side">
+          <Card>
+            <CardTitle>Saldo em Caixa</CardTitle>
+            <CardDescription>Controle do turno atual.</CardDescription>
+            <div className="mt-3">
+              <p className="text-xs text-slate-500">Saldo atual</p>
+              <p className="text-2xl font-extrabold text-slate-900">{brl(cashTotals.saldo)}</p>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button type="button" className="btn-ghost text-sm" onClick={() => setCashType("suprimento")}>Suprimento</button>
+              <button type="button" className="btn-ghost text-sm" onClick={() => setCashType("sangria")}>Sangria</button>
+              <button type="button" className="btn-ghost text-sm" onClick={closeShift} disabled={!shift || busy === "close-shift"}>Fechar</button>
+            </div>
+            <form onSubmit={submitCashMovement} className="mt-3 space-y-2">
+              <input className="field" type="number" min="0" step="0.01" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} placeholder="Valor" disabled={!shift} />
+              <input className="field" value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Observação" disabled={!shift} />
+              <button className="btn-primary w-full" disabled={!shift || busy === "cash" || !availability.cashMovements}>{busy === "cash" ? "Registrando..." : `Registrar ${cashType}`}</button>
+            </form>
+          </Card>
 
-          <div className="mt-4 space-y-2 text-sm">
-            <p className="rb-card-description" style={{ marginTop: 0 }}>Totais do caixa</p>
-            <div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><BanknoteArrowUp size={14} /> Suprimento</span><b>{brl(cashTotals.suprimento)}</b></div>
-            <div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><BanknoteArrowDown size={14} /> Sangria</span><b>{brl(cashTotals.sangria)}</b></div>
-            <div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><RotateCcw size={14} /> Ajuste</span><b>{brl(cashTotals.ajuste)}</b></div>
-            <div className="flex items-center justify-between"><span className="inline-flex items-center gap-2"><Wallet size={14} /> Saldo caixa</span><b>{brl(cashTotals.saldo)}</b></div>
-          </div>
-        </Card>
-      </section>
-
-      <Card className="rb-operator-feed">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle>Comprovantes pendentes</CardTitle>
-            <CardDescription>Anexe comprovantes para lançamentos no crédito/débito.</CardDescription>
-          </div>
-          <p className="rb-card-description" style={{ marginTop: 0 }}>Pendências: {pendingReceiptTxs.length}</p>
-        </div>
-
-        {pendingReceiptTxs.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState title="Sem pendências de comprovante" message="Todas as transações de cartão estão com comprovante anexado." />
-          </div>
-        ) : (
-          <div className="mt-4 rb-pending-feed">
-            {pendingReceiptTxs.slice(0, 8).map((tx, idx) => {
-              const payment = paymentMethodMeta(tx.payment_method);
-              return (
-                <div key={`pending-${tx.id}`} className="rb-pending-item">
-                  <div className="rb-pending-dot" aria-hidden />
-                  <div className="rb-pending-content">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold text-slate-800">{tx.company_name}</p>
-                      <span className={payment.className}>{payment.label}</span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                      <span>{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
-                      <span>•</span>
-                      <span>{brl(tx.amount)}</span>
-                    </div>
-                    <div className="mt-3">
-                      <label className="btn-ghost cursor-pointer text-sm">
-                        {uploadingTxId === tx.id ? "Enviando..." : "Anexar comprovante"}
-                        <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId === tx.id} onChange={(e) => uploadReceipt(tx.id, e)} />
-                      </label>
-                    </div>
+          <Card>
+            <CardTitle>Histórico do Turno</CardTitle>
+            <CardDescription>Movimentos recentes com valores positivos e negativos.</CardDescription>
+            <div className="mt-3 space-y-2 max-h-[280px] overflow-auto pr-1">
+              {sideHistory.length === 0 ? (
+                <p className="text-sm text-slate-500">Sem movimentos no turno.</p>
+              ) : sideHistory.map((item) => (
+                <div key={item.id} className="rb-side-history-item">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{item.label}</p>
+                    <p className="text-xs text-slate-500">{new Date(item.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} • {item.payment}</p>
                   </div>
-                  {idx < Math.min(pendingReceiptTxs.length, 8) - 1 ? <div className="rb-pending-line" aria-hidden /> : null}
+                  <span className={`text-sm font-semibold ${item.signedAmount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                    {item.signedAmount >= 0 ? "+" : "-"}{brl(Math.abs(item.amount))}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
+              ))}
+            </div>
+          </Card>
 
-      <Card className="rb-operator-history">
-        <CardTitle>Lançamentos do turno</CardTitle>
-        <CardDescription>Histórico operacional do turno atual.</CardDescription>
-
-        {!shift ? (
-          <div className="mt-4">
-            <EmptyState title="Turno fechado" message="Abra o turno para visualizar os lançamentos operacionais." />
-          </div>
-        ) : transactions.length === 0 ? (
-          <div className="mt-4">
-            <EmptyState title="Sem lançamentos" message="Os lançamentos aparecerão aqui após o primeiro registro." />
-          </div>
-        ) : (
-          <div className="mt-4 rb-table-wrap">
-            <table className="rb-table">
-              <thead className="text-left text-slate-500">
-                <tr>
-                  <th className="py-2">Hora</th>
-                  <th>Empresa</th>
-                  <th>Método</th>
-                  <th>Valor</th>
-                  <th>Referência</th>
-                  <th>Comprovante</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((tx) => {
-                  const needsReceipt = tx.payment_method === "credit" || tx.payment_method === "debit";
-                  const hasReceipt = tx.receipt_count > 0;
-
-                  return (
-                    <tr key={tx.id} className="border-t border-slate-200">
-                      <td className="py-2">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
-                      <td>{tx.company_name}</td>
-                      <td><span className={paymentMethodMeta(tx.payment_method).className}>{paymentMethodMeta(tx.payment_method).label}</span></td>
-                      <td>{brl(tx.amount)}</td>
-                      <td>{tx.ticket_reference ?? "-"}</td>
-                      <td>
-                        {!needsReceipt ? (
-                          <span className="text-slate-500">Não obrigatório</span>
-                        ) : hasReceipt ? (
-                          <span className="rb-badge rb-badge-success inline-flex items-center gap-1"><HandCoins size={14} /> OK</span>
-                        ) : (
-                          <span className="rb-badge rb-badge-warning inline-flex items-center gap-1"><Receipt size={14} /> Pendente</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+          <Card className="rb-goal-card">
+            <CardTitle>Meta diária</CardTitle>
+            <CardDescription>{brl(totalSales)} de {brl(dailyGoal)}</CardDescription>
+            <div className="rb-goal-track mt-3">
+              <div className="rb-goal-fill" style={{ width: `${goalProgress}%` }} />
+            </div>
+            <p className="text-xs text-slate-600 mt-2">{goalProgress}% da meta concluída</p>
+          </Card>
+        </aside>
+      </section>
     </div>
   );
 }
+
+
+
+
+
 
 
 
