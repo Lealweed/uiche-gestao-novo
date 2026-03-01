@@ -548,6 +548,26 @@ export default function RebuildOperatorPage() {
     setFeedback("Movimento de caixa registrado.");
   }
 
+  async function registerPunch(type: "entrada" | "pausa_inicio" | "pausa_fim" | "saida") {
+    if (!userId) return;
+    setBusy(`punch-${type}`);
+    const payload = {
+      user_id: userId,
+      booth_id: shift?.booth_id ?? null,
+      shift_id: shift?.id ?? null,
+      punch_type: type,
+      punched_at: new Date().toISOString(),
+    };
+    const res = await supabase.from("time_punches").insert(payload);
+    setBusy(null);
+    if (res.error) {
+      setFeedback(`Não foi possível registrar ponto (${type}): ${res.error.message}`);
+      return;
+    }
+    setFeedback(`Ponto registrado: ${type}.`);
+  }
+
+
   async function uploadReceiptFile(txId: string, file: File) {
     if (!userId) return { ok: false, message: "Sessão inválida. Faça login novamente." };
     if (!availability.receipts) {
@@ -626,10 +646,10 @@ export default function RebuildOperatorPage() {
       />
 
       <div className="flex flex-wrap gap-2 mb-4">
-        <button className={`btn-ghost ${activeSection === "dashboard" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "dashboard"; }}>Dashboard</button>
-        <button className={`btn-ghost ${activeSection === "controle-caixa" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "controle-caixa"; }}>Controle de Caixa</button>
-        <button className={`btn-ghost ${activeSection === "transacoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "transacoes"; }}>Transações</button>
-        <button className={`btn-ghost ${activeSection === "clientes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "clientes"; }}>Clientes</button>
+        <button className={`btn-ghost ${activeSection === "dashboard" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "dashboard"; }}>Resumo do Turno</button>
+        <button className={`btn-ghost ${activeSection === "transacoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "transacoes"; }}>Lançamentos</button>
+        <button className={`btn-ghost ${activeSection === "controle-caixa" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "controle-caixa"; }}>Caixa PDV</button>
+        <button className={`btn-ghost ${activeSection === "clientes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "clientes"; }}>Ponto Digital</button>
         <button className={`btn-ghost ${activeSection === "configuracoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "configuracoes"; }}>Configurações</button>
       </div>
 
@@ -902,13 +922,15 @@ export default function RebuildOperatorPage() {
 
       {activeSection === "clientes" && (
         <Card>
-          <CardTitle>Empresas / Fornecedores</CardTitle>
-          <CardDescription>Opções disponíveis para lançamento no PDV.</CardDescription>
-          {companies.length === 0 ? <EmptyState title="Sem empresas" message="Cadastre empresas no painel administrativo." /> : (
-            <div className="mt-3 grid md:grid-cols-2 gap-2">
-              {companies.map((c) => <div key={c.id} className="rounded-lg border px-3 py-2 text-sm text-slate-700">{c.name}</div>)}
-            </div>
-          )}
+          <CardTitle>Ponto Digital</CardTitle>
+          <CardDescription>Registro rápido de jornada e histórico operacional do turno.</CardDescription>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className="btn-ghost" onClick={() => registerPunch("entrada")}>Entrada</button>
+            <button className="btn-ghost" onClick={() => registerPunch("pausa_inicio")}>Pausa início</button>
+            <button className="btn-ghost" onClick={() => registerPunch("pausa_fim")}>Pausa fim</button>
+            <button className="btn-ghost" onClick={() => registerPunch("saida")}>Saída</button>
+          </div>
+          <p className="text-xs text-slate-500 mt-3">As batidas de ponto ficam disponíveis para o painel administrativo.</p>
         </Card>
       )}
 

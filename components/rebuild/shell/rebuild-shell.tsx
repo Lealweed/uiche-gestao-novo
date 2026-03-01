@@ -29,10 +29,10 @@ const systemNavigation = [
 ] as const;
 
 const operatorNavigation = [
-  { href: "/rebuild/operator#dashboard", label: "Dashboard Admin", section: "dashboard", Icon: LayoutDashboard },
-  { href: "/rebuild/operator#controle-caixa", label: "Controle de Caixa", section: "controle-caixa", Icon: Ticket },
-  { href: "/rebuild/operator#transacoes", label: "Transações", section: "transacoes", Icon: ScanSearch },
-  { href: "/rebuild/operator#clientes", label: "Clientes", section: "clientes", Icon: Users },
+  { href: "/rebuild/operator#dashboard", label: "Resumo do Turno", section: "dashboard", Icon: LayoutDashboard },
+  { href: "/rebuild/operator#transacoes", label: "Lançamentos", section: "transacoes", Icon: ScanSearch },
+  { href: "/rebuild/operator#controle-caixa", label: "Caixa PDV", section: "controle-caixa", Icon: Ticket },
+  { href: "/rebuild/operator#clientes", label: "Ponto Digital", section: "clientes", Icon: Users },
   { href: "/rebuild/operator#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },
 ] as const;
 const financeiroNavigation = [{ href: "/rebuild/financeiro", label: "Painel Financeiro", Icon: Grid2x2 }] as const;
@@ -47,10 +47,10 @@ const adminSectionLabels: Record<string, string> = {
 };
 
 const operatorSectionLabels: Record<string, string> = {
-  dashboard: "Dashboard Admin",
-  "controle-caixa": "Controle de Caixa",
-  transacoes: "Transações",
-  clientes: "Clientes",
+  dashboard: "Resumo do Turno",
+  "controle-caixa": "Caixa PDV",
+  transacoes: "Lançamentos",
+  clientes: "Ponto Digital",
   configuracoes: "Configurações",
 };
 
