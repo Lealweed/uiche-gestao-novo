@@ -41,27 +41,32 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="app-shell flex items-center justify-center">
-      <form onSubmit={onSubmit} className="w-full max-w-md glass-card p-6 space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight">Entrar</h1>
-        <p className="muted text-sm">Acesse a plataforma CENTRAL VIAGEM.</p>
-
+    <main className="cv-login-shell">
+      <div className="cv-login-card">
         <div>
-          <label className="text-sm">E-mail</label>
-          <input value={email} onChange={(e)=>setEmail(e.target.value)} type="email" required className="mt-1 field" />
+          <p className="cv-login-eyebrow">Central Viagens</p>
+          <h1 className="cv-login-title">Acesse sua conta</h1>
+          <p className="cv-login-subtitle">Entre para continuar a operação com segurança.</p>
         </div>
 
-        <div>
-          <label className="text-sm">Senha</label>
-          <input value={password} onChange={(e)=>setPassword(e.target.value)} type="password" required className="mt-1 field" />
-        </div>
+        <form onSubmit={onSubmit} className="space-y-4">
+          <div>
+            <label className="cv-label">E-mail</label>
+            <input value={email} onChange={(e)=>setEmail(e.target.value)} type="email" required className="mt-1 field" />
+          </div>
 
-        {error && <p className="text-red-400 text-sm">{error}</p>}
+          <div>
+            <label className="cv-label">Senha</label>
+            <input value={password} onChange={(e)=>setPassword(e.target.value)} type="password" required className="mt-1 field" />
+          </div>
 
-        <button disabled={loading} className="w-full btn-primary disabled:opacity-60">
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
-      </form>
+          {error ? <p className="cv-error-text">{error}</p> : null}
+
+          <button disabled={loading} className="w-full btn-primary disabled:opacity-60">
+            {loading ? "Entrando..." : "Entrar"}
+          </button>
+        </form>
+      </div>
     </main>
   );
 }
