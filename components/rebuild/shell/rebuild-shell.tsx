@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase-client";
 import {
   Bell,
   CalendarDays,
@@ -78,6 +79,11 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
     router.push(href);
   }
 
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
   return (
     <div className="flex h-screen w-full bg-[#F8FAFC] text-slate-700 antialiased overflow-hidden">
       <aside className="hidden lg:flex w-[260px] bg-slate-900 text-white flex-col flex-shrink-0 z-20 shadow-xl relative">
@@ -147,7 +153,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               <p className="text-sm font-semibold text-white truncate">Equipe Central</p>
               <p className="text-xs text-slate-400 truncate">Gerência</p>
             </div>
-            <button className="text-slate-400 hover:text-white transition-colors" type="button" aria-label="Sair">
+            <button className="text-slate-400 hover:text-white transition-colors" type="button" aria-label="Sair" onClick={handleLogout}>
               <LogOut size={18} />
             </button>
           </div>
