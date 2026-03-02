@@ -998,6 +998,9 @@ export default function RebuildOperatorPage() {
         </Card>
       )}
 
+      </div>
+
+      {activeSection === "lancamentos" && (
       <section className="rb-operator-layout" aria-label="Fluxo operacional">
         <Card className="rb-operator-main">
           <CardTitle>Novo Lançamento</CardTitle>
@@ -1151,7 +1154,7 @@ export default function RebuildOperatorPage() {
           </Card>
         </aside>
       </section>
-      </div>
+      )}
 
       {activeSection === "caixa-pdv" && (
         <div className="space-y-4">
