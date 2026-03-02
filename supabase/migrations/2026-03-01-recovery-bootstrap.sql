@@ -126,6 +126,16 @@ create table if not exists public.cash_movements (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.time_punches (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles(user_id) on delete set null,
+  booth_id uuid references public.booths(id) on delete set null,
+  shift_id uuid references public.shifts(id) on delete set null,
+  punch_type text not null,
+  note text,
+  punched_at timestamptz not null default now()
+);
+
 insert into public.transaction_categories (name, active)
 select x.name, true from (values ('Passagens'), ('Serviços'), ('Outros')) as x(name)
 where not exists (select 1 from public.transaction_categories c where c.name = x.name);
@@ -193,3 +203,44 @@ $$;
 
 grant execute on function public.open_shift(uuid, text) to authenticated;
 grant execute on function public.close_shift(uuid, text, text) to authenticated;
+
+insert into storage.buckets (id, name, public)
+select 'payment-receipts', 'payment-receipts', false
+where not exists (select 1 from storage.buckets where id = 'payment-receipts');
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'storage' and tablename = 'objects' and policyname = 'Payment receipts read own bucket'
+  ) then
+    create policy "Payment receipts read own bucket"
+      on storage.objects
+      for select
+      to authenticated
+      using (bucket_id = 'payment-receipts');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'storage' and tablename = 'objects' and policyname = 'Payment receipts write own bucket'
+  ) then
+    create policy "Payment receipts write own bucket"
+      on storage.objects
+      for insert
+      to authenticated
+      with check (bucket_id = 'payment-receipts');
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'storage' and tablename = 'objects' and policyname = 'Payment receipts update own bucket'
+  ) then
+    create policy "Payment receipts update own bucket"
+      on storage.objects
+      for update
+      to authenticated
+      using (bucket_id = 'payment-receipts')
+      with check (bucket_id = 'payment-receipts');
+  end if;
+end $$;

@@ -36,7 +36,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (profile.role === "admin") router.push("/admin");
+    if (["admin", "tenant_admin", "financeiro"].includes(profile.role)) router.push("/admin");
     else router.push("/operator");
   }
 

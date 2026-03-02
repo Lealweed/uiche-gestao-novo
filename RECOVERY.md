@@ -57,5 +57,5 @@ on conflict (operator_id, booth_id) do update set active = true;
 
 Isso indica dependência de banco ausente ou incompleta. Ação recomendada:
 1. Reaplicar o SQL de recovery.
-2. Verificar se tabelas/rpcs existem: `profiles`, `shifts`, `transactions`, `cash_movements`, `transaction_receipts`, `open_shift`, `close_shift`.
+2. Verificar se tabelas/rpcs existem: `profiles`, `shifts`, `transactions`, `cash_movements`, `time_punches`, `transaction_receipts`, `open_shift`, `close_shift` e bucket `payment-receipts`.
 3. Recarregar a página.
