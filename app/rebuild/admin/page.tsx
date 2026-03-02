@@ -40,6 +40,26 @@ const sections: Record<AdminSection, string> = {
 
 const brl = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return uuidRegex.test(value);
+}
+
+function mapDbError(raw: string, fallback: string) {
+  const msg = raw.toLowerCase();
+  if (msg.includes("duplicate key") || msg.includes("unique constraint") || msg.includes("23505")) {
+    return `${fallback} (registro duplicado).`;
+  }
+  if (msg.includes("violates foreign key") || msg.includes("23503")) {
+    return "Referência inválida. Verifique os dados relacionados antes de salvar.";
+  }
+  if (msg.includes("invalid input syntax for type uuid") || msg.includes("22p02")) {
+    return "UUID inválido. Confira o identificador informado.";
+  }
+  return raw || fallback;
+}
+
 export default function RebuildAdminPage() {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
@@ -72,6 +92,7 @@ export default function RebuildAdminPage() {
   const [newUserId, setNewUserId] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [newUserRole, setNewUserRole] = useState<"operator" | "financeiro" | "tenant_admin">("operator");
+  const [newUserActive, setNewUserActive] = useState(true);
 
   const [historicoOperatorFilter, setHistoricoOperatorFilter] = useState("");
   const [historicoStatusFilter, setHistoricoStatusFilter] = useState("");
@@ -368,14 +389,14 @@ export default function RebuildAdminPage() {
 
   async function toggleRow(table: string, idField: string, id: string, current: boolean, okMsg: string) {
     const res = await supabase.from(table).update({ active: !current }).eq(idField, id);
-    if (res.error) return setNotice(`Não foi possível atualizar o status: ${res.error.message}`);
+    if (res.error) return setNotice(`Não foi possível atualizar o status: ${mapDbError(res.error.message, "Falha ao atualizar status")}`);
     setNotice(okMsg);
     await loadAll();
   }
 
   async function updateUserRole(userId: string, role: "tenant_admin" | "operator" | "financeiro") {
     const res = await supabase.from("profiles").update({ role }).eq("user_id", userId);
-    if (res.error) return setNotice(`Não foi possível atualizar o papel do usuário: ${res.error.message}`);
+    if (res.error) return setNotice(`Não foi possível atualizar o papel do usuário: ${mapDbError(res.error.message, "Falha ao atualizar papel")}`);
     setNotice("Papel de usuário atualizado com sucesso.");
     await loadAll();
   }
@@ -423,16 +444,17 @@ export default function RebuildAdminPage() {
   async function createCategory() {
     if (!categoryName.trim()) return setNotice("Informe o nome da categoria.");
     const res = await supabase.from("transaction_categories").insert({ name: categoryName.trim(), active: true });
-    if (res.error) return setNotice(`Não foi possível cadastrar a categoria: ${res.error.message}`);
+    if (res.error) return setNotice(`Não foi possível cadastrar a categoria: ${mapDbError(res.error.message, "Falha ao salvar categoria")}`);
     setCategoryName("");
     setNotice("Categoria cadastrada com sucesso.");
     await loadAll();
   }
 
   async function createSubcategory() {
-    if (!subCategoryName.trim() || !subCategoryParentId) return setNotice("Informe a categoria e o nome da subcategoria.");
+    if (!subCategoryParentId) return setNotice("Selecione uma categoria antes de cadastrar a subcategoria.");
+    if (!subCategoryName.trim()) return setNotice("Informe o nome da subcategoria.");
     const res = await supabase.from("transaction_subcategories").insert({ name: subCategoryName.trim(), category_id: subCategoryParentId, active: true });
-    if (res.error) return setNotice(`Não foi possível cadastrar a subcategoria: ${res.error.message}`);
+    if (res.error) return setNotice(`Não foi possível cadastrar a subcategoria: ${mapDbError(res.error.message, "Falha ao salvar subcategoria")}`);
     setSubCategoryName("");
     setSubCategoryParentId("");
     setNotice("Subcategoria cadastrada com sucesso.");
@@ -447,7 +469,7 @@ export default function RebuildAdminPage() {
 
     if (existingLink && !existingLink.active) {
       const reactivate = await supabase.from("operator_booths").update({ active: true }).eq("id", existingLink.id);
-      if (reactivate.error) return setNotice(`Não foi possível reativar o vínculo: ${reactivate.error.message}`);
+      if (reactivate.error) return setNotice(`Não foi possível reativar o vínculo: ${mapDbError(reactivate.error.message, "Falha ao reativar vínculo")}`);
       setLinkOperatorId("");
       setLinkBoothId("");
       setNotice("Vínculo reativado com sucesso.");
@@ -456,7 +478,7 @@ export default function RebuildAdminPage() {
     }
 
     const res = await supabase.from("operator_booths").insert({ operator_id: linkOperatorId, booth_id: linkBoothId, active: true });
-    if (res.error) return setNotice(`Não foi possível criar o vínculo: ${res.error.message}`);
+    if (res.error) return setNotice(`Não foi possível criar o vínculo: ${mapDbError(res.error.message, "Falha ao criar vínculo")}`);
     setLinkOperatorId("");
     setLinkBoothId("");
     setNotice("Vínculo criado com sucesso.");
@@ -661,13 +683,15 @@ export default function RebuildAdminPage() {
           {filteredHistorico.length === 0 ? <Empty text="Sem transações para os filtros selecionados." /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Operador</th><th className="p-2 text-left">Guichê</th><th className="p-2 text-right">Valor</th><th className="p-2 text-left">Status</th></tr></thead>
+                <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Operador</th><th className="p-2 text-left">Guichê</th><th className="p-2 text-left">Categoria</th><th className="p-2 text-left">Pagamento</th><th className="p-2 text-right">Valor</th><th className="p-2 text-left">Status</th></tr></thead>
                 <tbody>
                   {filteredHistorico.slice(0, 160).map((tx) => (
                     <tr key={tx.id} className="border-t">
                       <td className="p-2">{new Date(tx.sold_at).toLocaleString("pt-BR")}</td>
                       <td className="p-2">{operatorMap.get(tx.operator_id || "") || "Sem operador"}</td>
                       <td className="p-2">{boothMap.get(tx.booth_id || "") || "Sem guichê"}</td>
+                      <td className="p-2">{categoryMap.get(tx.category_id || "") || "Sem categoria"}</td>
+                      <td className="p-2">{tx.payment_method.toUpperCase()}</td>
                       <td className="p-2 text-right">{brl(Number(tx.amount || 0))}</td>
                       <td className="p-2">{tx.status === "posted" ? "Lançado" : "Cancelado"}</td>
                     </tr>
@@ -711,15 +735,19 @@ export default function RebuildAdminPage() {
         <SectionBox title="Usuários" subtitle="Gestão de perfis (criação, papel e status).">
           <div className="rounded-lg border p-3 mb-4">
             <p className="font-semibold text-slate-800 mb-2">Novo usuário</p>
-            <div className="grid md:grid-cols-4 gap-2">
-              <input className="border rounded-lg px-3 py-2" placeholder="ID do usuário (UUID)" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
+            <div className="grid md:grid-cols-5 gap-2">
+              <input className="border rounded-lg px-3 py-2" placeholder="UUID do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
               <input className="border rounded-lg px-3 py-2" placeholder="Nome completo" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
               <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "tenant_admin" | "operator" | "financeiro")}>
                 <option value="operator">Operador</option>
                 <option value="financeiro">Financeiro</option>
                 <option value="tenant_admin">Admin do Tenant</option>
               </select>
-              <button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createUserProfile}>Criar/Atualizar</button>
+              <select className="border rounded-lg px-3 py-2" value={newUserActive ? "1" : "0"} onChange={(e) => setNewUserActive(e.target.value === "1")}>
+                <option value="1">Ativo</option>
+                <option value="0">Inativo</option>
+              </select>
+              <button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createUserProfile}>Criar perfil</button>
             </div>
           </div>
           {users.length === 0 ? <Empty text="Nenhum usuário cadastrado." /> : (
@@ -866,6 +894,16 @@ function CrudPanel({ title, createForm, items }: { title: string; createForm: Re
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
 
 
 
