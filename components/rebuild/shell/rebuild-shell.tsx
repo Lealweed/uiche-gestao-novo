@@ -29,13 +29,12 @@ const systemNavigation = [
 ] as const;
 
 const operatorNavigation = [
-  { href: "/rebuild/operator#dashboard", label: "Resumo do Turno", section: "dashboard", Icon: LayoutDashboard },
-  { href: "/rebuild/operator#transacoes", label: "Lançamentos", section: "transacoes", Icon: ScanSearch },
-  { href: "/rebuild/operator#controle-caixa", label: "Caixa PDV", section: "controle-caixa", Icon: Ticket },
-  { href: "/rebuild/operator#clientes", label: "Ponto Digital", section: "clientes", Icon: Users },
+  { href: "/rebuild/operator#resumo", label: "Resumo do Turno", section: "resumo", Icon: LayoutDashboard },
+  { href: "/rebuild/operator#lancamentos", label: "Lançamentos", section: "lancamentos", Icon: ScanSearch },
+  { href: "/rebuild/operator#caixa-pdv", label: "Caixa PDV", section: "caixa-pdv", Icon: Ticket },
+  { href: "/rebuild/operator#ponto-digital", label: "Ponto Digital", section: "ponto-digital", Icon: Users },
   { href: "/rebuild/operator#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },
 ] as const;
-const financeiroNavigation = [{ href: "/rebuild/financeiro", label: "Painel Financeiro", Icon: Grid2x2 }] as const;
 
 const adminSectionLabels: Record<string, string> = {
   dashboard: "Dashboard",
@@ -47,10 +46,10 @@ const adminSectionLabels: Record<string, string> = {
 };
 
 const operatorSectionLabels: Record<string, string> = {
-  dashboard: "Resumo do Turno",
-  "controle-caixa": "Caixa PDV",
-  transacoes: "Lançamentos",
-  clientes: "Ponto Digital",
+  resumo: "Resumo do Turno",
+  "caixa-pdv": "Caixa PDV",
+  lancamentos: "Lançamentos",
+  "ponto-digital": "Ponto Digital",
   configuracoes: "Configurações",
 };
 
@@ -86,7 +85,9 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   const systemNav = isOperatorRoute ? [] : systemNavigation;
 
   function isNavActive(itemHref: string, section?: string) {
-    if (itemHref === "/rebuild/operator") return pathname === "/rebuild/operator";
+    if (pathname.startsWith("/rebuild/operator")) {
+      return section ? currentSection === section : currentSection === "resumo";
+    }
     if (!pathname.startsWith("/rebuild/admin")) return false;
     return section ? currentSection === section : currentSection === "dashboard";
   }
@@ -196,7 +197,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               </div>
               <input
                 className="block w-full pl-10 pr-3 py-2 border-none rounded-lg leading-5 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#0da2e7] sm:text-sm"
-                placeholder="Buscar transação, cliente ou operador..."
+                placeholder={isOperatorRoute ? "Buscar lançamento, referência ou comprovante..." : "Buscar transação, cliente ou operador..."}
                 type="text"
               />
             </div>
@@ -255,6 +256,9 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+
+
 
 
 

@@ -25,6 +25,11 @@ type CashMovement = {
   note: string | null;
   created_at: string;
 };
+type TimePunch = {
+  id: string;
+  punch_type: "entrada" | "pausa_inicio" | "pausa_fim" | "saida";
+  punched_at: string;
+};
 type TxBase = {
   id: string;
   amount: number;
@@ -69,6 +74,7 @@ export default function RebuildOperatorPage() {
     transactions: true,
     receipts: true,
     cashMovements: true,
+    timePunches: true,
   });
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -79,6 +85,7 @@ export default function RebuildOperatorPage() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [transactions, setTransactions] = useState<TxView[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
+  const [timePunches, setTimePunches] = useState<TimePunch[]>([]);
 
   const [boothId, setBoothId] = useState("");
   const [companyId, setCompanyId] = useState("");
@@ -253,6 +260,29 @@ export default function RebuildOperatorPage() {
     setCashMovements((res.data as CashMovement[] | null) ?? []);
   }
 
+
+  async function loadTimePunches() {
+    if (!userId) return;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const res = await supabase
+      .from("time_punches")
+      .select("id,punch_type,punched_at")
+      .eq("user_id", userId)
+      .gte("punched_at", today.toISOString())
+      .order("punched_at", { ascending: false })
+      .limit(80);
+
+    if (res.error) {
+      addWarning("Ponto Digital", res.error.message);
+      if (isMissingStructure(res.error.message)) setAvailability((prev) => ({ ...prev, timePunches: false }));
+      setTimePunches([]);
+      return;
+    }
+
+    setTimePunches((res.data as TimePunch[] | null) ?? []);
+  }
   async function bootstrap() {
     setLoading(true);
     setError(null);
@@ -266,6 +296,7 @@ export default function RebuildOperatorPage() {
       transactions: true,
       receipts: true,
       cashMovements: true,
+      timePunches: true,
     });
 
     try {
@@ -333,10 +364,11 @@ export default function RebuildOperatorPage() {
       setShift(openShift);
 
       if (openShift) {
-        await Promise.all([loadTransactions(openShift.id), loadCashMovements(openShift.id)]);
+        await Promise.all([loadTransactions(openShift.id), loadCashMovements(openShift.id), loadTimePunches()]);
       } else {
         setTransactions([]);
         setCashMovements([]);
+        await loadTimePunches();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar o painel do operador.");
@@ -407,7 +439,7 @@ export default function RebuildOperatorPage() {
     }
 
     setShift(newShift);
-    await Promise.all([loadTransactions(newShift.id), loadCashMovements(newShift.id)]);
+    await Promise.all([loadTransactions(newShift.id), loadCashMovements(newShift.id), loadTimePunches()]);
 
     setBusy(null);
     setFeedback("Turno aberto com sucesso.");
@@ -440,6 +472,7 @@ export default function RebuildOperatorPage() {
     setShift(null);
     setTransactions([]);
     setCashMovements([]);
+    await loadTimePunches();
     setBusy(null);
     setFeedback("Turno encerrado com sucesso.");
   }
@@ -462,6 +495,22 @@ export default function RebuildOperatorPage() {
       return;
     }
 
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setFeedback("Informe um valor válido maior que zero.");
+      return;
+    }
+
+    if (reference.trim().length > 60) {
+      setFeedback("A referência deve ter no máximo 60 caracteres.");
+      return;
+    }
+
+    if (note.trim().length > 280) {
+      setFeedback("A observação deve ter no máximo 280 caracteres.");
+      return;
+    }
+
     setBusy("transaction");
     setFeedback(null);
 
@@ -473,7 +522,7 @@ export default function RebuildOperatorPage() {
       category_id: categoryId,
       subcategory_id: subcategoryId,
       payment_method: paymentMethod,
-      amount: Number(amount),
+      amount: parsedAmount,
       ticket_reference: reference.trim() || null,
       note: note.trim() || null,
       commission_percent: null,
@@ -522,6 +571,17 @@ export default function RebuildOperatorPage() {
       return;
     }
 
+    const parsedCashAmount = Number(cashAmount);
+    if (!Number.isFinite(parsedCashAmount) || parsedCashAmount <= 0) {
+      setFeedback("Informe um valor de caixa válido maior que zero.");
+      return;
+    }
+
+    if (cashNote.trim().length > 180) {
+      setFeedback("A observação do caixa deve ter no máximo 180 caracteres.");
+      return;
+    }
+
     setBusy("cash");
     setFeedback(null);
 
@@ -530,7 +590,7 @@ export default function RebuildOperatorPage() {
       booth_id: shift.booth_id,
       user_id: userId,
       movement_type: cashType,
-      amount: Number(cashAmount),
+      amount: parsedCashAmount,
       note: cashNote.trim() || null,
     });
 
@@ -564,6 +624,7 @@ export default function RebuildOperatorPage() {
       setFeedback(`Não foi possível registrar ponto (${type}): ${res.error.message}`);
       return;
     }
+    await loadTimePunches();
     setFeedback(`Ponto registrado: ${type}.`);
   }
 
@@ -925,10 +986,25 @@ export default function RebuildOperatorPage() {
           <CardTitle>Ponto Digital</CardTitle>
           <CardDescription>Registro rápido de jornada e histórico operacional do turno.</CardDescription>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button className="btn-ghost" onClick={() => registerPunch("entrada")}>Entrada</button>
-            <button className="btn-ghost" onClick={() => registerPunch("pausa_inicio")}>Pausa início</button>
-            <button className="btn-ghost" onClick={() => registerPunch("pausa_fim")}>Pausa fim</button>
-            <button className="btn-ghost" onClick={() => registerPunch("saida")}>Saída</button>
+            <button className="btn-ghost" onClick={() => registerPunch("entrada")} disabled={busy === "punch-entrada"}>Entrada</button>
+            <button className="btn-ghost" onClick={() => registerPunch("pausa_inicio")} disabled={busy === "punch-pausa_inicio"}>Pausa início</button>
+            <button className="btn-ghost" onClick={() => registerPunch("pausa_fim")} disabled={busy === "punch-pausa_fim"}>Pausa fim</button>
+            <button className="btn-ghost" onClick={() => registerPunch("saida")} disabled={busy === "punch-saida"}>Saída</button>
+          </div>
+          <div className="mt-4 rounded-lg border p-3">
+            <p className="text-sm font-semibold text-slate-800">Histórico do dia</p>
+            {timePunches.length === 0 ? (
+              <p className="text-xs text-slate-500 mt-2">Nenhuma batida registrada hoje.</p>
+            ) : (
+              <ul className="mt-2 space-y-2 max-h-[260px] overflow-auto pr-1">
+                {timePunches.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between text-sm border-b pb-1">
+                    <span className="font-medium text-slate-700">{p.punch_type.replace("_", " ")}</span>
+                    <span className="text-xs text-slate-500">{new Date(p.punched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-3">As batidas de ponto ficam disponíveis para o painel administrativo.</p>
         </Card>
@@ -948,6 +1024,8 @@ export default function RebuildOperatorPage() {
     </div>
   );
 }
+
+
 
 
 
