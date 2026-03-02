@@ -41,6 +41,7 @@ type TxBase = {
 };
 type TxView = TxBase & { company_name: string; receipt_count: number };
 type SectionWarning = { section: string; message: string };
+type FeedbackTone = "success" | "error" | "info";
 
 function brl(value: number) {
   return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -63,6 +64,8 @@ export default function RebuildOperatorPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<FeedbackTone>("info");
+  const [txErrors, setTxErrors] = useState<Partial<Record<"amount" | "companyId" | "categoryId" | "subcategoryId", string>>>({});
   const [sectionWarnings, setSectionWarnings] = useState<SectionWarning[]>([]);
   const [availability, setAvailability] = useState({
     operatorBooths: true,
@@ -80,6 +83,7 @@ export default function RebuildOperatorPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [shift, setShift] = useState<Shift | null>(null);
   const [booths, setBooths] = useState<Array<{ booth_id: string; booth_name: string }>>([]);
+  const linkedBoothIds = useMemo(() => new Set(booths.map((b) => b.booth_id)), [booths]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
@@ -185,6 +189,19 @@ export default function RebuildOperatorPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if (!event.altKey) return;
+      if (event.key === "1") { event.preventDefault(); setPaymentMethod("pix"); }
+      if (event.key === "2") { event.preventDefault(); setPaymentMethod("credit"); }
+      if (event.key === "3") { event.preventDefault(); setPaymentMethod("debit"); }
+      if (event.key === "4") { event.preventDefault(); setPaymentMethod("cash"); }
+    };
+
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
+
   const sideHistory = useMemo(() => {
     const txEntries = transactions.map((tx) => ({
       id: `tx-${tx.id}`,
@@ -210,6 +227,11 @@ export default function RebuildOperatorPage() {
       .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
       .slice(0, 12);
   }, [transactions, cashMovements]);
+
+  function setFeedbackMessage(message: string, tone: FeedbackTone = "info") {
+    setFeedbackTone(tone);
+    setFeedback(message);
+  }
 
   function addWarning(section: string, message: string) {
     setSectionWarnings((prev) => {
@@ -417,58 +439,70 @@ export default function RebuildOperatorPage() {
 
   async function openShift() {
     if (!userId) {
-      setFeedback("Sessão inválida. Faça login novamente.");
+      setFeedbackMessage("Sessão inválida. Faça login novamente.", "error");
+      return;
+    }
+
+    if (shift) {
+      setFeedbackMessage("Já existe um turno aberto. Encerre o turno atual antes de abrir outro.", "error");
       return;
     }
 
     if (!boothId) {
-      setFeedback("Selecione um guichê para abrir o turno.");
+      setFeedbackMessage("Selecione um guichê para abrir o turno.", "error");
+      return;
+    }
+
+    if (!linkedBoothIds.has(boothId)) {
+      setFeedbackMessage("O guichê selecionado não está vinculado ao seu usuário. Solicite ajuste ao administrador.", "error");
       return;
     }
 
     setBusy("open-shift");
     setFeedback(null);
 
+    const existingOpenShift = await supabase
+      .from("shifts")
+      .select("id,booth_id,status")
+      .eq("operator_id", userId)
+      .eq("status", "open")
+      .order("opened_at", { ascending: false })
+      .limit(1);
+
+    if (existingOpenShift.error) {
+      setBusy(null);
+      setFeedbackMessage(`Não foi possível validar turno existente: ${existingOpenShift.error.message}`, "error");
+      return;
+    }
+
+    const existingShift = ((existingOpenShift.data as Shift[] | null) ?? [])[0] ?? null;
+    if (existingShift) {
+      setShift(existingShift);
+      await Promise.all([loadTransactions(existingShift.id), loadCashMovements(existingShift.id), loadTimePunches()]);
+      setBusy(null);
+      setFeedbackMessage("Você já possui um turno aberto e ele foi retomado automaticamente.", "info");
+      return;
+    }
+
     const { data, error: rpcError } = await supabase.rpc("open_shift", { p_booth_id: boothId, p_ip: null });
 
     let newShift: Shift | null = null;
     if (rpcError) {
-      const existingOpenShift = await supabase
-        .from("shifts")
-        .select("id,booth_id,status")
-        .eq("operator_id", userId)
-        .eq("status", "open")
-        .order("opened_at", { ascending: false })
-        .limit(1);
-
-      if (existingOpenShift.error) {
+      const fallback = await supabase.from("shifts").insert({ booth_id: boothId, operator_id: userId, status: "open" }).select("id,booth_id,status").single();
+      if (fallback.error) {
         setBusy(null);
-        setFeedback(`Não foi possível abrir o turno: ${rpcError.message}. Falha ao verificar turno existente: ${existingOpenShift.error.message}`);
+        setFeedbackMessage(`Não foi possível abrir o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`, "error");
         return;
       }
-
-      const existingShift = ((existingOpenShift.data as Shift[] | null) ?? [])[0] ?? null;
-
-      if (existingShift) {
-        newShift = existingShift;
-        addWarning("Turno", "RPC open_shift indisponível. Turno aberto existente foi reutilizado.");
-      } else {
-        const fallback = await supabase.from("shifts").insert({ booth_id: boothId, operator_id: userId, status: "open" }).select("id,booth_id,status").single();
-        if (fallback.error) {
-          setBusy(null);
-          setFeedback(`Não foi possível abrir o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`);
-          return;
-        }
-        newShift = fallback.data as Shift;
-        addWarning("Turno", "RPC open_shift indisponível. Foi usado fallback direto na tabela shifts.");
-      }
+      newShift = fallback.data as Shift;
+      addWarning("Turno", "RPC open_shift indisponível. Foi usado fallback direto na tabela shifts.");
     } else {
       newShift = data as Shift;
     }
 
     if (!newShift) {
       setBusy(null);
-      setFeedback("Não foi possível determinar o turno aberto.");
+      setFeedbackMessage("Não foi possível determinar o turno aberto.", "error");
       return;
     }
 
@@ -476,7 +510,7 @@ export default function RebuildOperatorPage() {
     await Promise.all([loadTransactions(newShift.id), loadCashMovements(newShift.id), loadTimePunches()]);
 
     setBusy(null);
-    setFeedback("Turno aberto com sucesso.");
+    setFeedbackMessage("Turno aberto com sucesso.", "success");
   }
 
   async function closeShift() {
@@ -484,7 +518,7 @@ export default function RebuildOperatorPage() {
 
     const pendencias = pendingReceiptTxs.length;
     if (pendencias > 0) {
-      setFeedback(`Existem ${pendencias} lançamento(s) de cartão sem comprovante.`);
+      setFeedbackMessage(`Fechamento bloqueado: existem ${pendencias} lançamento(s) de cartão sem comprovante. Anexe os comprovantes pendentes para continuar.`, "error");
       return;
     }
 
@@ -498,7 +532,7 @@ export default function RebuildOperatorPage() {
       const fallback = await supabase.from("shifts").update({ status: "closed", closed_at: new Date().toISOString() }).eq("id", shift.id).eq("status", "open");
       if (fallback.error) {
         setBusy(null);
-        setFeedback(`Não foi possível encerrar o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`);
+        setFeedbackMessage(`Não foi possível encerrar o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`, "error");
         return;
       }
       addWarning("Turno", "RPC close_shift indisponível. Foi usado fallback direto na tabela shifts.");
@@ -511,11 +545,17 @@ export default function RebuildOperatorPage() {
     setCloseNotes("");
     await loadTimePunches();
     setBusy(null);
-    setFeedback("Turno encerrado com sucesso.");
+    setFeedbackMessage("Turno encerrado com sucesso.", "success");
   }
 
   function requestCloseShift() {
-    if (!shift) return;
+    if (!shift) {
+      setFeedbackMessage("Nenhum turno aberto para encerrar.", "error");
+      return;
+    }
+    if (pendingReceiptTxs.length > 0) {
+      setFeedbackMessage(`Fechamento bloqueado: existem ${pendingReceiptTxs.length} comprovante(s) de cartão pendente(s).`, "error");
+    }
     setShowCloseModal(true);
   }
 
@@ -523,36 +563,43 @@ export default function RebuildOperatorPage() {
     e.preventDefault();
 
     if (!shift || !userId) {
-      setFeedback("Abra um turno para lançar vendas.");
+      setFeedbackMessage("Abra um turno para lançar vendas.", "error");
       return;
     }
 
     if (!availability.transactions || !availability.companies || !availability.categories || !availability.subcategories) {
-      setFeedback("Lançamentos indisponíveis até corrigir as tabelas base (transactions, companies, transaction_categories e transaction_subcategories). Consulte RECOVERY.md.");
+      setFeedbackMessage("Lançamentos indisponíveis até corrigir as tabelas base (transactions, companies, transaction_categories e transaction_subcategories). Consulte RECOVERY.md.", "error");
       return;
     }
 
-    if (!companyId || !categoryId || !subcategoryId || !amount) {
-      setFeedback("Preencha todos os campos obrigatórios do lançamento.");
-      return;
-    }
+    const nextErrors: Partial<Record<"amount" | "companyId" | "categoryId" | "subcategoryId", string>> = {};
+    if (!amount) nextErrors.amount = "Informe o valor da transação.";
+    if (!companyId) nextErrors.companyId = "Selecione a empresa/fornecedor.";
+    if (!categoryId) nextErrors.categoryId = "Selecione a categoria.";
+    if (!subcategoryId) nextErrors.subcategoryId = "Selecione a subcategoria.";
 
     const parsedAmount = Number(amount);
-    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      setFeedback("Informe um valor válido maior que zero.");
+    if (amount && (!Number.isFinite(parsedAmount) || parsedAmount <= 0)) {
+      nextErrors.amount = "Informe um valor válido maior que zero.";
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setTxErrors(nextErrors);
+      setFeedbackMessage("Revise os campos obrigatórios destacados para continuar.", "error");
       return;
     }
 
     if (reference.trim().length > 60) {
-      setFeedback("A referência deve ter no máximo 60 caracteres.");
+      setFeedbackMessage("A referência deve ter no máximo 60 caracteres.", "error");
       return;
     }
 
     if (note.trim().length > 280) {
-      setFeedback("A observação deve ter no máximo 280 caracteres.");
+      setFeedbackMessage("A observação deve ter no máximo 280 caracteres.", "error");
       return;
     }
 
+    setTxErrors({});
     setBusy("transaction");
     setFeedback(null);
 
@@ -572,7 +619,7 @@ export default function RebuildOperatorPage() {
 
     if (insertRes.error || !insertRes.data?.id) {
       setBusy(null);
-      setFeedback(`Falha ao salvar lançamento: ${insertRes.error?.message || "ID não retornado."}`);
+      setFeedbackMessage(`Falha ao salvar lançamento: ${insertRes.error?.message || "ID não retornado."}`, "error");
       return;
     }
 
@@ -580,7 +627,7 @@ export default function RebuildOperatorPage() {
       const uploaded = await uploadReceiptFile(insertRes.data.id, receiptFile);
       if (!uploaded.ok) {
         setBusy(null);
-        setFeedback(uploaded.message);
+        setFeedbackMessage(uploaded.message, "error");
         return;
       }
     }
@@ -592,7 +639,7 @@ export default function RebuildOperatorPage() {
     await loadTransactions(shift.id);
 
     setBusy(null);
-    setFeedback("Lançamento registrado com sucesso.");
+    setFeedbackMessage("Lançamento registrado com sucesso.", "success");
   }
 
   async function submitCashMovement(e: FormEvent) {
@@ -780,7 +827,9 @@ export default function RebuildOperatorPage() {
 
       {feedback ? (
         <Card>
-          <p className="rb-card-description" style={{ marginTop: 0 }}>{feedback}</p>
+          <p className={`rb-card-description ${feedbackTone === "error" ? "text-rose-700" : feedbackTone === "success" ? "text-emerald-700" : "text-slate-700"}`} style={{ marginTop: 0 }}>
+            {feedback}
+          </p>
         </Card>
       ) : null}
 
@@ -840,25 +889,28 @@ export default function RebuildOperatorPage() {
 
           <form onSubmit={submitTransaction} className="mt-4 space-y-3">
             <label className="rb-form-label">Valor da transação</label>
-            <input className="field" type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="R$ 0,00" required />
+            <input className={`field ${txErrors.amount ? "border-rose-400" : ""}`} type="number" min="0" step="0.01" value={amount} onChange={(e) => { setAmount(e.target.value); setTxErrors((prev) => ({ ...prev, amount: undefined })); }} placeholder="R$ 0,00" required />
+            {txErrors.amount ? <p className="text-xs text-rose-600 mt-1">{txErrors.amount}</p> : null}
 
             <label className="rb-form-label">Empresa / Fornecedor</label>
-            <select className="field" value={companyId} onChange={(e) => setCompanyId(e.target.value)} required>
+            <select className={`field ${txErrors.companyId ? "border-rose-400" : ""}`} value={companyId} onChange={(e) => { setCompanyId(e.target.value); setTxErrors((prev) => ({ ...prev, companyId: undefined })); }} required>
               <option value="">Selecione a empresa</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
+            {txErrors.companyId ? <p className="text-xs text-rose-600 mt-1">{txErrors.companyId}</p> : null}
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className="rb-form-label">Categoria</label>
                 <select
-                  className="field"
+                  className={`field ${txErrors.categoryId ? "border-rose-400" : ""}`}
                   value={categoryId}
                   onChange={(e) => {
                     const nextCategory = e.target.value;
                     setCategoryId(nextCategory);
+                    setTxErrors((prev) => ({ ...prev, categoryId: undefined, subcategoryId: undefined }));
                     setSubcategoryId(subcategories.find((s) => s.category_id === nextCategory)?.id ?? "");
                   }}
                   required
@@ -868,16 +920,18 @@ export default function RebuildOperatorPage() {
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
+                {txErrors.categoryId ? <p className="text-xs text-rose-600 mt-1">{txErrors.categoryId}</p> : null}
               </div>
 
               <div>
                 <label className="rb-form-label">Subcategoria</label>
-                <select className="field" value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)} required>
+                <select className={`field ${txErrors.subcategoryId ? "border-rose-400" : ""}`} value={subcategoryId} onChange={(e) => { setSubcategoryId(e.target.value); setTxErrors((prev) => ({ ...prev, subcategoryId: undefined })); }} required>
                   <option value="">Selecione a subcategoria</option>
                   {filteredSubcategories.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
+                {txErrors.subcategoryId ? <p className="text-xs text-rose-600 mt-1">{txErrors.subcategoryId}</p> : null}
               </div>
             </div>
 
@@ -885,6 +939,7 @@ export default function RebuildOperatorPage() {
             <input className="field" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ex.: RES-10293" />
 
             <label className="rb-form-label">Método de pagamento</label>
+            <p className="text-xs text-slate-500 -mt-1">Atalhos: Alt+1 PIX • Alt+2 Crédito • Alt+3 Débito • Alt+4 Dinheiro</p>
             <div className="rb-pay-methods">
               {([
                 { id: "pix", label: "PIX" },
@@ -919,7 +974,7 @@ export default function RebuildOperatorPage() {
               <button
                 type="button"
                 className="btn-ghost"
-                onClick={() => { setAmount(""); setCompanyId(""); setReference(""); setNote(""); setReceiptFile(null); }}
+                onClick={() => { setAmount(""); setReference(""); setNote(""); setReceiptFile(null); setTxErrors({}); }}
               >
                 Limpar
               </button>
