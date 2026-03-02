@@ -21,7 +21,6 @@ type Tx = {
 type Company = { id: string; name: string; active: boolean };
 type Booth = { id: string; code: string; name: string; active: boolean };
 type Category = { id: string; name: string; active: boolean };
-type Subcategory = { id: string; name: string; category_id: string; active: boolean };
 type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
 type TimePunch = { id: string; user_id?: string | null; booth_id?: string | null; punch_type: string; punched_at: string; note?: string | null };
 type CashMovement = { id: string; user_id?: string | null; booth_id?: string | null; movement_type: string; amount: number; created_at: string; note?: string | null };
@@ -76,7 +75,6 @@ export default function RebuildAdminPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [booths, setBooths] = useState<Booth[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [links, setLinks] = useState<OperatorBooth[]>([]);
   const [timePunches, setTimePunches] = useState<TimePunch[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
@@ -84,9 +82,6 @@ export default function RebuildAdminPage() {
   const [companyName, setCompanyName] = useState("");
   const [boothCode, setBoothCode] = useState("");
   const [boothName, setBoothName] = useState("");
-  const [categoryName, setCategoryName] = useState("");
-  const [subCategoryName, setSubCategoryName] = useState("");
-  const [subCategoryParentId, setSubCategoryParentId] = useState("");
   const [linkOperatorId, setLinkOperatorId] = useState("");
   const [linkBoothId, setLinkBoothId] = useState("");
   const [newUserId, setNewUserId] = useState("");
@@ -145,6 +140,31 @@ export default function RebuildAdminPage() {
   }, [openShifts]);
 
   const postedTxs = useMemo(() => txs.filter((t) => t.status === "posted"), [txs]);
+
+  const boothStatusCards = useMemo(() => {
+    const activeLinks = links.filter((link) => link.active);
+
+    return booths
+      .filter((booth) => booth.active)
+      .map((booth) => {
+        const open = openShifts.filter((shift) => shift.booth_id === booth.id).length;
+        const closed = closedShifts.filter((shift) => shift.booth_id === booth.id).length;
+        const operatorsLinked = activeLinks.filter((link) => link.booth_id === booth.id).length;
+        const cashToday = cashMovements.filter((move) => move.booth_id === booth.id && move.created_at.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
+
+        return {
+          id: booth.id,
+          code: booth.code,
+          name: booth.name,
+          open,
+          closed,
+          operatorsLinked,
+          cashToday,
+          status: open > 0 ? "em-atendimento" : "sem-turno",
+        };
+      })
+      .sort((a, b) => a.code.localeCompare(b.code, "pt-BR"));
+  }, [booths, openShifts, closedShifts, links, cashMovements]);
 
   const dashboardCards = useMemo(() => {
     const today = new Date();
@@ -353,14 +373,13 @@ export default function RebuildAdminPage() {
     }
 
     try {
-      const [nextProfiles, nextShifts, nextTxs, nextCompanies, nextBooths, nextCategories, nextSubcategories, nextLinks, nextPunches, nextCash] = await Promise.all([
+      const [nextProfiles, nextShifts, nextTxs, nextCompanies, nextBooths, nextCategories, nextLinks, nextPunches, nextCash] = await Promise.all([
         loadChunk<Profile>("Usuários", supabase.from("profiles").select("user_id,full_name,role,active,tenant_id").order("full_name")),
         loadChunk<Shift>("Controle de turno", supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120)),
         loadChunk<Tx>("Histórico", supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400)),
         loadChunk<Company>("Empresas", supabase.from("companies").select("id,name,active").order("name")),
         loadChunk<Booth>("Guichês", supabase.from("booths").select("id,code,name,active").order("name")),
         loadChunk<Category>("Categorias", supabase.from("transaction_categories").select("id,name,active").order("name")),
-        loadChunk<Subcategory>("Subcategorias", supabase.from("transaction_subcategories").select("id,name,category_id,active").order("name")),
         loadChunk<OperatorBooth>("Vínculos operador-guichê", supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250)),
         loadChunk<TimePunch>("Ponto", supabase.from("time_punches").select("id,user_id,booth_id,punch_type,punched_at,note").order("punched_at", { ascending: false }).limit(300)),
         loadChunk<CashMovement>("Caixa PDV", supabase.from("cash_movements").select("id,user_id,booth_id,movement_type,amount,created_at,note").order("created_at", { ascending: false }).limit(300)),
@@ -372,7 +391,6 @@ export default function RebuildAdminPage() {
       setCompanies(nextCompanies);
       setBooths(nextBooths);
       setCategories(nextCategories);
-      setSubcategories(nextSubcategories);
       setLinks(nextLinks);
       setTimePunches(nextPunches);
       setCashMovements(nextCash);
@@ -406,19 +424,21 @@ export default function RebuildAdminPage() {
     const userId = newUserId.trim();
     const fullName = newUserName.trim();
     if (!userId || !fullName) return setNotice("Informe ID do usuário e nome completo.");
+    if (!isUuid(userId)) return setNotice("Informe um UUID válido para o usuário.");
 
     const res = await supabase.from("profiles").upsert({
       user_id: userId,
       full_name: fullName,
       role: newUserRole,
-      active: true,
+      active: newUserActive,
     });
 
     if (res.error) return setNotice(`Não foi possível criar o usuário: ${res.error.message}`);
     setNewUserId("");
     setNewUserName("");
     setNewUserRole("operator");
-    setNotice("Usuário criado/atualizado com sucesso.");
+    setNewUserActive(true);
+    setNotice("Operador/usuário salvo com sucesso.");
     await loadAll();
   }
 
@@ -441,25 +461,6 @@ export default function RebuildAdminPage() {
     await loadAll();
   }
 
-  async function createCategory() {
-    if (!categoryName.trim()) return setNotice("Informe o nome da categoria.");
-    const res = await supabase.from("transaction_categories").insert({ name: categoryName.trim(), active: true });
-    if (res.error) return setNotice(`Não foi possível cadastrar a categoria: ${mapDbError(res.error.message, "Falha ao salvar categoria")}`);
-    setCategoryName("");
-    setNotice("Categoria cadastrada com sucesso.");
-    await loadAll();
-  }
-
-  async function createSubcategory() {
-    if (!subCategoryParentId) return setNotice("Selecione uma categoria antes de cadastrar a subcategoria.");
-    if (!subCategoryName.trim()) return setNotice("Informe o nome da subcategoria.");
-    const res = await supabase.from("transaction_subcategories").insert({ name: subCategoryName.trim(), category_id: subCategoryParentId, active: true });
-    if (res.error) return setNotice(`Não foi possível cadastrar a subcategoria: ${mapDbError(res.error.message, "Falha ao salvar subcategoria")}`);
-    setSubCategoryName("");
-    setSubCategoryParentId("");
-    setNotice("Subcategoria cadastrada com sucesso.");
-    await loadAll();
-  }
 
   async function createLink() {
     if (!linkOperatorId || !linkBoothId) return setNotice("Selecione operador e guichê para vincular.");
@@ -613,7 +614,26 @@ export default function RebuildAdminPage() {
       )}
 
       {activeSection === "controle-turno" && (
-        <SectionBox title="Controle de Turno" subtitle="Visão de turnos, ponto e caixa PDV por operador.">
+        <SectionBox title="Controle de Turno" subtitle="Visão por guichê com status rápido, seguida das listas de turnos, ponto e caixa.">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+            {boothStatusCards.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500 col-span-full">Nenhum guichê ativo encontrado para montar o painel.</div>
+            ) : boothStatusCards.map((card) => (
+              <div key={card.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="font-bold text-slate-900">{card.code}</p>
+                  <span className={`text-xs px-2 py-1 rounded-full ${card.status === "em-atendimento" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{card.status === "em-atendimento" ? "Em atendimento" : "Sem turno"}</span>
+                </div>
+                <p className="text-xs text-slate-500 truncate">{card.name}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded-md bg-white border p-2"><p className="text-slate-500">Abertos</p><p className="font-semibold">{card.open}</p></div>
+                  <div className="rounded-md bg-white border p-2"><p className="text-slate-500">Fechados</p><p className="font-semibold">{card.closed}</p></div>
+                  <div className="rounded-md bg-white border p-2"><p className="text-slate-500">Operadores</p><p className="font-semibold">{card.operatorsLinked}</p></div>
+                  <div className="rounded-md bg-white border p-2"><p className="text-slate-500">Mov. caixa hoje</p><p className="font-semibold">{card.cashToday}</p></div>
+                </div>
+              </div>
+            ))}
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
             <div className="rounded-lg border p-3">
               <p className="font-semibold text-slate-800 mb-2">Turnos abertos</p>
@@ -665,7 +685,7 @@ export default function RebuildAdminPage() {
       )}
 
 {activeSection === "historico" && (
-        <SectionBox title="Histórico" subtitle="Tabela de transações com filtros básicos.">
+        <SectionBox title="Histórico" subtitle="Tabela de transações com filtros e painel de operação avançada.">
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
             <select className="border rounded-lg px-3 py-2" value={historicoOperatorFilter} onChange={(e) => setHistoricoOperatorFilter(e.target.value)}>
               <option value="">Todos operadores</option>
@@ -679,6 +699,15 @@ export default function RebuildAdminPage() {
             <select className="border rounded-lg px-3 py-2" value={historicoBoothFilter} onChange={(e) => setHistoricoBoothFilter(e.target.value)}><option value="">Todos guichês</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select>
             <select className="border rounded-lg px-3 py-2" value={historicoCategoryFilter} onChange={(e) => setHistoricoCategoryFilter(e.target.value)}><option value="">Todas categorias</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             <input className="border rounded-lg px-3 py-2" type="date" value={historicoDateFilter} onChange={(e) => setHistoricoDateFilter(e.target.value)} />
+          </div>
+          <div className="rounded-xl border border-slate-200 p-4 mb-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Operação avançada</p>
+                <p className="text-xs text-slate-500">Transações lançadas por dia (últimos 7 dias do filtro atual)</p>
+              </div>
+            </div>
+            <AdvancedOpsChart txs={filteredHistorico} />
           </div>
           {filteredHistorico.length === 0 ? <Empty text="Sem transações para os filtros selecionados." /> : (
             <div className="overflow-x-auto">
@@ -723,6 +752,18 @@ export default function RebuildAdminPage() {
             <Card title="Total de transações" value={String(reportTotals.qty)} />
             <Card title="Ticket médio" value={brl(reportTotals.qty ? reportTotals.total / reportTotals.qty : 0)} />
           </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+            {reportTotals.byBooth.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500 col-span-full">Sem dados por guichê para o período selecionado.</div>
+            ) : reportTotals.byBooth.slice(0, 8).map((item) => (
+              <div key={`booth-card-${item.name}`} className="rounded-xl border p-3 bg-slate-50">
+                <p className="text-xs uppercase text-slate-500">Guichê</p>
+                <p className="font-semibold text-slate-900 truncate">{item.name}</p>
+                <p className="text-sm text-slate-600 mt-2">Transações: <span className="font-semibold">{item.qty}</span></p>
+                <p className="text-sm text-slate-600">Total: <span className="font-semibold">{brl(item.total)}</span></p>
+              </div>
+            ))}
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <MiniTable title="Por operador" rows={reportTotals.byOperator} />
             <MiniTable title="Por guichê" rows={reportTotals.byBooth} />
@@ -732,9 +773,10 @@ export default function RebuildAdminPage() {
       )}
 
       {activeSection === "usuarios" && canManageUsers && (
-        <SectionBox title="Usuários" subtitle="Gestão de perfis (criação, papel e status).">
+        <SectionBox title="Usuários" subtitle="Gestão de perfis com foco em cadastro de operador (papel e status ativos).">
           <div className="rounded-lg border p-3 mb-4">
-            <p className="font-semibold text-slate-800 mb-2">Novo usuário</p>
+            <p className="font-semibold text-slate-800 mb-1">Cadastro de operador / usuário</p>
+            <p className="text-xs text-slate-500 mb-2">Use o UUID do Auth, defina nome, perfil e status inicial.</p>
             <div className="grid md:grid-cols-5 gap-2">
               <input className="border rounded-lg px-3 py-2" placeholder="UUID do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
               <input className="border rounded-lg px-3 py-2" placeholder="Nome completo" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
@@ -747,7 +789,7 @@ export default function RebuildAdminPage() {
                 <option value="1">Ativo</option>
                 <option value="0">Inativo</option>
               </select>
-              <button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createUserProfile}>Criar perfil</button>
+              <button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createUserProfile}>Salvar cadastro</button>
             </div>
           </div>
           {users.length === 0 ? <Empty text="Nenhum usuário cadastrado." /> : (
@@ -780,15 +822,11 @@ export default function RebuildAdminPage() {
       )}
 
 {activeSection === "configuracoes" && canManageUsers && (
-        <SectionBox title="Configurações" subtitle="Gestão de empresas, guichês, categorias, subcategorias e vínculos operador↔guichê.">
+        <SectionBox title="Configurações" subtitle="Gestão de empresas, guichês e vínculos operador↔guichê.">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CrudPanel title="Empresas" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createCompany}>Cadastrar</button></div>} items={companies.map((c) => ({ id: c.id, label: c.name, active: c.active, onToggle: () => toggleRow("companies", "id", c.id, c.active, "Empresa atualizada com sucesso.") }))} />
 
-            <CrudPanel title="Guichês" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 w-28" placeholder="Código" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} /><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nome" value={boothName} onChange={(e) => setBoothName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createBooth}>Cadastrar</button></div>} items={booths.map((b) => ({ id: b.id, label: `${b.code} - ${b.name}`, active: b.active, onToggle: () => toggleRow("booths", "id", b.id, b.active, "Guichê atualizado com sucesso.") }))} />
-
-            <CrudPanel title="Categorias" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova categoria" value={categoryName} onChange={(e) => setCategoryName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createCategory}>Cadastrar</button></div>} items={categories.map((c) => ({ id: c.id, label: c.name, active: c.active, onToggle: () => toggleRow("transaction_categories", "id", c.id, c.active, "Categoria atualizada com sucesso.") }))} />
-
-            <CrudPanel title="Subcategorias" createForm={<div className="flex gap-2 flex-wrap"><select className="border rounded-lg px-3 py-2" value={subCategoryParentId} onChange={(e) => setSubCategoryParentId(e.target.value)}><option value="">Categoria</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova subcategoria" value={subCategoryName} onChange={(e) => setSubCategoryName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createSubcategory}>Cadastrar</button></div>} items={subcategories.map((s) => ({ id: s.id, label: `${s.name} (${categoryMap.get(s.category_id) || "Sem categoria"})`, active: s.active, onToggle: () => toggleRow("transaction_subcategories", "id", s.id, s.active, "Subcategoria atualizada com sucesso.") }))} />
+            <CrudPanel title="Guichês" createForm={<div className="flex gap-2 flex-wrap"><input className="border rounded-lg px-3 py-2 w-28" placeholder="Código (ex.: G01)" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} /><input className="border rounded-lg px-3 py-2 flex-1 min-w-40" placeholder="Nome do guichê (ex.: Guichê Principal)" value={boothName} onChange={(e) => setBoothName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createBooth}>Cadastrar guichê</button></div>} items={booths.map((b) => ({ id: b.id, label: `${b.code} - ${b.name}`, active: b.active, onToggle: () => toggleRow("booths", "id", b.id, b.active, "Guichê atualizado com sucesso.") }))} />
 
             <CrudPanel title="Vínculos operador↔guichê" createForm={<div className="flex gap-2 flex-wrap"><select className="border rounded-lg px-3 py-2" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)}><option value="">Operador</option>{operators.map((o) => <option key={o.user_id} value={o.user_id}>{o.full_name}</option>)}</select><select className="border rounded-lg px-3 py-2" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)}><option value="">Guichê</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createLink}>Vincular</button></div>} items={links.map((l) => ({ id: l.id, label: `${operatorMap.get(l.operator_id) || "Sem operador"} ↔ ${boothMap.get(l.booth_id) || "Sem guichê"}`, active: l.active, onToggle: () => toggleRow("operator_booths", "id", l.id, l.active, "Vínculo atualizado com sucesso.") }))} />
           </div>
@@ -896,18 +934,36 @@ function CrudPanel({ title, createForm, items }: { title: string; createForm: Re
 }
 
 
+function AdvancedOpsChart({ txs }: { txs: Tx[] }) {
+  const points = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const byDay = new Map<string, number>();
 
+    txs.filter((tx) => tx.status === "posted").forEach((tx) => {
+      const key = tx.sold_at.slice(0, 10);
+      byDay.set(key, (byDay.get(key) || 0) + 1);
+    });
 
+    return Array.from({ length: 7 }).map((_, idx) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - idx));
+      const key = d.toISOString().slice(0, 10);
+      return { label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), value: byDay.get(key) || 0 };
+    });
+  }, [txs]);
 
+  const max = Math.max(...points.map((p) => p.value), 1);
 
-
-
-
-
-
-
-
-
-
-
-
+  return (
+    <div className="grid grid-cols-7 gap-2 items-end h-36">
+      {points.map((p) => (
+        <div key={p.label} className="flex flex-col items-center gap-1">
+          <div className="w-full max-w-10 rounded-t bg-sky-500/80" style={{ height: `${Math.max((p.value / max) * 100, 6)}%` }}></div>
+          <span className="text-[10px] text-slate-500">{p.label}</span>
+          <span className="text-[11px] font-semibold text-slate-700">{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
