@@ -49,9 +49,13 @@ function mapDbError(raw: string, fallback: string) {
     return "Referência inválida. Verifique os dados relacionados antes de salvar.";
   }
   if (msg.includes("invalid input syntax for type uuid") || msg.includes("22p02")) {
-    return "ID interno inválido. Confira o identificador informado.";
+    return "Identificador inválido. Confira os dados informados e tente novamente.";
   }
   return raw || fallback;
+}
+
+function normalizeWhatsapp(value: string) {
+  return value.replace(/\D/g, "");
 }
 
 export default function RebuildAdminPage() {
@@ -508,14 +512,16 @@ export default function RebuildAdminPage() {
 
   async function createCompany() {
     if (!companyName.trim()) return setNotice("Informe o nome da empresa.");
+    const sanitizedWhatsapp = normalizeWhatsapp(companyWhatsapp);
+    if (sanitizedWhatsapp && sanitizedWhatsapp.length < 10) return setNotice("Informe um WhatsApp válido com DDD.");
     const commission = Number(companyCommission || 0);
     const payoutDays = Number(companyPayoutDays || 0);
     const res = await supabase.from("companies").insert({
       name: companyName.trim(),
-      commission_percent: Number.isFinite(commission) ? commission : 0,
+      commission_percent: Number.isFinite(commission) ? Math.min(100, commission) : 0,
       payout_days: Number.isFinite(payoutDays) ? payoutDays : null,
       account_manager: companyManager.trim() || null,
-      whatsapp: companyWhatsapp.trim() || null,
+      whatsapp: sanitizedWhatsapp || null,
       rating: companyRating || null,
       active: true,
     });
@@ -571,7 +577,7 @@ export default function RebuildAdminPage() {
     const userId = newUserId.trim();
     const fullName = newUserName.trim();
 
-    if (!userId || !fullName) return setNotice("Preencha o ID interno do login e o nome do operador.");
+    if (!userId || !fullName) return setNotice("Preencha o identificador do usuário e o nome do operador.");
     if (!newUserRole) return setNotice("Selecione o perfil (role) do operador.");
 
     const profileRes = await supabase.from("profiles").upsert({
@@ -635,13 +641,18 @@ export default function RebuildAdminPage() {
 
     const commission = Number(editingCompanyCommission || 0);
     const payoutDays = Number(editingCompanyPayoutDays || 0);
+    const sanitizedWhatsapp = normalizeWhatsapp(editingCompanyWhatsapp);
+
+    if (!Number.isFinite(commission) || commission < 0 || commission > 100) return setNotice("Comissão inválida. Informe um percentual entre 0 e 100.");
+    if (!Number.isFinite(payoutDays) || payoutDays < 0) return setNotice("Repasse inválido. Informe a quantidade de dias igual ou maior que zero.");
+    if (sanitizedWhatsapp && sanitizedWhatsapp.length < 10) return setNotice("WhatsApp inválido. Informe DDD + número.");
 
     const res = await supabase.from("companies").update({
       name: editingCompanyName.trim(),
-      commission_percent: Number.isFinite(commission) ? commission : 0,
+      commission_percent: Number.isFinite(commission) ? Math.min(100, commission) : 0,
       payout_days: Number.isFinite(payoutDays) ? payoutDays : null,
       account_manager: editingCompanyManager.trim() || null,
-      whatsapp: editingCompanyWhatsapp.trim() || null,
+      whatsapp: sanitizedWhatsapp || null,
       rating: editingCompanyRating || null,
     }).eq("id", companyId);
 
@@ -924,7 +935,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
 
       {activeSection === "relatorios" && (
         <SectionBox title="Relatórios" subtitle="Consolidado por operador, guichê e categoria com exportação CSV.">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <select className="border rounded-lg px-3 py-2" value={reportBoothFilter} onChange={(e) => setReportBoothFilter(e.target.value)}>
               <option value="">Todos guichês</option>
               {booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
@@ -938,6 +949,17 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
             <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold" onClick={exportCsvDetalhado}>CSV detalhado</button>
             <button className="rounded-lg bg-slate-700 text-white px-3 py-2 font-semibold" onClick={exportCsvPorOperador}>CSV por operador</button>
             <button className="rounded-lg bg-slate-700 text-white px-3 py-2 font-semibold" onClick={exportCsvPorGuiche}>CSV por guichê</button>
+            <button
+              className="rounded-lg border border-slate-300 px-3 py-2 font-semibold text-slate-700"
+              onClick={() => {
+                setReportBoothFilter("");
+                setReportCategoryFilter("");
+                setReportStartDate("");
+                setReportEndDate("");
+              }}
+            >
+              Limpar filtros
+            </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <Card title="Receita consolidada" value={brl(reportTotals.total)} />
@@ -1017,10 +1039,10 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
           <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4 mb-4">
             <div className="flex flex-col gap-1 mb-3">
               <p className="font-semibold text-slate-900">Cadastro de Operador e Vínculo</p>
-              <p className="text-xs text-slate-600">Use o ID interno do login do operador e, se quiser, já vincule um guichê inicial no mesmo fluxo.</p>
+              <p className="text-xs text-slate-600">Use o identificador do usuário e, se quiser, já vincule um guichê inicial no mesmo fluxo.</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="ID interno do login" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
+              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="Identificador do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
               <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="Nome do operador" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
               <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "" | "tenant_admin" | "operator" | "financeiro")}>
                 <option value="operator">Operador</option>

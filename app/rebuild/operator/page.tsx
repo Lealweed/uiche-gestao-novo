@@ -599,7 +599,7 @@ export default function RebuildOperatorPage() {
     }
 
     if (!availability.transactions || !availability.companies || !availability.categories || !availability.subcategories) {
-      setFeedbackMessage("Lançamentos indisponíveis até corrigir as tabelas base (transactions, companies, transaction_categories e transaction_subcategories). Consulte RECOVERY.md.", "error");
+      setFeedbackMessage("Lançamentos temporariamente indisponíveis. Tente novamente em instantes ou acione o suporte.", "error");
       return;
     }
 
@@ -677,28 +677,28 @@ export default function RebuildOperatorPage() {
     e.preventDefault();
 
     if (!shift || !userId) {
-      setFeedback("Abra um turno para registrar movimentos de caixa.");
+      setFeedbackMessage("Abra um turno para registrar movimentos de caixa.", "error");
       return;
     }
 
     if (!availability.cashMovements) {
-      setFeedback("Caixa PDV indisponível até corrigir a tabela cash_movements. Consulte RECOVERY.md.");
+      setFeedbackMessage("Caixa PDV temporariamente indisponível. Tente novamente em instantes ou acione o suporte.", "error");
       return;
     }
 
     if (!cashAmount) {
-      setFeedback("Informe o valor do movimento de caixa.");
+      setFeedbackMessage("Informe o valor do movimento de caixa.", "error");
       return;
     }
 
     const parsedCashAmount = Number(cashAmount);
     if (!Number.isFinite(parsedCashAmount) || parsedCashAmount <= 0) {
-      setFeedback("Informe um valor de caixa válido maior que zero.");
+      setFeedbackMessage("Informe um valor de caixa válido maior que zero.", "error");
       return;
     }
 
     if (cashNote.trim().length > 180) {
-      setFeedback("A observação do caixa deve ter no máximo 180 caracteres.");
+      setFeedbackMessage("A observação do caixa deve ter no máximo 180 caracteres.", "error");
       return;
     }
 
@@ -718,7 +718,7 @@ export default function RebuildOperatorPage() {
 
     if (insertError) {
       setBusy(null);
-      setFeedback(`Falha ao registrar caixa: ${insertError.message}`);
+      setFeedbackMessage(`Falha ao registrar caixa: ${insertError.message}`, "error");
       return;
     }
 
@@ -728,7 +728,7 @@ export default function RebuildOperatorPage() {
     await loadCashMovements(shift.id);
 
     setBusy(null);
-    setFeedback("Movimento de caixa registrado.");
+    setFeedbackMessage("Movimento de caixa registrado com sucesso.", "success");
   }
 
 
@@ -826,18 +826,18 @@ export default function RebuildOperatorPage() {
     const res = await supabase.from("time_punches").insert(payload);
     setBusy(null);
     if (res.error) {
-      setFeedback(`Não foi possível registrar ponto (${type}): ${res.error.message}`);
+      setFeedbackMessage(`Não foi possível registrar ponto (${type.replace("_", " ")}): ${res.error.message}`, "error");
       return;
     }
     await loadTimePunches();
-    setFeedback(`Ponto registrado: ${type}.`);
+    setFeedbackMessage(`Ponto registrado: ${type.replace("_", " ")}.`, "success");
   }
 
 
   async function uploadReceiptFile(txId: string, file: File) {
     if (!userId) return { ok: false, message: "Sessão inválida. Faça login novamente." };
     if (!availability.receipts) {
-      return { ok: false, message: "Comprovantes indisponíveis até corrigir transaction_receipts/payment-receipts. Consulte RECOVERY.md." };
+      return { ok: false, message: "Envio de comprovantes temporariamente indisponível. Tente novamente em instantes ou acione o suporte." };
     }
 
     const ext = file.name.split(".").pop() || "jpg";
@@ -877,13 +877,13 @@ export default function RebuildOperatorPage() {
 
     if (!uploaded.ok) {
       setUploadingTxId(null);
-      setFeedback(uploaded.message);
+      setFeedbackMessage(uploaded.message, uploaded.ok ? "success" : "error");
       return;
     }
 
     if (shift) await loadTransactions(shift.id);
     setUploadingTxId(null);
-    setFeedback(uploaded.message);
+    setFeedbackMessage(uploaded.message, uploaded.ok ? "success" : "error");
   }
 
   function triggerReceiptReupload(txId: string) {
@@ -979,7 +979,7 @@ export default function RebuildOperatorPage() {
             </button>
           </div>
           {!availability.shifts ? (
-            <p className="rb-card-description mt-3">Abertura de turno indisponível enquanto a tabela <code>shifts</code> não estiver disponível.</p>
+            <p className="rb-card-description mt-3">Abertura de turno temporariamente indisponível. Tente novamente em instantes.</p>
           ) : booths.length === 0 ? (
             <p className="rb-card-description mt-3">Você não possui guichê vinculado. Solicite liberação ao administrador.</p>
           ) : null}
@@ -1231,7 +1231,7 @@ export default function RebuildOperatorPage() {
                 <input className="field" type="number" min="0" step="0.01" placeholder="Valor declarado" value={cashDeclared} onChange={(e) => setCashDeclared(e.target.value)} />
                 <textarea className="field" rows={3} placeholder="Observação do fechamento" value={cashClosingNote} onChange={(e) => setCashClosingNote(e.target.value)} />
                 <button className="btn-primary" disabled={!shift || busy === "cash-closing"}>{busy === "cash-closing" ? "Salvando..." : "Salvar fechamento"}</button>
-                {!availability.shiftCashClosings ? <p className="text-xs text-amber-700">Persistência indisponível no momento (tabela <code>shift_cash_closings</code>). O cálculo segue disponível sem quebrar a tela.</p> : null}
+                {!availability.shiftCashClosings ? <p className="text-xs text-amber-700">Persistência temporariamente indisponível. O cálculo segue disponível na tela.</p> : null}
               </div>
               <div className="rounded-xl border border-slate-200 p-3 space-y-2">
                 <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Esperado</span><b>{brl(cashExpected)}</b></div>
