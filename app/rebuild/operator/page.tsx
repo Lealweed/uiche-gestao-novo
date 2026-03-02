@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BanknoteArrowDown, BanknoteArrowUp, Clock3, CreditCard, HandCoins, Receipt, RotateCcw, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
@@ -101,6 +101,13 @@ export default function RebuildOperatorPage() {
   const [cashAmount, setCashAmount] = useState("");
   const [cashNote, setCashNote] = useState("");
   const [uploadingTxId, setUploadingTxId] = useState<string | null>(null);
+  const [txMethodFilter, setTxMethodFilter] = useState<"" | "pix" | "credit" | "debit" | "cash">("");
+  const [txPeriodFilter, setTxPeriodFilter] = useState<"all" | "lastHour" | "today" | "custom">("all");
+  const [txDateFrom, setTxDateFrom] = useState("");
+  const [txDateTo, setTxDateTo] = useState("");
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [closeNotes, setCloseNotes] = useState("");
+  const receiptInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const filteredSubcategories = useMemo(
     () => subcategories.filter((sub) => sub.category_id === categoryId),
@@ -125,6 +132,33 @@ export default function RebuildOperatorPage() {
     () => transactions.filter((t) => (t.payment_method === "credit" || t.payment_method === "debit") && t.receipt_count === 0),
     [transactions]
   );
+
+  const filteredTransactions = useMemo(() => {
+    const now = new Date();
+    const startToday = new Date(now);
+    startToday.setHours(0, 0, 0, 0);
+
+    return transactions.filter((tx) => {
+      if (txMethodFilter && tx.payment_method !== txMethodFilter) return false;
+      const soldAt = new Date(tx.sold_at);
+      if (txPeriodFilter === "lastHour") {
+        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+        if (soldAt < oneHourAgo) return false;
+      }
+      if (txPeriodFilter === "today" && soldAt < startToday) return false;
+      if (txPeriodFilter === "custom") {
+        if (txDateFrom) {
+          const from = new Date(txDateFrom);
+          if (soldAt < from) return false;
+        }
+        if (txDateTo) {
+          const to = new Date(txDateTo);
+          if (soldAt > to) return false;
+        }
+      }
+      return true;
+    });
+  }, [transactions, txMethodFilter, txPeriodFilter, txDateFrom, txDateTo]);
 
   const cashTotals = useMemo(() => {
     const suprimento = cashMovements.filter((m) => m.movement_type === "suprimento").reduce((acc, m) => acc + Number(m.amount || 0), 0);
@@ -457,7 +491,8 @@ export default function RebuildOperatorPage() {
     setBusy("close-shift");
     setFeedback(null);
 
-    const { error: rpcError } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: null });
+    const notes = closeNotes.trim() || null;
+    const { error: rpcError } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: notes });
 
     if (rpcError) {
       const fallback = await supabase.from("shifts").update({ status: "closed", closed_at: new Date().toISOString() }).eq("id", shift.id).eq("status", "open");
@@ -472,9 +507,16 @@ export default function RebuildOperatorPage() {
     setShift(null);
     setTransactions([]);
     setCashMovements([]);
+    setShowCloseModal(false);
+    setCloseNotes("");
     await loadTimePunches();
     setBusy(null);
     setFeedback("Turno encerrado com sucesso.");
+  }
+
+  function requestCloseShift() {
+    if (!shift) return;
+    setShowCloseModal(true);
   }
 
   async function submitTransaction(e: FormEvent) {
@@ -681,6 +723,11 @@ export default function RebuildOperatorPage() {
     setFeedback(uploaded.message);
   }
 
+  function triggerReceiptReupload(txId: string) {
+    const target = receiptInputRefs.current[txId];
+    target?.click();
+  }
+
   if (loading) {
     return (
       <div className="rb-page">
@@ -779,7 +826,7 @@ export default function RebuildOperatorPage() {
               <CardTitle>Turno em andamento</CardTitle>
               <CardDescription>Turno ativo no guichê atual. Finalize somente após anexar comprovantes pendentes.</CardDescription>
             </div>
-            <button className="btn-ghost" disabled={busy === "close-shift"} onClick={closeShift}>
+            <button className="btn-ghost" disabled={busy === "close-shift"} onClick={requestCloseShift}>
               {busy === "close-shift" ? "Encerrando..." : "Encerrar turno"}
             </button>
           </div>
@@ -894,7 +941,7 @@ export default function RebuildOperatorPage() {
             <div className="mt-3 grid grid-cols-3 gap-2">
               <button type="button" className="btn-ghost text-sm" onClick={() => setCashType("suprimento")}>Suprimento</button>
               <button type="button" className="btn-ghost text-sm" onClick={() => setCashType("sangria")}>Sangria</button>
-              <button type="button" className="btn-ghost text-sm" onClick={closeShift} disabled={!shift || busy === "close-shift"}>Fechar</button>
+              <button type="button" className="btn-ghost text-sm" onClick={requestCloseShift} disabled={!shift || busy === "close-shift"}>Fechar</button>
             </div>
             <form onSubmit={submitCashMovement} className="mt-3 space-y-2">
               <input className="field" type="number" min="0" step="0.01" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} placeholder="Valor" disabled={!shift} />
@@ -961,18 +1008,53 @@ export default function RebuildOperatorPage() {
       {activeSection === "lancamentos" && (
         <Card>
           <CardTitle>Transações do Turno</CardTitle>
-          <CardDescription>Lista completa de lançamentos do operador.</CardDescription>
+          <CardDescription>Lista completa de lançamentos do operador com filtros por método e período do turno.</CardDescription>
+          <div className="mt-3 grid md:grid-cols-4 gap-2">
+            <select className="field" value={txMethodFilter} onChange={(e) => setTxMethodFilter(e.target.value as "" | "pix" | "credit" | "debit" | "cash")}>
+              <option value="">Todos os métodos</option>
+              <option value="pix">PIX</option>
+              <option value="credit">Crédito</option>
+              <option value="debit">Débito</option>
+              <option value="cash">Dinheiro</option>
+            </select>
+            <select className="field" value={txPeriodFilter} onChange={(e) => setTxPeriodFilter(e.target.value as "all" | "lastHour" | "today" | "custom")}>
+              <option value="all">Período: turno inteiro</option>
+              <option value="lastHour">Última hora</option>
+              <option value="today">Hoje</option>
+              <option value="custom">Intervalo personalizado</option>
+            </select>
+            <input className="field" type="datetime-local" value={txDateFrom} onChange={(e) => setTxDateFrom(e.target.value)} disabled={txPeriodFilter !== "custom"} />
+            <input className="field" type="datetime-local" value={txDateTo} onChange={(e) => setTxDateTo(e.target.value)} disabled={txPeriodFilter !== "custom"} />
+          </div>
           <div className="mt-4 overflow-auto max-h-[420px]">
             <table className="w-full text-sm">
-              <thead><tr className="text-slate-500"><th className="text-left py-2">Data</th><th className="text-left">Empresa</th><th className="text-left">Pagamento</th><th className="text-right">Valor</th><th className="text-left">Comprovante</th></tr></thead>
+              <thead><tr className="text-slate-500"><th className="text-left py-2">Data</th><th className="text-left">Empresa</th><th className="text-left">Pagamento</th><th className="text-right">Valor</th><th className="text-left">Comprovante</th><th className="text-left">Ação</th></tr></thead>
               <tbody>
-                {transactions.map((tx) => (
+                {filteredTransactions.map((tx) => (
                   <tr key={tx.id} className="border-t">
                     <td className="py-2">{new Date(tx.sold_at).toLocaleString("pt-BR")}</td>
                     <td>{tx.company_name}</td>
                     <td>{paymentMethodMeta(tx.payment_method).label}</td>
                     <td className="text-right">{brl(Number(tx.amount || 0))}</td>
                     <td>{tx.receipt_count > 0 ? "OK" : "Pendente"}</td>
+                    <td>
+                      {tx.receipt_count > 0 ? (
+                        <span className="text-slate-400 text-xs">-</span>
+                      ) : (
+                        <>
+                          <button type="button" className="btn-ghost text-xs" onClick={() => triggerReceiptReupload(tx.id)}>
+                            Reenviar comprovante
+                          </button>
+                          <input
+                            ref={(el) => { receiptInputRefs.current[tx.id] = el; }}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => uploadReceipt(tx.id, e)}
+                          />
+                        </>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1010,6 +1092,30 @@ export default function RebuildOperatorPage() {
         </Card>
       )}
 
+      {showCloseModal && shift && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+            <h3 className="text-lg font-semibold text-slate-100">Fechamento de turno</h3>
+            <p className="text-sm text-slate-400 mt-1">Confira o resumo final antes de encerrar.</p>
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">PIX</p><p className="font-semibold text-slate-100">{brl(totals.pix)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Crédito</p><p className="font-semibold text-slate-100">{brl(totals.credit)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Débito</p><p className="font-semibold text-slate-100">{brl(totals.debit)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Dinheiro</p><p className="font-semibold text-slate-100">{brl(totals.cash)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Saldo de caixa</p><p className="font-semibold text-slate-100">{brl(cashTotals.saldo)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Suprimento</p><p className="font-semibold text-slate-100">{brl(cashTotals.suprimento)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Sangria</p><p className="font-semibold text-slate-100">{brl(cashTotals.sangria)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Pendências</p><p className={`font-semibold ${pendingReceiptTxs.length > 0 ? "text-amber-300" : "text-emerald-300"}`}>{pendingReceiptTxs.length}</p></div>
+            </div>
+            <textarea className="field mt-4" placeholder="Observações de fechamento (opcional)" rows={3} value={closeNotes} onChange={(e) => setCloseNotes(e.target.value)} />
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" className="btn-ghost" onClick={() => setShowCloseModal(false)}>Cancelar</button>
+              <button type="button" className="btn-primary" onClick={closeShift} disabled={busy === "close-shift" || pendingReceiptTxs.length > 0}>{busy === "close-shift" ? "Encerrando..." : "Confirmar encerramento"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeSection === "configuracoes" && (
         <Card>
           <CardTitle>Configurações do Operador</CardTitle>
@@ -1024,6 +1130,14 @@ export default function RebuildOperatorPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
 
 
 

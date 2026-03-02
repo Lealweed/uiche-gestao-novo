@@ -24,6 +24,7 @@ type Category = { id: string; name: string; active: boolean };
 type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
 type TimePunch = { id: string; user_id?: string | null; booth_id?: string | null; punch_type: string; punched_at: string; note?: string | null };
 type CashMovement = { id: string; user_id?: string | null; booth_id?: string | null; movement_type: string; amount: number; created_at: string; note?: string | null };
+type TxReceipt = { transaction_id: string };
 
 type UiState = { loading: boolean; error: string | null };
 type SectionWarning = { section: string; message: string };
@@ -78,6 +79,7 @@ export default function RebuildAdminPage() {
   const [links, setLinks] = useState<OperatorBooth[]>([]);
   const [timePunches, setTimePunches] = useState<TimePunch[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
+  const [txReceipts, setTxReceipts] = useState<TxReceipt[]>([]);
 
   const [companyName, setCompanyName] = useState("");
   const [boothCode, setBoothCode] = useState("");
@@ -86,12 +88,15 @@ export default function RebuildAdminPage() {
   const [linkBoothId, setLinkBoothId] = useState("");
   const [newUserId, setNewUserId] = useState("");
   const [newUserName, setNewUserName] = useState("");
-  const [newUserRole, setNewUserRole] = useState<"operator" | "financeiro" | "tenant_admin">("operator");
+  const [newUserRole, setNewUserRole] = useState<"" | "operator" | "financeiro" | "tenant_admin">("");
   const [newUserActive, setNewUserActive] = useState(true);
 
   const [historicoOperatorFilter, setHistoricoOperatorFilter] = useState("");
   const [historicoStatusFilter, setHistoricoStatusFilter] = useState("");
   const [historicoDateFilter, setHistoricoDateFilter] = useState("");
+  const [historicoDateFrom, setHistoricoDateFrom] = useState("");
+  const [historicoDateTo, setHistoricoDateTo] = useState("");
+  const [historicoMethodFilter, setHistoricoMethodFilter] = useState<"" | "pix" | "credit" | "debit" | "cash">("");
   const [historicoBoothFilter, setHistoricoBoothFilter] = useState("");
   const [historicoCategoryFilter, setHistoricoCategoryFilter] = useState("");
   const [reportBoothFilter, setReportBoothFilter] = useState("");
@@ -140,6 +145,16 @@ export default function RebuildAdminPage() {
   }, [openShifts]);
 
   const postedTxs = useMemo(() => txs.filter((t) => t.status === "posted"), [txs]);
+  const receiptTxSet = useMemo(() => new Set(txReceipts.map((r) => r.transaction_id)), [txReceipts]);
+  const operatorLinkSummary = useMemo(() => {
+    const activeMap = new Map<string, number>();
+    links.filter((link) => link.active).forEach((link) => {
+      activeMap.set(link.operator_id, (activeMap.get(link.operator_id) || 0) + 1);
+    });
+    return operators
+      .map((op) => ({ operatorId: op.user_id, operatorName: op.full_name, activeBooths: activeMap.get(op.user_id) || 0 }))
+      .sort((a, b) => b.activeBooths - a.activeBooths || a.operatorName.localeCompare(b.operatorName, "pt-BR"));
+  }, [links, operators]);
 
   const boothStatusCards = useMemo(() => {
     const activeLinks = links.filter((link) => link.active);
@@ -151,6 +166,12 @@ export default function RebuildAdminPage() {
         const closed = closedShifts.filter((shift) => shift.booth_id === booth.id).length;
         const operatorsLinked = activeLinks.filter((link) => link.booth_id === booth.id).length;
         const cashToday = cashMovements.filter((move) => move.booth_id === booth.id && move.created_at.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
+        const boothTx = postedTxs.filter((tx) => tx.booth_id === booth.id);
+        const pendingReceipts = boothTx.filter((tx) => (tx.payment_method === "credit" || tx.payment_method === "debit") && !receiptTxSet.has(tx.id)).length;
+        const cashIn = cashMovements.filter((move) => move.booth_id === booth.id && move.movement_type !== "sangria").reduce((acc, move) => acc + Number(move.amount || 0), 0);
+        const cashOut = cashMovements.filter((move) => move.booth_id === booth.id && move.movement_type === "sangria").reduce((acc, move) => acc + Number(move.amount || 0), 0);
+        const cashSales = boothTx.filter((tx) => tx.payment_method === "cash").reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+        const estimatedCash = cashSales + cashIn - cashOut;
 
         return {
           id: booth.id,
@@ -160,11 +181,14 @@ export default function RebuildAdminPage() {
           closed,
           operatorsLinked,
           cashToday,
+          pendingReceipts,
+          estimatedCash,
+          negativeCashRisk: estimatedCash < 0,
           status: open > 0 ? "em-atendimento" : "sem-turno",
         };
       })
       .sort((a, b) => a.code.localeCompare(b.code, "pt-BR"));
-  }, [booths, openShifts, closedShifts, links, cashMovements]);
+  }, [booths, openShifts, closedShifts, links, cashMovements, postedTxs, receiptTxSet]);
 
   const dashboardCards = useMemo(() => {
     const today = new Date();
@@ -269,10 +293,20 @@ export default function RebuildAdminPage() {
       if (historicoStatusFilter && t.status !== historicoStatusFilter) return false;
       if (historicoBoothFilter && t.booth_id !== historicoBoothFilter) return false;
       if (historicoCategoryFilter && t.category_id !== historicoCategoryFilter) return false;
+      if (historicoMethodFilter && t.payment_method !== historicoMethodFilter) return false;
       if (historicoDateFilter && !t.sold_at.startsWith(historicoDateFilter)) return false;
+      const soldDate = new Date(t.sold_at);
+      if (historicoDateFrom) {
+        const from = new Date(`${historicoDateFrom}T00:00:00`);
+        if (soldDate < from) return false;
+      }
+      if (historicoDateTo) {
+        const to = new Date(`${historicoDateTo}T23:59:59`);
+        if (soldDate > to) return false;
+      }
       return true;
     });
-  }, [txs, historicoOperatorFilter, historicoStatusFilter, historicoBoothFilter, historicoCategoryFilter, historicoDateFilter]);
+  }, [txs, historicoOperatorFilter, historicoStatusFilter, historicoBoothFilter, historicoCategoryFilter, historicoDateFilter, historicoMethodFilter, historicoDateFrom, historicoDateTo]);
 
   const filteredReportTx = useMemo(() => {
     return txs.filter((t) => {
@@ -394,6 +428,18 @@ export default function RebuildAdminPage() {
       setLinks(nextLinks);
       setTimePunches(nextPunches);
       setCashMovements(nextCash);
+      const txIds = nextTxs.map((tx) => tx.id);
+      if (txIds.length > 0) {
+        const receiptsRes = await supabase.from("transaction_receipts").select("transaction_id").in("transaction_id", txIds);
+        if (receiptsRes.error) {
+          warnings.push({ section: "Comprovantes", message: receiptsRes.error.message });
+          setTxReceipts([]);
+        } else {
+          setTxReceipts((receiptsRes.data as TxReceipt[] | null) ?? []);
+        }
+      } else {
+        setTxReceipts([]);
+      }
       setSectionWarnings(warnings);
       setUi({ loading: false, error: null });
     } catch {
@@ -425,6 +471,7 @@ export default function RebuildAdminPage() {
     const fullName = newUserName.trim();
     if (!userId || !fullName) return setNotice("Informe ID do usuário e nome completo.");
     if (!isUuid(userId)) return setNotice("Informe um UUID válido para o usuário.");
+    if (!newUserRole) return setNotice("Selecione um papel obrigatório para o usuário.");
 
     const res = await supabase.from("profiles").upsert({
       user_id: userId,
@@ -436,7 +483,7 @@ export default function RebuildAdminPage() {
     if (res.error) return setNotice(`Não foi possível criar o usuário: ${res.error.message}`);
     setNewUserId("");
     setNewUserName("");
-    setNewUserRole("operator");
+    setNewUserRole("");
     setNewUserActive(true);
     setNotice("Operador/usuário salvo com sucesso.");
     await loadAll();
@@ -486,8 +533,21 @@ export default function RebuildAdminPage() {
     await loadAll();
   }
 
-  function exportCsv() {
-    const headers = ["data", "operador", "guiche", "categoria", "valor", "status"];
+  function downloadCsv(name: string, headers: string[], rows: Array<Array<string | number>>) {
+    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(";")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function exportCsvDetalhado() {
+    const headers = ["data", "operador", "guiche", "categoria", "valor", "status", "metodo"];
     const rows = filteredReportTx.map((tx) => [
       new Date(tx.sold_at).toLocaleString("pt-BR"),
       operatorMap.get(tx.operator_id || "") || "Sem operador",
@@ -495,17 +555,21 @@ export default function RebuildAdminPage() {
       categoryMap.get(tx.category_id || "") || "Sem categoria",
       String(Number(tx.amount || 0).toFixed(2)).replace(".", ","),
       tx.status,
+      tx.payment_method.toUpperCase(),
     ]);
-    const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(";")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `relatorio-admin-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadCsv(`relatorio-admin-detalhado-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  }
+
+  function exportCsvPorOperador() {
+    const headers = ["operador", "qtd_transacoes", "total"];
+    const rows = reportTotals.byOperator.map((item) => [item.name, item.qty, String(item.total.toFixed(2)).replace(".", ",")]);
+    downloadCsv(`relatorio-operador-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  }
+
+  function exportCsvPorGuiche() {
+    const headers = ["guiche", "qtd_transacoes", "total"];
+    const rows = reportTotals.byBooth.map((item) => [item.name, item.qty, String(item.total.toFixed(2)).replace(".", ",")]);
+    downloadCsv(`relatorio-guiche-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
   }
 
   if (authLoading || ui.loading) return <div className="text-sm text-slate-500">Carregando dados administrativos...</div>;
@@ -686,7 +750,7 @@ export default function RebuildAdminPage() {
 
 {activeSection === "historico" && (
         <SectionBox title="Histórico" subtitle="Tabela de transações com filtros e painel de operação avançada.">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-8 gap-3 mb-4">
             <select className="border rounded-lg px-3 py-2" value={historicoOperatorFilter} onChange={(e) => setHistoricoOperatorFilter(e.target.value)}>
               <option value="">Todos operadores</option>
               {operators.map((op) => <option key={op.user_id} value={op.user_id}>{op.full_name}</option>)}
@@ -699,6 +763,15 @@ export default function RebuildAdminPage() {
             <select className="border rounded-lg px-3 py-2" value={historicoBoothFilter} onChange={(e) => setHistoricoBoothFilter(e.target.value)}><option value="">Todos guichês</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select>
             <select className="border rounded-lg px-3 py-2" value={historicoCategoryFilter} onChange={(e) => setHistoricoCategoryFilter(e.target.value)}><option value="">Todas categorias</option>{categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
             <input className="border rounded-lg px-3 py-2" type="date" value={historicoDateFilter} onChange={(e) => setHistoricoDateFilter(e.target.value)} />
+            <select className="border rounded-lg px-3 py-2" value={historicoMethodFilter} onChange={(e) => setHistoricoMethodFilter(e.target.value as "" | "pix" | "credit" | "debit" | "cash")}>
+              <option value="">Todos métodos</option>
+              <option value="pix">PIX</option>
+              <option value="credit">Crédito</option>
+              <option value="debit">Débito</option>
+              <option value="cash">Dinheiro</option>
+            </select>
+            <input className="border rounded-lg px-3 py-2" type="date" value={historicoDateFrom} onChange={(e) => setHistoricoDateFrom(e.target.value)} />
+            <input className="border rounded-lg px-3 py-2" type="date" value={historicoDateTo} onChange={(e) => setHistoricoDateTo(e.target.value)} />
           </div>
           <div className="rounded-xl border border-slate-200 p-4 mb-4">
             <div className="flex items-center justify-between gap-3 mb-3">
@@ -745,7 +818,9 @@ export default function RebuildAdminPage() {
             </select>
             <input className="border rounded-lg px-3 py-2" type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)} />
             <input className="border rounded-lg px-3 py-2" type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} />
-            <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold" onClick={exportCsv}>Exportar CSV</button>
+            <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold" onClick={exportCsvDetalhado}>CSV detalhado</button>
+            <button className="rounded-lg bg-slate-700 text-white px-3 py-2 font-semibold" onClick={exportCsvPorOperador}>CSV por operador</button>
+            <button className="rounded-lg bg-slate-700 text-white px-3 py-2 font-semibold" onClick={exportCsvPorGuiche}>CSV por guichê</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <Card title="Receita consolidada" value={brl(reportTotals.total)} />
@@ -780,7 +855,7 @@ export default function RebuildAdminPage() {
             <div className="grid md:grid-cols-5 gap-2">
               <input className="border rounded-lg px-3 py-2" placeholder="UUID do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
               <input className="border rounded-lg px-3 py-2" placeholder="Nome completo" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
-              <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "tenant_admin" | "operator" | "financeiro")}>
+              <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "" | "tenant_admin" | "operator" | "financeiro")} required>
                 <option value="operator">Operador</option>
                 <option value="financeiro">Financeiro</option>
                 <option value="tenant_admin">Admin do Tenant</option>
@@ -829,6 +904,21 @@ export default function RebuildAdminPage() {
             <CrudPanel title="Guichês" createForm={<div className="flex gap-2 flex-wrap"><input className="border rounded-lg px-3 py-2 w-28" placeholder="Código (ex.: G01)" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} /><input className="border rounded-lg px-3 py-2 flex-1 min-w-40" placeholder="Nome do guichê (ex.: Guichê Principal)" value={boothName} onChange={(e) => setBoothName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createBooth}>Cadastrar guichê</button></div>} items={booths.map((b) => ({ id: b.id, label: `${b.code} - ${b.name}`, active: b.active, onToggle: () => toggleRow("booths", "id", b.id, b.active, "Guichê atualizado com sucesso.") }))} />
 
             <CrudPanel title="Vínculos operador↔guichê" createForm={<div className="flex gap-2 flex-wrap"><select className="border rounded-lg px-3 py-2" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)}><option value="">Operador</option>{operators.map((o) => <option key={o.user_id} value={o.user_id}>{o.full_name}</option>)}</select><select className="border rounded-lg px-3 py-2" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)}><option value="">Guichê</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createLink}>Vincular</button></div>} items={links.map((l) => ({ id: l.id, label: `${operatorMap.get(l.operator_id) || "Sem operador"} ↔ ${boothMap.get(l.booth_id) || "Sem guichê"}`, active: l.active, onToggle: () => toggleRow("operator_booths", "id", l.id, l.active, "Vínculo atualizado com sucesso.") }))} />
+          </div>
+          <div className="rounded-lg border p-3 mt-4">
+            <p className="font-semibold text-slate-800 mb-2">Consolidado de vínculos por operador</p>
+            {operatorLinkSummary.length === 0 ? <Empty text="Sem operadores para consolidar vínculos." /> : (
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-slate-500"><th className="text-left py-2">Operador</th><th className="text-right">Guichês ativos</th></tr></thead>
+                  <tbody>
+                    {operatorLinkSummary.map((item) => (
+                      <tr key={item.operatorId} className="border-t"><td className="py-2">{item.operatorName}</td><td className="text-right font-semibold">{item.activeBooths}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </SectionBox>
       )}
@@ -967,3 +1057,16 @@ function AdvancedOpsChart({ txs }: { txs: Tx[] }) {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
