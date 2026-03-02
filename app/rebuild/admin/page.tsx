@@ -40,12 +40,6 @@ const sections: Record<AdminSection, string> = {
 
 const brl = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isUuid(value: string) {
-  return uuidRegex.test(value);
-}
-
 function mapDbError(raw: string, fallback: string) {
   const msg = raw.toLowerCase();
   if (msg.includes("duplicate key") || msg.includes("unique constraint") || msg.includes("23505")) {
@@ -55,7 +49,7 @@ function mapDbError(raw: string, fallback: string) {
     return "Referência inválida. Verifique os dados relacionados antes de salvar.";
   }
   if (msg.includes("invalid input syntax for type uuid") || msg.includes("22p02")) {
-    return "UUID inválido. Confira o identificador informado.";
+    return "ID interno inválido. Confira o identificador informado.";
   }
   return raw || fallback;
 }
@@ -87,13 +81,20 @@ export default function RebuildAdminPage() {
   const [companyManager, setCompanyManager] = useState("");
   const [companyWhatsapp, setCompanyWhatsapp] = useState("");
   const [companyRating, setCompanyRating] = useState<"alta" | "boa" | "media" | "ruim">("boa");
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
+  const [editingCompanyName, setEditingCompanyName] = useState("");
+  const [editingCompanyCommission, setEditingCompanyCommission] = useState("0");
+  const [editingCompanyPayoutDays, setEditingCompanyPayoutDays] = useState("0");
+  const [editingCompanyManager, setEditingCompanyManager] = useState("");
+  const [editingCompanyWhatsapp, setEditingCompanyWhatsapp] = useState("");
+  const [editingCompanyRating, setEditingCompanyRating] = useState<"alta" | "boa" | "media" | "ruim">("boa");
   const [boothCode, setBoothCode] = useState("");
   const [boothName, setBoothName] = useState("");
   const [linkOperatorId, setLinkOperatorId] = useState("");
   const [linkBoothId, setLinkBoothId] = useState("");
   const [newUserId, setNewUserId] = useState("");
   const [newUserName, setNewUserName] = useState("");
-  const [newUserRole, setNewUserRole] = useState<"" | "operator" | "financeiro" | "tenant_admin">("");
+  const [newUserRole, setNewUserRole] = useState<"" | "operator" | "financeiro" | "tenant_admin">("operator");
   const [newUserActive, setNewUserActive] = useState(true);
 
   const [historicoOperatorFilter, setHistoricoOperatorFilter] = useState("");
@@ -487,7 +488,6 @@ export default function RebuildAdminPage() {
     const userId = newUserId.trim();
     const fullName = newUserName.trim();
     if (!userId || !fullName) return setNotice("Informe ID do usuário e nome completo.");
-    if (!isUuid(userId)) return setNotice("Informe um UUID válido para o usuário.");
     if (!newUserRole) return setNotice("Selecione um papel obrigatório para o usuário.");
 
     const res = await supabase.from("profiles").upsert({
@@ -497,10 +497,10 @@ export default function RebuildAdminPage() {
       active: newUserActive,
     });
 
-    if (res.error) return setNotice(`Não foi possível criar o usuário: ${res.error.message}`);
+    if (res.error) return setNotice(`Não foi possível criar o usuário: ${mapDbError(res.error.message, "Falha ao criar usuário")}`);
     setNewUserId("");
     setNewUserName("");
-    setNewUserRole("");
+    setNewUserRole("operator");
     setNewUserActive(true);
     setNotice("Operador/usuário salvo com sucesso.");
     await loadAll();
@@ -519,7 +519,7 @@ export default function RebuildAdminPage() {
       rating: companyRating || null,
       active: true,
     });
-    if (res.error) return setNotice(`Não foi possível cadastrar a empresa: ${res.error.message}`);
+    if (res.error) return setNotice(`Não foi possível cadastrar a empresa: ${mapDbError(res.error.message, "Falha ao cadastrar empresa")}`);
     setCompanyName("");
     setCompanyCommission("10");
     setCompanyPayoutDays("30");
@@ -533,7 +533,7 @@ export default function RebuildAdminPage() {
   async function createBooth() {
     if (!boothCode.trim() || !boothName.trim()) return setNotice("Informe código e nome do guichê.");
     const res = await supabase.from("booths").insert({ code: boothCode.trim(), name: boothName.trim(), active: true });
-    if (res.error) return setNotice(`Não foi possível cadastrar o guichê: ${res.error.message}`);
+    if (res.error) return setNotice(`Não foi possível cadastrar o guichê: ${mapDbError(res.error.message, "Falha ao cadastrar guichê")}`);
     setBoothCode("");
     setBoothName("");
     setNotice("Guichê cadastrado com sucesso.");
@@ -571,8 +571,7 @@ export default function RebuildAdminPage() {
     const userId = newUserId.trim();
     const fullName = newUserName.trim();
 
-    if (!userId || !fullName) return setNotice("Preencha user_id (UUID) e nome do operador.");
-    if (!isUuid(userId)) return setNotice("Informe um UUID válido para user_id.");
+    if (!userId || !fullName) return setNotice("Preencha o ID interno do login e o nome do operador.");
     if (!newUserRole) return setNotice("Selecione o perfil (role) do operador.");
 
     const profileRes = await supabase.from("profiles").upsert({
@@ -608,6 +607,47 @@ export default function RebuildAdminPage() {
     setNewUserActive(true);
     setLinkBoothId("");
     setNotice(linkBoothId ? "Operador e vínculo salvos com sucesso." : "Operador salvo com sucesso.");
+    await loadAll();
+  }
+
+  function startEditCompany(company: Company) {
+    setEditingCompanyId(company.id);
+    setEditingCompanyName(company.name || "");
+    setEditingCompanyCommission(String(company.commission_percent ?? 0));
+    setEditingCompanyPayoutDays(String(company.payout_days ?? 0));
+    setEditingCompanyManager(company.account_manager || "");
+    setEditingCompanyWhatsapp(company.whatsapp || "");
+    setEditingCompanyRating((company.rating as "alta" | "boa" | "media" | "ruim" | null) || "boa");
+  }
+
+  function cancelEditCompany() {
+    setEditingCompanyId(null);
+    setEditingCompanyName("");
+    setEditingCompanyCommission("0");
+    setEditingCompanyPayoutDays("0");
+    setEditingCompanyManager("");
+    setEditingCompanyWhatsapp("");
+    setEditingCompanyRating("boa");
+  }
+
+  async function saveCompanyEdit(companyId: string) {
+    if (!editingCompanyName.trim()) return setNotice("Informe o nome da empresa.");
+
+    const commission = Number(editingCompanyCommission || 0);
+    const payoutDays = Number(editingCompanyPayoutDays || 0);
+
+    const res = await supabase.from("companies").update({
+      name: editingCompanyName.trim(),
+      commission_percent: Number.isFinite(commission) ? commission : 0,
+      payout_days: Number.isFinite(payoutDays) ? payoutDays : null,
+      account_manager: editingCompanyManager.trim() || null,
+      whatsapp: editingCompanyWhatsapp.trim() || null,
+      rating: editingCompanyRating || null,
+    }).eq("id", companyId);
+
+    if (res.error) return setNotice(`Não foi possível atualizar a empresa: ${mapDbError(res.error.message, "Falha ao atualizar empresa")}`);
+    setNotice("Empresa atualizada com sucesso.");
+    cancelEditCompany();
     await loadAll();
   }
 function downloadCsv(name: string, headers: string[], rows: Array<Array<string | number>>) {
@@ -928,7 +968,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
         <SectionBox title="Usuários" subtitle="Gestão de perfis com foco em cadastro de operador (papel e status ativos).">
           <div className="rounded-lg border p-3 mb-4">
             <p className="font-semibold text-slate-800 mb-1">Cadastro de operador / usuário</p>
-            <p className="text-xs text-slate-500 mb-2">Informe o ID interno do login, nome, perfil e status inicial.</p>
+            <p className="text-xs text-slate-500 mb-2">Use o ID interno do login, nome, perfil e status inicial.</p>
             <div className="grid md:grid-cols-5 gap-2">
               <input className="border rounded-lg px-3 py-2" placeholder="ID interno do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
               <input className="border rounded-lg px-3 py-2" placeholder="Nome completo" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
@@ -973,14 +1013,14 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
       )}
 
 {activeSection === "configuracoes" && canManageUsers && (
-        <SectionBox title="Configurações" subtitle="Fluxo unificado no topo para cadastro de operador com vínculo inicial e CRUD completo abaixo.">
+        <SectionBox title="Configurações" subtitle="Fluxo unificado no topo para cadastro de operador com vínculo inicial e gestão completa abaixo.">
           <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4 mb-4">
             <div className="flex flex-col gap-1 mb-3">
               <p className="font-semibold text-slate-900">Cadastro de Operador e Vínculo</p>
-              <p className="text-xs text-slate-600">Preencha os dados do operador e, opcionalmente, já defina o guichê inicial em um único salvar.</p>
+              <p className="text-xs text-slate-600">Use o ID interno do login do operador e, se quiser, já vincule um guichê inicial no mesmo fluxo.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="user_id (UUID)" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="ID interno do login" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
               <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="Nome do operador" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
               <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "" | "tenant_admin" | "operator" | "financeiro")}>
                 <option value="operator">Operador</option>
@@ -1032,7 +1072,67 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CrudPanel title="Empresas" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createCompany}>Cadastrar</button></div>} items={companies.map((c) => ({ id: c.id, label: c.name, active: c.active, onToggle: () => toggleRow("companies", "id", c.id, c.active, "Empresa atualizada com sucesso.") }))} />
+<div className="rounded-lg border p-3 space-y-3">
+              <p className="font-semibold text-slate-800">Empresas</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <input className="border rounded-lg px-3 py-2" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+                <input className="border rounded-lg px-3 py-2" type="number" min="0" step="0.1" placeholder="Comissão (%)" value={companyCommission} onChange={(e) => setCompanyCommission(e.target.value)} />
+                <input className="border rounded-lg px-3 py-2" type="number" min="0" placeholder="Repasse (dias)" value={companyPayoutDays} onChange={(e) => setCompanyPayoutDays(e.target.value)} />
+                <input className="border rounded-lg px-3 py-2" placeholder="Responsável" value={companyManager} onChange={(e) => setCompanyManager(e.target.value)} />
+                <input className="border rounded-lg px-3 py-2" placeholder="WhatsApp" value={companyWhatsapp} onChange={(e) => setCompanyWhatsapp(e.target.value)} />
+                <select className="border rounded-lg px-3 py-2" value={companyRating} onChange={(e) => setCompanyRating(e.target.value as "alta" | "boa" | "media" | "ruim")}>
+                  <option value="alta">Alta</option>
+                  <option value="boa">Boa</option>
+                  <option value="media">Média</option>
+                  <option value="ruim">Ruim</option>
+                </select>
+              </div>
+              <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2" onClick={createCompany}>Cadastrar empresa</button>
+
+              {companies.length === 0 ? <p className="text-sm text-slate-500">Sem registros.</p> : (
+                <div className="max-h-72 overflow-auto space-y-2">
+                  {companies.map((c) => {
+                    const editing = editingCompanyId === c.id;
+                    return (
+                      <div key={c.id} className="rounded-lg border p-2 space-y-2">
+                        {editing ? (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <input className="border rounded-lg px-3 py-2" value={editingCompanyName} onChange={(e) => setEditingCompanyName(e.target.value)} placeholder="Nome da empresa" />
+                            <input className="border rounded-lg px-3 py-2" type="number" min="0" step="0.1" value={editingCompanyCommission} onChange={(e) => setEditingCompanyCommission(e.target.value)} placeholder="Comissão (%)" />
+                            <input className="border rounded-lg px-3 py-2" type="number" min="0" value={editingCompanyPayoutDays} onChange={(e) => setEditingCompanyPayoutDays(e.target.value)} placeholder="Repasse (dias)" />
+                            <input className="border rounded-lg px-3 py-2" value={editingCompanyManager} onChange={(e) => setEditingCompanyManager(e.target.value)} placeholder="Responsável" />
+                            <input className="border rounded-lg px-3 py-2" value={editingCompanyWhatsapp} onChange={(e) => setEditingCompanyWhatsapp(e.target.value)} placeholder="WhatsApp" />
+                            <select className="border rounded-lg px-3 py-2" value={editingCompanyRating} onChange={(e) => setEditingCompanyRating(e.target.value as "alta" | "boa" | "media" | "ruim")}>
+                              <option value="alta">Alta</option>
+                              <option value="boa">Boa</option>
+                              <option value="media">Média</option>
+                              <option value="ruim">Ruim</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-slate-700">
+                            <p className="font-medium text-slate-900">{c.name}</p>
+                            <p>Comissão: <span className="font-semibold">{Number(c.commission_percent || 0).toFixed(1)}%</span> • Repasse: <span className="font-semibold">{c.payout_days ?? 0} dias</span></p>
+                            <p>Responsável: {c.account_manager || "-"} • WhatsApp: {c.whatsapp || "-"} • Classificação: {c.rating ? c.rating[0].toUpperCase() + c.rating.slice(1) : "-"}</p>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          {editing ? (
+                            <>
+                              <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-1.5 text-xs" onClick={() => saveCompanyEdit(c.id)}>Salvar edição</button>
+                              <button className="rounded-lg border px-3 py-1.5 text-xs" onClick={cancelEditCompany}>Cancelar</button>
+                            </>
+                          ) : (
+                            <button className="rounded-lg border px-3 py-1.5 text-xs" onClick={() => startEditCompany(c)}>Editar</button>
+                          )}
+                          <button className="rounded-lg border px-3 py-1.5 text-xs" onClick={() => toggleRow("companies", "id", c.id, c.active, "Empresa atualizada com sucesso.")}>{c.active ? "Inativar" : "Ativar"}</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <CrudPanel title="Guichês" createForm={<div className="flex gap-2 flex-wrap"><input className="border rounded-lg px-3 py-2 w-28" placeholder="Código (ex.: G01)" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} /><input className="border rounded-lg px-3 py-2 flex-1 min-w-40" placeholder="Nome do guichê (ex.: Guichê Principal)" value={boothName} onChange={(e) => setBoothName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createBooth}>Cadastrar guichê</button></div>} items={booths.map((b) => ({ id: b.id, label: `${b.code} - ${b.name}`, active: b.active, onToggle: () => toggleRow("booths", "id", b.id, b.active, "Guichê atualizado com sucesso.") }))} />
 
@@ -1190,6 +1290,7 @@ function AdvancedOpsChart({ txs }: { txs: Tx[] }) {
     </div>
   );
 }
+
 
 
 
