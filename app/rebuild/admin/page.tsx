@@ -928,9 +928,9 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
         <SectionBox title="Usuários" subtitle="Gestão de perfis com foco em cadastro de operador (papel e status ativos).">
           <div className="rounded-lg border p-3 mb-4">
             <p className="font-semibold text-slate-800 mb-1">Cadastro de operador / usuário</p>
-            <p className="text-xs text-slate-500 mb-2">Use o UUID do Auth, defina nome, perfil e status inicial.</p>
+            <p className="text-xs text-slate-500 mb-2">Informe o ID interno do login, nome, perfil e status inicial.</p>
             <div className="grid md:grid-cols-5 gap-2">
-              <input className="border rounded-lg px-3 py-2" placeholder="UUID do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" placeholder="ID interno do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
               <input className="border rounded-lg px-3 py-2" placeholder="Nome completo" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
               <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "" | "tenant_admin" | "operator" | "financeiro")} required>
                 <option value="operator">Operador</option>
@@ -950,7 +950,6 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                 <div key={u.user_id} className="rounded-lg border p-2 flex items-center justify-between gap-3">
                   <div>
                     <p className="font-medium text-slate-800">{u.full_name || "Sem nome"}</p>
-                    <p className="text-xs text-slate-500">{u.user_id}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <select
