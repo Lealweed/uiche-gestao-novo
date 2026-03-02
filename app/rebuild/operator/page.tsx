@@ -2,7 +2,7 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BanknoteArrowDown, BanknoteArrowUp, Clock3, CreditCard, HandCoins, Receipt, RotateCcw, Wallet } from "lucide-react";
+import { BanknoteArrowDown, BanknoteArrowUp, CheckCircle2, Clock3, CreditCard, HandCoins, Receipt, RotateCcw, TriangleAlert, Wallet } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { StatCard } from "@/components/rebuild/ui/stat-card";
@@ -11,7 +11,7 @@ import { ErrorState } from "@/components/rebuild/ui/error-state";
 import { LoadingState } from "@/components/rebuild/ui/loading-state";
 import { Card, CardDescription, CardTitle } from "@/components/rebuild/ui/card";
 
-type Profile = { role: "tenant_admin" | "operator" | "financeiro" | "admin"; active?: boolean | null; tenant_id?: string | null };
+type Profile = { role: "tenant_admin" | "operator" | "financeiro" | "admin"; active?: boolean | null; tenant_id?: string | null; full_name?: string | null; user_id?: string };
 type BoothLink = { booth_id: string };
 type Booth = { id: string; name: string };
 type Shift = { id: string; booth_id: string; status: "open" | "closed" };
@@ -24,6 +24,7 @@ type CashMovement = {
   amount: number;
   note: string | null;
   created_at: string;
+  user_id: string | null;
 };
 type TimePunch = {
   id: string;
@@ -78,6 +79,7 @@ export default function RebuildOperatorPage() {
     receipts: true,
     cashMovements: true,
     timePunches: true,
+    shiftCashClosings: true,
   });
 
   const [userId, setUserId] = useState<string | null>(null);
@@ -102,8 +104,16 @@ export default function RebuildOperatorPage() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
   const [cashType, setCashType] = useState<"suprimento" | "sangria" | "ajuste">("suprimento");
+  const [cashDirection, setCashDirection] = useState<"entrada" | "saida">("entrada");
   const [cashAmount, setCashAmount] = useState("");
   const [cashNote, setCashNote] = useState("");
+  const [cashFilterType, setCashFilterType] = useState<"" | "suprimento" | "sangria" | "ajuste">("");
+  const [cashFilterFrom, setCashFilterFrom] = useState("");
+  const [cashFilterTo, setCashFilterTo] = useState("");
+  const [cashFilterText, setCashFilterText] = useState("");
+  const [cashDeclared, setCashDeclared] = useState("");
+  const [cashClosingNote, setCashClosingNote] = useState("");
+  const [cashOperatorMap, setCashOperatorMap] = useState<Record<string, string>>({});
   const [uploadingTxId, setUploadingTxId] = useState<string | null>(null);
   const [txMethodFilter, setTxMethodFilter] = useState<"" | "pix" | "credit" | "debit" | "cash">("");
   const [txPeriodFilter, setTxPeriodFilter] = useState<"all" | "lastHour" | "today" | "custom">("all");
@@ -307,13 +317,33 @@ export default function RebuildOperatorPage() {
   async function loadCashMovements(shiftId: string) {
     const res = await supabase
       .from("cash_movements")
-      .select("id,movement_type,amount,note,created_at")
+      .select("id,movement_type,amount,note,created_at,user_id")
       .eq("shift_id", shiftId)
       .order("created_at", { ascending: false })
       .limit(120);
 
     if (res.error) { addWarning("Caixa PDV", res.error.message); if (isMissingStructure(res.error.message)) setAvailability((prev) => ({ ...prev, cashMovements: false })); setCashMovements([]); return; }
-    setCashMovements((res.data as CashMovement[] | null) ?? []);
+    const loaded = (res.data as CashMovement[] | null) ?? [];
+    setCashMovements(loaded);
+
+    const operatorIds = Array.from(new Set(loaded.map((m) => m.user_id).filter(Boolean))) as string[];
+    if (!operatorIds.length) {
+      setCashOperatorMap({});
+      return;
+    }
+
+    const profileRes = await supabase.from("profiles").select("user_id,full_name").in("user_id", operatorIds);
+    if (profileRes.error) {
+      addWarning("Caixa PDV", `Não foi possível carregar operadores dos movimentos: ${profileRes.error.message}`);
+      setCashOperatorMap({});
+      return;
+    }
+
+    const map: Record<string, string> = {};
+    for (const row of ((profileRes.data as Array<{ user_id: string; full_name: string | null }> | null) ?? [])) {
+      map[row.user_id] = row.full_name?.trim() || row.user_id.slice(0, 8);
+    }
+    setCashOperatorMap(map);
   }
 
 
@@ -353,6 +383,7 @@ export default function RebuildOperatorPage() {
       receipts: true,
       cashMovements: true,
       timePunches: true,
+      shiftCashClosings: true,
     });
 
     try {
@@ -674,12 +705,14 @@ export default function RebuildOperatorPage() {
     setBusy("cash");
     setFeedback(null);
 
+    const signedAmount = cashType === "ajuste" ? (cashDirection === "saida" ? -parsedCashAmount : parsedCashAmount) : parsedCashAmount;
+
     const { error: insertError } = await supabase.from("cash_movements").insert({
       shift_id: shift.id,
       booth_id: shift.booth_id,
       user_id: userId,
       movement_type: cashType,
-      amount: parsedCashAmount,
+      amount: signedAmount,
       note: cashNote.trim() || null,
     });
 
@@ -691,10 +724,93 @@ export default function RebuildOperatorPage() {
 
     setCashAmount("");
     setCashNote("");
+    setCashDirection("entrada");
     await loadCashMovements(shift.id);
 
     setBusy(null);
     setFeedback("Movimento de caixa registrado.");
+  }
+
+
+
+  const cashSummary = useMemo(() => {
+    const initialBalance = Number(totals.cash || 0);
+    let entries = 0;
+    let exits = 0;
+
+    for (const m of cashMovements) {
+      const amount = Number(m.amount || 0);
+      if (m.movement_type === "sangria") exits += Math.abs(amount);
+      else if (m.movement_type === "ajuste") {
+        if (amount >= 0) entries += amount;
+        else exits += Math.abs(amount);
+      } else {
+        entries += Math.abs(amount);
+      }
+    }
+
+    const currentBalance = initialBalance + entries - exits;
+    return { initialBalance, entries, exits, currentBalance };
+  }, [cashMovements, totals.cash]);
+
+  const filteredCashMovements = useMemo(() => {
+    const term = cashFilterText.trim().toLowerCase();
+    return cashMovements.filter((m) => {
+      if (cashFilterType && m.movement_type !== cashFilterType) return false;
+      const created = new Date(m.created_at);
+      if (cashFilterFrom) {
+        const from = new Date(cashFilterFrom);
+        if (created < from) return false;
+      }
+      if (cashFilterTo) {
+        const to = new Date(cashFilterTo);
+        if (created > to) return false;
+      }
+      if (term && !(m.note || "").toLowerCase().includes(term)) return false;
+      return true;
+    });
+  }, [cashMovements, cashFilterType, cashFilterFrom, cashFilterTo, cashFilterText]);
+
+  const cashExpected = cashSummary.currentBalance;
+  const cashDeclaredValue = Number(cashDeclared || 0);
+  const cashDifference = cashDeclared ? cashDeclaredValue - cashExpected : 0;
+  const cashDifferenceOk = Math.abs(cashDifference) < 0.01;
+
+  async function submitCashClosing(e: FormEvent) {
+    e.preventDefault();
+
+    if (!shift || !userId) return setFeedbackMessage("Abra um turno para registrar o fechamento de caixa.", "error");
+    if (!cashDeclared) return setFeedbackMessage("Informe o valor declarado para fechar o caixa.", "error");
+
+    const parsedDeclared = Number(cashDeclared);
+    if (!Number.isFinite(parsedDeclared) || parsedDeclared < 0) return setFeedbackMessage("Informe um valor declarado válido.", "error");
+
+    setBusy("cash-closing");
+    const payload = {
+      shift_id: shift.id,
+      booth_id: shift.booth_id,
+      user_id: userId,
+      expected_cash: cashExpected,
+      declared_cash: parsedDeclared,
+      difference: parsedDeclared - cashExpected,
+      note: cashClosingNote.trim() || null,
+    };
+
+    const res = await supabase.from("shift_cash_closings").upsert(payload, { onConflict: "shift_id" });
+    if (res.error) {
+      if (isMissingStructure(res.error.message)) {
+        setAvailability((prev) => ({ ...prev, shiftCashClosings: false }));
+        addWarning("Fechamento de caixa", "Tabela shift_cash_closings indisponível. O cálculo do fechamento continua disponível em tela.");
+        setFeedbackMessage(`Fechamento calculado (diferença ${brl(parsedDeclared - cashExpected)}), mas não foi possível persistir agora.`, "info");
+      } else {
+        setFeedbackMessage(`Erro ao salvar fechamento de caixa: ${res.error.message}`, "error");
+      }
+      setBusy(null);
+      return;
+    }
+
+    setBusy(null);
+    setFeedbackMessage("Fechamento de caixa salvo com sucesso.", "success");
   }
 
   async function registerPunch(type: "entrada" | "pausa_inicio" | "pausa_fim" | "saida") {
@@ -1038,27 +1154,95 @@ export default function RebuildOperatorPage() {
       </div>
 
       {activeSection === "caixa-pdv" && (
-        <Card>
-          <CardTitle>Controle de Caixa</CardTitle>
-          <CardDescription>Resumo completo de movimentos do caixa por turno.</CardDescription>
-          <div className="grid md:grid-cols-4 gap-3 mt-3">
-            <StatCard label="Suprimento" value={brl(cashTotals.suprimento)} icon={<BanknoteArrowUp size={16} />} />
-            <StatCard label="Sangria" value={brl(cashTotals.sangria)} icon={<BanknoteArrowDown size={16} />} />
-            <StatCard label="Ajuste" value={brl(cashTotals.ajuste)} icon={<HandCoins size={16} />} />
-            <StatCard label="Saldo" value={brl(cashTotals.saldo)} icon={<Wallet size={16} />} />
-          </div>
-          <div className="mt-4 overflow-auto max-h-[360px]">
-            <table className="w-full text-sm">
-              <thead><tr className="text-slate-500"><th className="text-left py-2">Data</th><th className="text-left">Tipo</th><th className="text-right">Valor</th><th className="text-left">Obs</th></tr></thead>
-              <tbody>
-                {cashMovements.map((m) => (
-                  <tr key={m.id} className="border-t"><td className="py-2">{new Date(m.created_at).toLocaleString("pt-BR")}</td><td>{m.movement_type}</td><td className="text-right">{brl(Number(m.amount || 0))}</td><td>{m.note || "-"}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <div className="space-y-4">
+          <Card>
+            <CardTitle>Caixa PDV avançado</CardTitle>
+            <CardDescription>Resumo financeiro do caixa com filtros, histórico completo e ação rápida.</CardDescription>
+            <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-3">
+              <StatCard label="Saldo inicial" value={brl(cashSummary.initialBalance)} icon={<Wallet size={16} />} />
+              <StatCard label="Entradas" value={brl(cashSummary.entries)} icon={<BanknoteArrowUp size={16} />} />
+              <StatCard label="Saídas" value={brl(cashSummary.exits)} icon={<BanknoteArrowDown size={16} />} />
+              <StatCard label="Saldo atual" value={brl(cashSummary.currentBalance)} icon={<HandCoins size={16} />} />
+            </div>
+
+            <div className="mt-4 grid lg:grid-cols-[1.2fr_2fr] gap-3">
+              <form onSubmit={submitCashMovement} className="rounded-xl border border-slate-200 p-3 space-y-2">
+                <p className="text-sm font-semibold text-slate-800">Ação rápida de movimento</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button type="button" className={`btn-ghost text-sm ${cashType === "suprimento" ? "ring-1 ring-blue-400" : ""}`} onClick={() => setCashType("suprimento")}>Suprimento</button>
+                  <button type="button" className={`btn-ghost text-sm ${cashType === "sangria" ? "ring-1 ring-blue-400" : ""}`} onClick={() => setCashType("sangria")}>Sangria</button>
+                  <button type="button" className={`btn-ghost text-sm ${cashType === "ajuste" ? "ring-1 ring-blue-400" : ""}`} onClick={() => setCashType("ajuste")}>Ajuste</button>
+                </div>
+                {cashType === "ajuste" ? (
+                  <select className="field" value={cashDirection} onChange={(e) => setCashDirection(e.target.value as "entrada" | "saida")}>
+                    <option value="entrada">Ajuste + (entrada)</option>
+                    <option value="saida">Ajuste - (saída)</option>
+                  </select>
+                ) : null}
+                <input className="field" type="number" min="0" step="0.01" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} placeholder="Valor (obrigatório > 0)" disabled={!shift} />
+                <input className="field" value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Observação" disabled={!shift} />
+                <button className="btn-primary w-full" disabled={!shift || busy === "cash" || !availability.cashMovements}>{busy === "cash" ? "Registrando..." : "Registrar movimento"}</button>
+              </form>
+
+              <div className="rounded-xl border border-slate-200 p-3 space-y-2">
+                <p className="text-sm font-semibold text-slate-800">Filtros do histórico</p>
+                <div className="grid md:grid-cols-4 gap-2">
+                  <select className="field" value={cashFilterType} onChange={(e) => setCashFilterType(e.target.value as "" | "suprimento" | "sangria" | "ajuste")}>
+                    <option value="">Todos os tipos</option>
+                    <option value="suprimento">Suprimento</option>
+                    <option value="sangria">Sangria</option>
+                    <option value="ajuste">Ajuste</option>
+                  </select>
+                  <input className="field" type="datetime-local" value={cashFilterFrom} onChange={(e) => setCashFilterFrom(e.target.value)} />
+                  <input className="field" type="datetime-local" value={cashFilterTo} onChange={(e) => setCashFilterTo(e.target.value)} />
+                  <input className="field" value={cashFilterText} onChange={(e) => setCashFilterText(e.target.value)} placeholder="Filtrar por observação" />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-auto max-h-[380px] rounded-xl border border-slate-200">
+              <table className="w-full text-sm min-w-[760px]">
+                <thead><tr className="text-slate-500 bg-slate-50"><th className="text-left py-2 px-3">Data/hora</th><th className="text-left">Tipo</th><th className="text-right">Valor</th><th className="text-left">Observação</th><th className="text-left pr-3">Operador</th></tr></thead>
+                <tbody>
+                  {filteredCashMovements.length === 0 ? (
+                    <tr><td colSpan={5} className="py-4 px-3 text-slate-500">Nenhum movimento encontrado com os filtros atuais.</td></tr>
+                  ) : filteredCashMovements.map((m) => (
+                    <tr key={m.id} className="border-t">
+                      <td className="py-2 px-3">{new Date(m.created_at).toLocaleString("pt-BR")}</td>
+                      <td className="capitalize">{m.movement_type}</td>
+                      <td className={`text-right font-semibold ${Number(m.amount || 0) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{brl(Number(m.amount || 0))}</td>
+                      <td>{m.note || "-"}</td>
+                      <td className="pr-3">{(m.user_id && cashOperatorMap[m.user_id]) || (m.user_id === userId ? "Você" : "-")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <Card>
+            <CardTitle>Fechamento de caixa</CardTitle>
+            <CardDescription>Registre o valor declarado e valide automaticamente a diferença do turno.</CardDescription>
+            <form className="mt-3 grid lg:grid-cols-2 gap-3" onSubmit={submitCashClosing}>
+              <div className="space-y-2">
+                <input className="field" type="number" min="0" step="0.01" placeholder="Valor declarado" value={cashDeclared} onChange={(e) => setCashDeclared(e.target.value)} />
+                <textarea className="field" rows={3} placeholder="Observação do fechamento" value={cashClosingNote} onChange={(e) => setCashClosingNote(e.target.value)} />
+                <button className="btn-primary" disabled={!shift || busy === "cash-closing"}>{busy === "cash-closing" ? "Salvando..." : "Salvar fechamento"}</button>
+                {!availability.shiftCashClosings ? <p className="text-xs text-amber-700">Persistência indisponível no momento (tabela <code>shift_cash_closings</code>). O cálculo segue disponível sem quebrar a tela.</p> : null}
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 space-y-2">
+                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Esperado</span><b>{brl(cashExpected)}</b></div>
+                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Declarado</span><b>{brl(cashDeclared ? cashDeclaredValue : 0)}</b></div>
+                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Diferença</span><b className={cashDifferenceOk ? "text-emerald-700" : "text-amber-700"}>{brl(cashDifference)}</b></div>
+                <div className={`rounded-lg px-3 py-2 text-sm inline-flex items-center gap-2 ${cashDifferenceOk ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+                  {cashDifferenceOk ? <CheckCircle2 size={15} /> : <TriangleAlert size={15} />} Status: {cashDifferenceOk ? "OK" : "Atenção"}
+                </div>
+              </div>
+            </form>
+          </Card>
+        </div>
       )}
+
 
       {activeSection === "lancamentos" && (
         <Card>
