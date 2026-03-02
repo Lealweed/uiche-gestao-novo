@@ -1097,7 +1097,7 @@ export default function RebuildOperatorPage() {
               >
                 Limpar
               </button>
-              <button className="btn-primary" disabled={!shift || busy === "transaction" || !availability.transactions || !availability.companies || !availability.categories || !availability.subcategories}>
+              <button className="btn-primary" disabled={busy === "transaction"}>
                 {busy === "transaction" ? "Registrando..." : "Registrar Lançamento"}
               </button>
             </div>
