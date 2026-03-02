@@ -250,14 +250,6 @@ export default function RebuildAdminPage() {
       };
     });
 
-    if (points.every((point) => point.value === 0)) {
-      return points.map((point, index) => ({
-        ...point,
-        value: [120, 160, 140, 190, 170, 220, 210][index],
-        fallback: true,
-      }));
-    }
-
     return points;
   }, [postedTxs]);
 
