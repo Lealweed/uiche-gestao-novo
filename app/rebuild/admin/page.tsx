@@ -18,7 +18,7 @@ type Tx = {
   booth_id?: string | null;
   category_id?: string | null;
 };
-type Company = { id: string; name: string; active: boolean };
+type Company = { id: string; name: string; active: boolean; commission_percent?: number | null; payout_days?: number | null; account_manager?: string | null; whatsapp?: string | null; rating?: "alta" | "boa" | "media" | "ruim" | null };
 type Booth = { id: string; code: string; name: string; active: boolean };
 type Category = { id: string; name: string; active: boolean };
 type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
@@ -82,6 +82,11 @@ export default function RebuildAdminPage() {
   const [txReceipts, setTxReceipts] = useState<TxReceipt[]>([]);
 
   const [companyName, setCompanyName] = useState("");
+  const [companyCommission, setCompanyCommission] = useState("10");
+  const [companyPayoutDays, setCompanyPayoutDays] = useState("30");
+  const [companyManager, setCompanyManager] = useState("");
+  const [companyWhatsapp, setCompanyWhatsapp] = useState("");
+  const [companyRating, setCompanyRating] = useState<"alta" | "boa" | "media" | "ruim">("boa");
   const [boothCode, setBoothCode] = useState("");
   const [boothName, setBoothName] = useState("");
   const [linkOperatorId, setLinkOperatorId] = useState("");
@@ -423,7 +428,7 @@ export default function RebuildAdminPage() {
         loadChunk<Profile>("Usuários", supabase.from("profiles").select("user_id,full_name,role,active,tenant_id").order("full_name")),
         loadChunk<Shift>("Controle de turno", supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120)),
         loadChunk<Tx>("Histórico", supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400)),
-        loadChunk<Company>("Empresas", supabase.from("companies").select("id,name,active").order("name")),
+        loadChunk<Company>("Empresas", supabase.from("companies").select("id,name,active,commission_percent,payout_days,account_manager,whatsapp,rating").order("name")),
         loadChunk<Booth>("Guichês", supabase.from("booths").select("id,code,name,active").order("name")),
         loadChunk<Category>("Categorias", supabase.from("transaction_categories").select("id,name,active").order("name")),
         loadChunk<OperatorBooth>("Vínculos operador-guichê", supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250)),
@@ -503,9 +508,24 @@ export default function RebuildAdminPage() {
 
   async function createCompany() {
     if (!companyName.trim()) return setNotice("Informe o nome da empresa.");
-    const res = await supabase.from("companies").insert({ name: companyName.trim(), active: true });
+    const commission = Number(companyCommission || 0);
+    const payoutDays = Number(companyPayoutDays || 0);
+    const res = await supabase.from("companies").insert({
+      name: companyName.trim(),
+      commission_percent: Number.isFinite(commission) ? commission : 0,
+      payout_days: Number.isFinite(payoutDays) ? payoutDays : null,
+      account_manager: companyManager.trim() || null,
+      whatsapp: companyWhatsapp.trim() || null,
+      rating: companyRating || null,
+      active: true,
+    });
     if (res.error) return setNotice(`Não foi possível cadastrar a empresa: ${res.error.message}`);
     setCompanyName("");
+    setCompanyCommission("10");
+    setCompanyPayoutDays("30");
+    setCompanyManager("");
+    setCompanyWhatsapp("");
+    setCompanyRating("boa");
     setNotice("Empresa cadastrada com sucesso.");
     await loadAll();
   }
