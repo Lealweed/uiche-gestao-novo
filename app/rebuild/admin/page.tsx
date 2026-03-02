@@ -156,6 +156,26 @@ export default function RebuildAdminPage() {
       .sort((a, b) => b.activeBooths - a.activeBooths || a.operatorName.localeCompare(b.operatorName, "pt-BR"));
   }, [links, operators]);
 
+  const operatorsWithBooths = useMemo(() => {
+    const activeLinks = links.filter((link) => link.active);
+    return operators
+      .map((operator) => {
+        const linkedBooths = activeLinks
+          .filter((link) => link.operator_id === operator.user_id)
+          .map((link) => boothMap.get(link.booth_id) || "Guichê não encontrado");
+
+        return {
+          userId: operator.user_id,
+          name: operator.full_name || "Sem nome",
+          role: operator.role,
+          active: operator.active !== false,
+          boothCount: linkedBooths.length,
+          boothList: linkedBooths,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  }, [operators, links, boothMap]);
+
   const boothStatusCards = useMemo(() => {
     const activeLinks = links.filter((link) => link.active);
 
@@ -533,7 +553,52 @@ export default function RebuildAdminPage() {
     await loadAll();
   }
 
-  function downloadCsv(name: string, headers: string[], rows: Array<Array<string | number>>) {
+  
+
+  async function createOperatorAndLink() {
+    const userId = newUserId.trim();
+    const fullName = newUserName.trim();
+
+    if (!userId || !fullName) return setNotice("Preencha user_id (UUID) e nome do operador.");
+    if (!isUuid(userId)) return setNotice("Informe um UUID válido para user_id.");
+    if (!newUserRole) return setNotice("Selecione o perfil (role) do operador.");
+
+    const profileRes = await supabase.from("profiles").upsert({
+      user_id: userId,
+      full_name: fullName,
+      role: newUserRole,
+      active: newUserActive,
+    });
+
+    if (profileRes.error) {
+      return setNotice(`Não foi possível salvar o perfil: ${mapDbError(profileRes.error.message, "Falha ao salvar perfil")}`);
+    }
+
+    if (linkBoothId) {
+      const existingLink = links.find((l) => l.operator_id === userId && l.booth_id === linkBoothId);
+
+      if (!existingLink) {
+        const createLinkRes = await supabase.from("operator_booths").insert({ operator_id: userId, booth_id: linkBoothId, active: true });
+        if (createLinkRes.error) {
+          return setNotice(`Perfil salvo, mas não foi possível criar vínculo: ${mapDbError(createLinkRes.error.message, "Falha ao criar vínculo")}`);
+        }
+      } else if (!existingLink.active) {
+        const reactivateRes = await supabase.from("operator_booths").update({ active: true }).eq("id", existingLink.id);
+        if (reactivateRes.error) {
+          return setNotice(`Perfil salvo, mas não foi possível reativar vínculo: ${mapDbError(reactivateRes.error.message, "Falha ao reativar vínculo")}`);
+        }
+      }
+    }
+
+    setNewUserId("");
+    setNewUserName("");
+    setNewUserRole("operator");
+    setNewUserActive(true);
+    setLinkBoothId("");
+    setNotice(linkBoothId ? "Operador e vínculo salvos com sucesso." : "Operador salvo com sucesso.");
+    await loadAll();
+  }
+function downloadCsv(name: string, headers: string[], rows: Array<Array<string | number>>) {
     const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(";")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -897,7 +962,64 @@ export default function RebuildAdminPage() {
       )}
 
 {activeSection === "configuracoes" && canManageUsers && (
-        <SectionBox title="Configurações" subtitle="Gestão de empresas, guichês e vínculos operador↔guichê.">
+        <SectionBox title="Configurações" subtitle="Fluxo unificado no topo para cadastro de operador com vínculo inicial e CRUD completo abaixo.">
+          <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4 mb-4">
+            <div className="flex flex-col gap-1 mb-3">
+              <p className="font-semibold text-slate-900">Cadastro de Operador e Vínculo</p>
+              <p className="text-xs text-slate-600">Preencha os dados do operador e, opcionalmente, já defina o guichê inicial em um único salvar.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="user_id (UUID)" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="Nome do operador" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
+              <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "" | "tenant_admin" | "operator" | "financeiro")}>
+                <option value="operator">Operador</option>
+                <option value="financeiro">Financeiro</option>
+                <option value="tenant_admin">Admin do Tenant</option>
+              </select>
+              <select className="border rounded-lg px-3 py-2" value={newUserActive ? "1" : "0"} onChange={(e) => setNewUserActive(e.target.value === "1")}>
+                <option value="1">Ativo</option>
+                <option value="0">Inativo</option>
+              </select>
+              <select className="border rounded-lg px-3 py-2 md:col-span-3" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)}>
+                <option value="">Guichê inicial (opcional)</option>
+                {booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
+              </select>
+              <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold md:col-span-3" onClick={createOperatorAndLink}>Salvar operador e vínculo</button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-3 mb-4 overflow-auto">
+            <p className="font-semibold text-slate-800 mb-2">Operadores e seus guichês</p>
+            {operatorsWithBooths.length === 0 ? <Empty text="Sem operadores para consolidar." /> : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-slate-500 border-b">
+                    <th className="text-left py-2">Nome</th>
+                    <th className="text-left py-2">Role</th>
+                    <th className="text-left py-2">Status</th>
+                    <th className="text-right py-2">Qtd guichês</th>
+                    <th className="text-left py-2">Guichês</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {operatorsWithBooths.map((row) => (
+                    <tr key={row.userId} className="border-b last:border-0">
+                      <td className="py-2 font-medium text-slate-800">{row.name}</td>
+                      <td className="py-2">{row.role === "tenant_admin" ? "Admin do Tenant" : row.role === "financeiro" ? "Financeiro" : "Operador"}</td>
+                      <td className="py-2">
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${row.active ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                          {row.active ? "Ativo" : "Inativo"}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right font-semibold">{row.boothCount}</td>
+                      <td className="py-2">{row.boothCount > 0 ? row.boothList.join(" • ") : "Sem vínculo ativo"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <CrudPanel title="Empresas" createForm={<div className="flex gap-2"><input className="border rounded-lg px-3 py-2 flex-1" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createCompany}>Cadastrar</button></div>} items={companies.map((c) => ({ id: c.id, label: c.name, active: c.active, onToggle: () => toggleRow("companies", "id", c.id, c.active, "Empresa atualizada com sucesso.") }))} />
 
