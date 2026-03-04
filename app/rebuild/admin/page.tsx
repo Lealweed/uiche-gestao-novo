@@ -10,11 +10,13 @@ type Profile = { user_id: string; full_name: string; role: "tenant_admin" | "ope
 type Shift = { id: string; status: "open" | "closed"; opened_at: string; closed_at?: string | null; operator_id?: string | null; booth_id?: string | null };
 type BoardingFeeCity = "belem" | "goiania";
 
+type PaymentMethod = "pix" | "credit" | "debit" | "cash" | "link";
+
 type Tx = {
   id: string;
   sold_at: string;
   amount: number;
-  payment_method: "pix" | "credit" | "debit" | "cash";
+  payment_method: PaymentMethod;
   status: "posted" | "voided";
   operator_id?: string | null;
   booth_id?: string | null;
@@ -63,6 +65,16 @@ function movementTypeLabel(type: string) {
   if (type === "sangria") return "Sangria";
   if (type === "ajuste") return "Ajuste";
   return type;
+}
+
+function paymentMethodLabel(method?: string | null) {
+  const key = String(method || "").trim().toUpperCase();
+  if (key === "CREDIT") return "Crédito";
+  if (key === "DEBIT") return "Débito";
+  if (key === "CASH") return "Dinheiro";
+  if (key === "PIX") return "PIX";
+  if (key === "LINK") return "Link";
+  return method || "-";
 }
 
 function mapDbError(raw: string, fallback: string) {
@@ -115,8 +127,9 @@ export default function RebuildAdminPage() {
   const [boothName, setBoothName] = useState("");
   const [linkOperatorId, setLinkOperatorId] = useState("");
   const [linkBoothId, setLinkBoothId] = useState("");
-  const [newUserId, setNewUserId] = useState("");
   const [newUserName, setNewUserName] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<"" | "operator" | "financeiro" | "tenant_admin">("operator");
   const [newUserActive, setNewUserActive] = useState(true);
 
@@ -284,7 +297,7 @@ export default function RebuildAdminPage() {
         acc[tx.payment_method] += amount;
         return acc;
       },
-      { pix: 0, credit: 0, debit: 0, cash: 0 }
+      { pix: 0, credit: 0, debit: 0, cash: 0, link: 0 }
     );
   }, [filteredBoothTx]);
 
@@ -353,7 +366,7 @@ export default function RebuildAdminPage() {
         new Date(tx.sold_at).toLocaleString("pt-BR"),
         "transacao",
         operatorMap.get(tx.operator_id || "") || "Sem operador",
-        tx.payment_method.toUpperCase(),
+        paymentMethodLabel(tx.payment_method),
         String(Number(tx.amount || 0).toFixed(2)).replace(".", ","),
         String(Number(tx.boarding_fee_amount || 0).toFixed(2)).replace(".", ","),
         boardingFeeLabel(tx.boarding_fee_city),
@@ -742,26 +755,54 @@ export default function RebuildAdminPage() {
   }
 
 
-  async function createUserProfile() {
-    const userId = newUserId.trim();
+  async function createUserViaAdminApi(initialBoothId?: string) {
     const fullName = newUserName.trim();
-    if (!userId || !fullName) return setNotice("Informe ID do usuário e nome completo.");
-    if (!newUserRole) return setNotice("Selecione um papel obrigatório para o usuário.");
+    const email = newUserEmail.trim().toLowerCase();
+    const password = newUserPassword.trim();
 
-    const res = await supabase.from("profiles").upsert({
-      user_id: userId,
-      full_name: fullName,
-      role: newUserRole,
-      active: newUserActive,
+    if (!fullName || !email || !password) return setNotice("Preencha nome, e-mail e senha para criar o usuário.");
+    if (!email.includes("@")) return setNotice("Informe um e-mail válido.");
+    if (password.length < 6) return setNotice("A senha precisa ter pelo menos 6 caracteres.");
+    if (!newUserRole) return setNotice("Selecione um perfil para o usuário.");
+
+    const { data: authData, error: authError } = await supabase.auth.getSession();
+    if (authError || !authData.session?.access_token) {
+      return setNotice("Sua sessão expirou. Entre novamente para continuar.");
+    }
+
+    const response = await fetch("/api/admin/users", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authData.session.access_token}`,
+      },
+      body: JSON.stringify({
+        name: fullName,
+        email,
+        password,
+        role: newUserRole,
+        active: newUserActive,
+        boothId: initialBoothId || null,
+      }),
     });
 
-    if (res.error) return setNotice(`Não foi possível criar o usuário: ${mapDbError(res.error.message, "Falha ao criar usuário")}`);
-    setNewUserId("");
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      return setNotice(payload?.error || "Não foi possível criar o usuário agora.");
+    }
+
     setNewUserName("");
+    setNewUserEmail("");
+    setNewUserPassword("");
     setNewUserRole("operator");
     setNewUserActive(true);
-    setNotice("Operador/usuário salvo com sucesso.");
+    if (initialBoothId) setLinkBoothId("");
+    setNotice(initialBoothId ? "Usuário criado e vínculo inicial salvo com sucesso." : "Usuário criado com sucesso.");
     await loadAll();
+  }
+
+  async function createUserProfile() {
+    await createUserViaAdminApi();
   }
 
   async function createCompany() {
@@ -828,46 +869,7 @@ export default function RebuildAdminPage() {
   
 
   async function createOperatorAndLink() {
-    const userId = newUserId.trim();
-    const fullName = newUserName.trim();
-
-    if (!userId || !fullName) return setNotice("Preencha o identificador do usuário e o nome do operador.");
-    if (!newUserRole) return setNotice("Selecione o perfil (role) do operador.");
-
-    const profileRes = await supabase.from("profiles").upsert({
-      user_id: userId,
-      full_name: fullName,
-      role: newUserRole,
-      active: newUserActive,
-    });
-
-    if (profileRes.error) {
-      return setNotice(`Não foi possível salvar o perfil: ${mapDbError(profileRes.error.message, "Falha ao salvar perfil")}`);
-    }
-
-    if (linkBoothId) {
-      const existingLink = links.find((l) => l.operator_id === userId && l.booth_id === linkBoothId);
-
-      if (!existingLink) {
-        const createLinkRes = await supabase.from("operator_booths").insert({ operator_id: userId, booth_id: linkBoothId, active: true });
-        if (createLinkRes.error) {
-          return setNotice(`Perfil salvo, mas não foi possível criar vínculo: ${mapDbError(createLinkRes.error.message, "Falha ao criar vínculo")}`);
-        }
-      } else if (!existingLink.active) {
-        const reactivateRes = await supabase.from("operator_booths").update({ active: true }).eq("id", existingLink.id);
-        if (reactivateRes.error) {
-          return setNotice(`Perfil salvo, mas não foi possível reativar vínculo: ${mapDbError(reactivateRes.error.message, "Falha ao reativar vínculo")}`);
-        }
-      }
-    }
-
-    setNewUserId("");
-    setNewUserName("");
-    setNewUserRole("operator");
-    setNewUserActive(true);
-    setLinkBoothId("");
-    setNotice(linkBoothId ? "Operador e vínculo salvos com sucesso." : "Operador salvo com sucesso.");
-    await loadAll();
+    await createUserViaAdminApi(linkBoothId || undefined);
   }
 
   function updateCompanyDraft(companyId: string, field: keyof CompanyDraft, value: CompanyDraft[keyof CompanyDraft]) {
@@ -931,7 +933,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
       String(Number(tx.boarding_fee_amount || 0).toFixed(2)).replace(".", ","),
       boardingFeeLabel(tx.boarding_fee_city),
       tx.status,
-      tx.payment_method.toUpperCase(),
+      paymentMethodLabel(tx.payment_method),
     ]);
     downloadCsv(`relatorio-admin-detalhado-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
   }
@@ -1036,7 +1038,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                         <td>{new Date(tx.sold_at).toLocaleString("pt-BR")}</td>
                         <td>{operatorMap.get(tx.operator_id || "") || "Sem operador"}</td>
                         <td>{boothMap.get(tx.booth_id || "") || "Sem guichê"}</td>
-                        <td><span className={`rb-payment-badge rb-payment-${tx.payment_method}`}>{tx.payment_method.toUpperCase()}</span></td>
+                        <td><span className={`rb-payment-badge rb-payment-${tx.payment_method}`}>{paymentMethodLabel(tx.payment_method)}</span></td>
                         <td className="text-right font-semibold">{brl(Number(tx.amount || 0))}</td>
                         <td>
                           <span className={`rb-badge ${tx.status === "posted" ? "rb-badge-success" : "rb-badge-warning"}`}>
@@ -1181,7 +1183,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                       <td className="p-2">{operatorMap.get(tx.operator_id || "") || "Sem operador"}</td>
                       <td className="p-2">{boothMap.get(tx.booth_id || "") || "Sem guichê"}</td>
                       <td className="p-2">{categoryMap.get(tx.category_id || "") || "Sem categoria"}</td>
-                      <td className="p-2">{tx.payment_method.toUpperCase()}</td>
+                      <td className="p-2">{paymentMethodLabel(tx.payment_method)}</td>
                       <td className="p-2 text-right">{brl(Number(tx.amount || 0))}</td>
                       <td className="p-2 text-right">{brl(Number(tx.boarding_fee_amount || 0))}</td>
                       <td className="p-2">{boardingFeeLabel(tx.boarding_fee_city)}</td>
@@ -1286,10 +1288,11 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
         <SectionBox title="Usuários" subtitle="Gestão de perfis com foco em cadastro de operador (papel e status ativos).">
           <div className="rounded-lg border p-3 mb-4">
             <p className="font-semibold text-slate-800 mb-1">Cadastro de operador / usuário</p>
-            <p className="text-xs text-slate-500 mb-2">Use o ID interno do login, nome, perfil e status inicial.</p>
-            <div className="grid md:grid-cols-5 gap-2">
-              <input className="border rounded-lg px-3 py-2" placeholder="ID interno do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
+            <p className="text-xs text-slate-500 mb-2">Preencha nome, e-mail e senha para criar o acesso sem informar ID manual.</p>
+            <div className="grid md:grid-cols-6 gap-2">
               <input className="border rounded-lg px-3 py-2" placeholder="Nome completo" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" type="email" placeholder="E-mail de acesso" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" type="password" placeholder="Senha inicial" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} />
               <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "" | "tenant_admin" | "operator" | "financeiro")} required>
                 <option value="operator">Operador</option>
                 <option value="financeiro">Financeiro</option>
@@ -1299,7 +1302,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                 <option value="1">Ativo</option>
                 <option value="0">Inativo</option>
               </select>
-              <button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createUserProfile}>Salvar cadastro</button>
+              <button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createUserProfile}>Criar usuário</button>
             </div>
           </div>
           {users.length === 0 ? <Empty text="Nenhum usuário cadastrado." /> : (
@@ -1335,11 +1338,12 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
           <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4 mb-4">
             <div className="flex flex-col gap-1 mb-3">
               <p className="font-semibold text-slate-900">Cadastro de Operador e Vínculo</p>
-              <p className="text-xs text-slate-600">Use o identificador do usuário e, se quiser, já vincule um guichê inicial no mesmo fluxo.</p>
+              <p className="text-xs text-slate-600">Crie o acesso com nome, e-mail e senha. O vínculo inicial com guichê continua opcional.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
-              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="Identificador do usuário" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} />
-              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="Nome do operador" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2 md:col-span-2" placeholder="Nome completo" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2 md:col-span-2" type="email" placeholder="E-mail de acesso" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" type="password" placeholder="Senha inicial" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} />
               <select className="border rounded-lg px-3 py-2" value={newUserRole} onChange={(e) => setNewUserRole(e.target.value as "" | "tenant_admin" | "operator" | "financeiro")}>
                 <option value="operator">Operador</option>
                 <option value="financeiro">Financeiro</option>
@@ -1353,7 +1357,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                 <option value="">Guichê inicial (opcional)</option>
                 {booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
               </select>
-              <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold md:col-span-3" onClick={createOperatorAndLink}>Salvar operador e vínculo</button>
+              <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold md:col-span-3" onClick={createOperatorAndLink}>Criar usuário e vínculo</button>
             </div>
           </div>
 
@@ -1538,7 +1542,7 @@ function BoothDetailPanel({
   boothPanelOpenShift: Shift | null;
   boothPanelLastClosedShift: Shift | null;
   boothPanelCashBalance: number;
-  boothTxTotalsByMethod: { pix: number; credit: number; debit: number; cash: number };
+  boothTxTotalsByMethod: { pix: number; credit: number; debit: number; cash: number; link: number };
   boothFeeTotals: { total: number; belem: number; goiania: number };
   filteredBoothTx: Tx[];
   filteredBoothPunches: TimePunch[];
@@ -1580,11 +1584,12 @@ function BoothDetailPanel({
 
           <section className="rounded-xl border border-slate-200 p-4">
             <p className="text-sm font-semibold text-slate-900 mb-2">Transações do guichê</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3 text-sm">
               <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">PIX</p><p className="font-semibold">{brl(boothTxTotalsByMethod.pix)}</p></div>
               <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">Crédito</p><p className="font-semibold">{brl(boothTxTotalsByMethod.credit)}</p></div>
               <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">Débito</p><p className="font-semibold">{brl(boothTxTotalsByMethod.debit)}</p></div>
               <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">Dinheiro</p><p className="font-semibold">{brl(boothTxTotalsByMethod.cash)}</p></div>
+              <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">Link</p><p className="font-semibold">{brl(boothTxTotalsByMethod.link)}</p></div>
             </div>
             <p className="text-xs text-slate-500 mb-2">Taxas (boarding_fee): Belém {brl(boothFeeTotals.belem)} • Goiânia {brl(boothFeeTotals.goiania)} • Total {brl(boothFeeTotals.total)}</p>
             {filteredBoothTx.length === 0 ? <Empty text="Sem transações no período filtrado." /> : (
@@ -1593,7 +1598,7 @@ function BoothDetailPanel({
                   <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Operador</th><th className="p-2 text-left">Método</th><th className="p-2 text-right">Valor</th><th className="p-2 text-right">Taxa</th></tr></thead>
                   <tbody>
                     {filteredBoothTx.map((tx) => (
-                      <tr key={tx.id} className="border-t"><td className="p-2">{new Date(tx.sold_at).toLocaleString("pt-BR")}</td><td className="p-2">{operatorMap.get(tx.operator_id || "") || "Sem operador"}</td><td className="p-2">{tx.payment_method.toUpperCase()}</td><td className="p-2 text-right">{brl(Number(tx.amount || 0))}</td><td className="p-2 text-right">{brl(Number(tx.boarding_fee_amount || 0))}</td></tr>
+                      <tr key={tx.id} className="border-t"><td className="p-2">{new Date(tx.sold_at).toLocaleString("pt-BR")}</td><td className="p-2">{operatorMap.get(tx.operator_id || "") || "Sem operador"}</td><td className="p-2">{paymentMethodLabel(tx.payment_method)}</td><td className="p-2 text-right">{brl(Number(tx.amount || 0))}</td><td className="p-2 text-right">{brl(Number(tx.boarding_fee_amount || 0))}</td></tr>
                     ))}
                   </tbody>
                 </table>

@@ -599,19 +599,13 @@ export default function RebuildOperatorPage() {
 
     const { data, error: rpcError } = await supabase.rpc("open_shift", { p_booth_id: boothId, p_ip: null });
 
-    let newShift: Shift | null = null;
     if (rpcError) {
-      const fallback = await supabase.from("shifts").insert({ booth_id: boothId, operator_id: userId, status: "open" }).select("id,booth_id,status").single();
-      if (fallback.error) {
-        setBusy(null);
-        setFeedbackMessage(`Não foi possível abrir o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`, "error");
-        return;
-      }
-      newShift = fallback.data as Shift;
-      addWarning("Turno", "RPC open_shift indisponível. Foi usado fallback direto na tabela shifts.");
-    } else {
-      newShift = data as Shift;
+      setBusy(null);
+      setFeedbackMessage(`Não foi possível abrir o turno: ${rpcError.message}`, "error");
+      return;
     }
+
+    const newShift = data as Shift;
 
     if (!newShift) {
       setBusy(null);
@@ -643,13 +637,9 @@ export default function RebuildOperatorPage() {
     const { error: rpcError } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: notes });
 
     if (rpcError) {
-      const fallback = await supabase.from("shifts").update({ status: "closed", closed_at: new Date().toISOString() }).eq("id", shift.id).eq("status", "open");
-      if (fallback.error) {
-        setBusy(null);
-        setFeedbackMessage(`Não foi possível encerrar o turno: ${rpcError.message}. Fallback também falhou: ${fallback.error.message}`, "error");
-        return;
-      }
-      addWarning("Turno", "RPC close_shift indisponível. Foi usado fallback direto na tabela shifts.");
+      setBusy(null);
+      setFeedbackMessage(`Não foi possível encerrar o turno: ${rpcError.message}`, "error");
+      return;
     }
 
     setShift(null);
