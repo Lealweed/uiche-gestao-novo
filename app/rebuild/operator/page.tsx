@@ -31,6 +31,8 @@ type TimePunch = {
   punch_type: "entrada" | "pausa_inicio" | "pausa_fim" | "saida";
   punched_at: string;
 };
+type BoardingFeeCity = "belem" | "goiania";
+
 type TxBase = {
   id: string;
   amount: number;
@@ -39,6 +41,8 @@ type TxBase = {
   ticket_reference: string | null;
   note: string | null;
   company_id: string | null;
+  boarding_fee_amount?: number | null;
+  boarding_fee_city?: BoardingFeeCity | null;
 };
 type TxView = TxBase & { company_name: string; receipt_count: number };
 type SectionWarning = { section: string; message: string };
@@ -48,11 +52,22 @@ function brl(value: number) {
   return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+const BOARDING_FEE_OPTIONS: Array<{ city: BoardingFeeCity; label: string; amount: number }> = [
+  { city: "belem", label: "Belém", amount: 3.63 },
+  { city: "goiania", label: "Goiânia", amount: 5.83 },
+];
+
 function paymentMethodMeta(method: "pix" | "credit" | "debit" | "cash") {
   if (method === "credit") return { label: "Crédito", className: "rb-payment-badge rb-payment-credit" };
   if (method === "debit") return { label: "Débito", className: "rb-payment-badge rb-payment-debit" };
   if (method === "cash") return { label: "Dinheiro", className: "rb-payment-badge rb-payment-cash" };
   return { label: "PIX", className: "rb-payment-badge rb-payment-pix" };
+}
+
+function boardingFeeLabel(city?: BoardingFeeCity | null) {
+  if (city === "belem") return "Belém";
+  if (city === "goiania") return "Goiânia";
+  return "Sem taxa";
 }
 
 type OperatorSection = "resumo" | "lancamentos" | "caixa-pdv" | "ponto-digital" | "configuracoes";
@@ -98,6 +113,7 @@ export default function RebuildOperatorPage() {
   const [categoryId, setCategoryId] = useState("");
   const [subcategoryId, setSubcategoryId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit" | "debit" | "cash">("pix");
+  const [selectedBoardingFeeCity, setSelectedBoardingFeeCity] = useState<"" | BoardingFeeCity>("");
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
@@ -141,6 +157,19 @@ export default function RebuildOperatorPage() {
   );
 
   const totalSales = useMemo(() => totals.pix + totals.credit + totals.debit + totals.cash, [totals]);
+
+  const boardingFeeTotals = useMemo(() => {
+    return transactions.reduce(
+      (acc, tx) => {
+        const fee = Number(tx.boarding_fee_amount || 0);
+        acc.total += fee;
+        if (tx.boarding_fee_city === "belem") acc.belem += fee;
+        if (tx.boarding_fee_city === "goiania") acc.goiania += fee;
+        return acc;
+      },
+      { total: 0, belem: 0, goiania: 0 }
+    );
+  }, [transactions]);
 
   const pendingReceiptTxs = useMemo(
     () => transactions.filter((t) => (t.payment_method === "credit" || t.payment_method === "debit") && t.receipt_count === 0),
@@ -272,15 +301,41 @@ export default function RebuildOperatorPage() {
   async function loadTransactions(shiftId: string) {
     const txRes = await supabase
       .from("transactions")
-      .select("id,amount,payment_method,sold_at,ticket_reference,note,company_id")
+      .select("id,amount,payment_method,sold_at,ticket_reference,note,company_id,boarding_fee_amount,boarding_fee_city")
       .eq("shift_id", shiftId)
       .eq("status", "posted")
       .order("sold_at", { ascending: false })
       .limit(120);
 
-    if (txRes.error) { addWarning("Lançamentos", txRes.error.message); if (isMissingStructure(txRes.error.message)) setAvailability((prev) => ({ ...prev, transactions: false })); setTransactions([]); return; }
+    let baseTxs: TxBase[] = [];
 
-    const baseTxs = (txRes.data as TxBase[] | null) ?? [];
+    if (txRes.error) {
+      if (isMissingStructure(txRes.error.message)) {
+        const fallbackRes = await supabase
+          .from("transactions")
+          .select("id,amount,payment_method,sold_at,ticket_reference,note,company_id")
+          .eq("shift_id", shiftId)
+          .eq("status", "posted")
+          .order("sold_at", { ascending: false })
+          .limit(120);
+
+        if (fallbackRes.error) {
+          addWarning("Lançamentos", fallbackRes.error.message);
+          setAvailability((prev) => ({ ...prev, transactions: false }));
+          setTransactions([]);
+          return;
+        }
+
+        baseTxs = (((fallbackRes.data as TxBase[] | null) ?? []).map((tx) => ({ ...tx, boarding_fee_amount: 0, boarding_fee_city: null })));
+        addWarning("Lançamentos", "Campos de taxa de embarque ainda não disponíveis no banco. Exibindo dados sem taxa.");
+      } else {
+        addWarning("Lançamentos", txRes.error.message);
+        setTransactions([]);
+        return;
+      }
+    } else {
+      baseTxs = (txRes.data as TxBase[] | null) ?? [];
+    }
     const txIds = baseTxs.map((t) => t.id);
     const companyIds = Array.from(new Set(baseTxs.map((t) => t.company_id).filter(Boolean))) as string[];
 
@@ -634,6 +689,8 @@ export default function RebuildOperatorPage() {
     setBusy("transaction");
     setFeedback(null);
 
+    const selectedFee = BOARDING_FEE_OPTIONS.find((opt) => opt.city === selectedBoardingFeeCity);
+
     const insertRes = await supabase.from("transactions").insert({
       shift_id: shift.id,
       booth_id: shift.booth_id,
@@ -646,6 +703,8 @@ export default function RebuildOperatorPage() {
       ticket_reference: reference.trim() || null,
       note: note.trim() || null,
       commission_percent: null,
+      boarding_fee_city: selectedFee?.city ?? null,
+      boarding_fee_amount: selectedFee?.amount ?? 0,
     }).select("id").single();
 
     if (insertRes.error || !insertRes.data?.id) {
@@ -667,6 +726,7 @@ export default function RebuildOperatorPage() {
     setReference("");
     setNote("");
     setReceiptFile(null);
+    setSelectedBoardingFeeCity("");
     await loadTransactions(shift.id);
 
     setBusy(null);
@@ -939,6 +999,12 @@ export default function RebuildOperatorPage() {
           delta={pendingReceiptTxs.length === 0 ? "Tudo em dia" : "Envie antes de fechar o turno"}
           icon={<Receipt size={16} />}
         />
+        <StatCard
+          label="Taxas de embarque"
+          value={brl(boardingFeeTotals.total)}
+          delta={`Belém ${brl(boardingFeeTotals.belem)} • Goiânia ${brl(boardingFeeTotals.goiania)}`}
+          icon={<Wallet size={16} />}
+        />
       </section>
 
       {feedback ? (
@@ -1077,6 +1143,17 @@ export default function RebuildOperatorPage() {
               ))}
             </div>
 
+            <label className="rb-form-label">Taxa de embarque</label>
+            <select className="field" value={selectedBoardingFeeCity} onChange={(e) => setSelectedBoardingFeeCity(e.target.value as "" | BoardingFeeCity)}>
+              <option value="">Sem taxa</option>
+              {BOARDING_FEE_OPTIONS.map((opt) => (
+                <option key={opt.city} value={opt.city}>{opt.label} ({brl(opt.amount)})</option>
+              ))}
+            </select>
+            {selectedBoardingFeeCity ? (
+              <p className="text-xs text-slate-500">Taxa aplicada automaticamente neste lançamento.</p>
+            ) : null}
+
             <div className="rb-upload-highlight">
               <p className="rb-form-label">Comprovante (opcional no lançamento)</p>
               <label className="btn-ghost cursor-pointer text-sm inline-flex items-center gap-2">
@@ -1093,7 +1170,7 @@ export default function RebuildOperatorPage() {
               <button
                 type="button"
                 className="btn-ghost"
-                onClick={() => { setAmount(""); setReference(""); setNote(""); setReceiptFile(null); setTxErrors({}); }}
+                onClick={() => { setAmount(""); setReference(""); setNote(""); setReceiptFile(null); setSelectedBoardingFeeCity(""); setTxErrors({}); }}
               >
                 Limpar
               </button>
@@ -1270,7 +1347,7 @@ export default function RebuildOperatorPage() {
           </div>
           <div className="mt-4 overflow-auto max-h-[420px]">
             <table className="w-full text-sm">
-              <thead><tr className="text-slate-500"><th className="text-left py-2">Data</th><th className="text-left">Empresa</th><th className="text-left">Pagamento</th><th className="text-right">Valor</th><th className="text-left">Comprovante</th><th className="text-left">Ação</th></tr></thead>
+              <thead><tr className="text-slate-500"><th className="text-left py-2">Data</th><th className="text-left">Empresa</th><th className="text-left">Pagamento</th><th className="text-right">Valor</th><th className="text-left">Taxa</th><th className="text-left">Comprovante</th><th className="text-left">Ação</th></tr></thead>
               <tbody>
                 {filteredTransactions.map((tx) => (
                   <tr key={tx.id} className="border-t">
@@ -1278,6 +1355,11 @@ export default function RebuildOperatorPage() {
                     <td>{tx.company_name}</td>
                     <td>{paymentMethodMeta(tx.payment_method).label}</td>
                     <td className="text-right">{brl(Number(tx.amount || 0))}</td>
+                    <td>
+                      {Number(tx.boarding_fee_amount || 0) > 0
+                        ? `${boardingFeeLabel(tx.boarding_fee_city)} • ${brl(Number(tx.boarding_fee_amount || 0))}`
+                        : "-"}
+                    </td>
                     <td>{tx.receipt_count > 0 ? "OK" : "Pendente"}</td>
                     <td>
                       {tx.receipt_count > 0 ? (
@@ -1339,11 +1421,14 @@ export default function RebuildOperatorPage() {
           <div className="w-full max-w-2xl rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
             <h3 className="text-lg font-semibold text-slate-100">Fechamento de turno</h3>
             <p className="text-sm text-slate-400 mt-1">Confira o resumo final antes de encerrar.</p>
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">PIX</p><p className="font-semibold text-slate-100">{brl(totals.pix)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Crédito</p><p className="font-semibold text-slate-100">{brl(totals.credit)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Débito</p><p className="font-semibold text-slate-100">{brl(totals.debit)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Dinheiro</p><p className="font-semibold text-slate-100">{brl(totals.cash)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Taxas embarque</p><p className="font-semibold text-slate-100">{brl(boardingFeeTotals.total)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Belém</p><p className="font-semibold text-slate-100">{brl(boardingFeeTotals.belem)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Goiânia</p><p className="font-semibold text-slate-100">{brl(boardingFeeTotals.goiania)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Saldo de caixa</p><p className="font-semibold text-slate-100">{brl(cashTotals.saldo)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Suprimento</p><p className="font-semibold text-slate-100">{brl(cashTotals.suprimento)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Sangria</p><p className="font-semibold text-slate-100">{brl(cashTotals.sangria)}</p></div>

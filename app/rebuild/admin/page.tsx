@@ -8,6 +8,8 @@ type AdminSection = "dashboard" | "controle-turno" | "historico" | "relatorios" 
 
 type Profile = { user_id: string; full_name: string; role: "tenant_admin" | "operator" | "financeiro" | "admin"; active?: boolean | null; tenant_id?: string | null };
 type Shift = { id: string; status: "open" | "closed"; opened_at: string; closed_at?: string | null; operator_id?: string | null; booth_id?: string | null };
+type BoardingFeeCity = "belem" | "goiania";
+
 type Tx = {
   id: string;
   sold_at: string;
@@ -17,6 +19,8 @@ type Tx = {
   operator_id?: string | null;
   booth_id?: string | null;
   category_id?: string | null;
+  boarding_fee_amount?: number | null;
+  boarding_fee_city?: BoardingFeeCity | null;
 };
 type Company = { id: string; name: string; active: boolean; commission_percent?: number | null; payout_days?: number | null; account_manager?: string | null; whatsapp?: string | null; rating?: "alta" | "boa" | "media" | "ruim" | null };
 type Booth = { id: string; code: string; name: string; active: boolean };
@@ -39,6 +43,12 @@ const sections: Record<AdminSection, string> = {
 };
 
 const brl = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+function boardingFeeLabel(city?: BoardingFeeCity | null) {
+  if (city === "belem") return "Belém";
+  if (city === "goiania") return "Goiânia";
+  return "Sem taxa";
+}
 
 function mapDbError(raw: string, fallback: string) {
   const msg = raw.toLowerCase();
@@ -330,6 +340,19 @@ export default function RebuildAdminPage() {
     });
   }, [txs, historicoOperatorFilter, historicoStatusFilter, historicoBoothFilter, historicoCategoryFilter, historicoDateFilter, historicoMethodFilter, historicoDateFrom, historicoDateTo]);
 
+  const historicoFeeTotals = useMemo(() => {
+    return filteredHistorico.reduce(
+      (acc, tx) => {
+        const fee = Number(tx.boarding_fee_amount || 0);
+        acc.total += fee;
+        if (tx.boarding_fee_city === "belem") acc.belem += fee;
+        if (tx.boarding_fee_city === "goiania") acc.goiania += fee;
+        return acc;
+      },
+      { total: 0, belem: 0, goiania: 0 }
+    );
+  }, [filteredHistorico]);
+
   const filteredReportTx = useMemo(() => {
     return txs.filter((t) => {
       if (reportBoothFilter && t.booth_id !== reportBoothFilter) return false;
@@ -351,6 +374,16 @@ export default function RebuildAdminPage() {
 
   const reportTotals = useMemo(() => {
     const total = filteredReportTx.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+    const feeTotals = filteredReportTx.reduce(
+      (acc, tx) => {
+        const fee = Number(tx.boarding_fee_amount || 0);
+        acc.total += fee;
+        if (tx.boarding_fee_city === "belem") acc.belem += fee;
+        if (tx.boarding_fee_city === "goiania") acc.goiania += fee;
+        return acc;
+      },
+      { total: 0, belem: 0, goiania: 0 }
+    );
     const byOperator = new Map<string, { name: string; qty: number; total: number }>();
     const byBooth = new Map<string, { name: string; qty: number; total: number }>();
     const byCategory = new Map<string, { name: string; qty: number; total: number }>();
@@ -379,6 +412,7 @@ export default function RebuildAdminPage() {
     return {
       total,
       qty: filteredReportTx.length,
+      feeTotals,
       byOperator: Array.from(byOperator.values()).sort((a, b) => b.total - a.total),
       byBooth: Array.from(byBooth.values()).sort((a, b) => b.total - a.total),
       byCategory: Array.from(byCategory.values()).sort((a, b) => b.total - a.total),
@@ -429,10 +463,13 @@ export default function RebuildAdminPage() {
     }
 
     try {
-      const [nextProfiles, nextShifts, nextTxs, nextCompanies, nextBooths, nextCategories, nextLinks, nextPunches, nextCash] = await Promise.all([
+      const txRequestWithFee = supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id,boarding_fee_amount,boarding_fee_city").order("sold_at", { ascending: false }).limit(400);
+      const txRequestWithoutFee = supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400);
+
+      const [nextProfiles, nextShifts, nextTxsRaw, nextCompanies, nextBooths, nextCategories, nextLinks, nextPunches, nextCash] = await Promise.all([
         loadChunk<Profile>("Usuários", supabase.from("profiles").select("user_id,full_name,role,active,tenant_id").order("full_name")),
         loadChunk<Shift>("Controle de turno", supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120)),
-        loadChunk<Tx>("Histórico", supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400)),
+        loadChunk<Tx>("Histórico", txRequestWithFee),
         loadChunk<Company>("Empresas", supabase.from("companies").select("id,name,active,commission_percent,payout_days,account_manager,whatsapp,rating").order("name")),
         loadChunk<Booth>("Guichês", supabase.from("booths").select("id,code,name,active").order("name")),
         loadChunk<Category>("Categorias", supabase.from("transaction_categories").select("id,name,active").order("name")),
@@ -440,6 +477,15 @@ export default function RebuildAdminPage() {
         loadChunk<TimePunch>("Ponto", supabase.from("time_punches").select("id,user_id,booth_id,punch_type,punched_at,note").order("punched_at", { ascending: false }).limit(300)),
         loadChunk<CashMovement>("Caixa PDV", supabase.from("cash_movements").select("id,user_id,booth_id,movement_type,amount,created_at,note").order("created_at", { ascending: false }).limit(300)),
       ]);
+
+      let nextTxs = nextTxsRaw;
+      if (!nextTxs.length) {
+        const fallbackTxs = await loadChunk<Tx>("Histórico", txRequestWithoutFee);
+        if (fallbackTxs.length) {
+          warnings.push({ section: "Histórico", message: "Campos de taxa de embarque ainda não disponíveis. Exibindo sem taxa." });
+          nextTxs = fallbackTxs.map((tx) => ({ ...tx, boarding_fee_amount: 0, boarding_fee_city: null }));
+        }
+      }
 
       setProfiles(nextProfiles);
       setShifts(nextShifts);
@@ -675,13 +721,15 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
   }
 
   function exportCsvDetalhado() {
-    const headers = ["data", "operador", "guiche", "categoria", "valor", "status", "metodo"];
+    const headers = ["data", "operador", "guiche", "categoria", "valor", "taxa_embarque", "cidade_taxa", "status", "metodo"];
     const rows = filteredReportTx.map((tx) => [
       new Date(tx.sold_at).toLocaleString("pt-BR"),
       operatorMap.get(tx.operator_id || "") || "Sem operador",
       boothMap.get(tx.booth_id || "") || "Sem guichê",
       categoryMap.get(tx.category_id || "") || "Sem categoria",
       String(Number(tx.amount || 0).toFixed(2)).replace(".", ","),
+      String(Number(tx.boarding_fee_amount || 0).toFixed(2)).replace(".", ","),
+      boardingFeeLabel(tx.boarding_fee_city),
       tx.status,
       tx.payment_method.toUpperCase(),
     ]);
@@ -910,10 +958,16 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
             </div>
             <AdvancedOpsChart txs={filteredHistorico} />
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <Card title="Total de taxas no acerto" value={brl(historicoFeeTotals.total)} />
+            <Card title="Taxas Belém" value={brl(historicoFeeTotals.belem)} />
+            <Card title="Taxas Goiânia" value={brl(historicoFeeTotals.goiania)} />
+          </div>
           {filteredHistorico.length === 0 ? <Empty text="Sem transações para os filtros selecionados." /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Operador</th><th className="p-2 text-left">Guichê</th><th className="p-2 text-left">Categoria</th><th className="p-2 text-left">Pagamento</th><th className="p-2 text-right">Valor</th><th className="p-2 text-left">Status</th></tr></thead>
+                <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Operador</th><th className="p-2 text-left">Guichê</th><th className="p-2 text-left">Categoria</th><th className="p-2 text-left">Pagamento</th><th className="p-2 text-right">Valor</th><th className="p-2 text-right">Taxa</th><th className="p-2 text-left">Cidade taxa</th><th className="p-2 text-left">Status</th></tr></thead>
                 <tbody>
                   {filteredHistorico.slice(0, 160).map((tx) => (
                     <tr key={tx.id} className="border-t">
@@ -923,6 +977,8 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                       <td className="p-2">{categoryMap.get(tx.category_id || "") || "Sem categoria"}</td>
                       <td className="p-2">{tx.payment_method.toUpperCase()}</td>
                       <td className="p-2 text-right">{brl(Number(tx.amount || 0))}</td>
+                      <td className="p-2 text-right">{brl(Number(tx.boarding_fee_amount || 0))}</td>
+                      <td className="p-2">{boardingFeeLabel(tx.boarding_fee_city)}</td>
                       <td className="p-2">{tx.status === "posted" ? "Lançado" : "Cancelado"}</td>
                     </tr>
                   ))}
@@ -961,10 +1017,12 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
               Limpar filtros
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
             <Card title="Receita consolidada" value={brl(reportTotals.total)} />
             <Card title="Total de transações" value={String(reportTotals.qty)} />
             <Card title="Ticket médio" value={brl(reportTotals.qty ? reportTotals.total / reportTotals.qty : 0)} />
+            <Card title="Total de taxas" value={brl(reportTotals.feeTotals.total)} />
+            <Card title="Taxas Belém / Goiânia" value={`${brl(reportTotals.feeTotals.belem)} / ${brl(reportTotals.feeTotals.goiania)}`} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
             {reportTotals.byBooth.length === 0 ? (
