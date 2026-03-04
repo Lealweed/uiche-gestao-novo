@@ -51,6 +51,20 @@ function boardingFeeLabel(city?: BoardingFeeCity | null) {
   return "Sem taxa";
 }
 
+function punchTypeLabel(type: string) {
+  if (type === "entrada") return "Entrada";
+  if (type === "pausa") return "Pausa";
+  if (type === "saida") return "Saída";
+  return type;
+}
+
+function movementTypeLabel(type: string) {
+  if (type === "suprimento") return "Suprimento";
+  if (type === "sangria") return "Sangria";
+  if (type === "ajuste") return "Ajuste";
+  return type;
+}
+
 function mapDbError(raw: string, fallback: string) {
   const msg = raw.toLowerCase();
   if (msg.includes("duplicate key") || msg.includes("unique constraint") || msg.includes("23505")) {
@@ -118,6 +132,9 @@ export default function RebuildAdminPage() {
   const [reportCategoryFilter, setReportCategoryFilter] = useState("");
   const [reportStartDate, setReportStartDate] = useState("");
   const [reportEndDate, setReportEndDate] = useState("");
+  const [selectedBoothId, setSelectedBoothId] = useState("");
+  const [boothPanelDateFrom, setBoothPanelDateFrom] = useState("");
+  const [boothPanelDateTo, setBoothPanelDateTo] = useState("");
 
   useEffect(() => {
     const syncSectionFromHash = () => {
@@ -224,6 +241,156 @@ export default function RebuildAdminPage() {
       })
       .sort((a, b) => a.code.localeCompare(b.code, "pt-BR"));
   }, [booths, openShifts, closedShifts, links, cashMovements, postedTxs, receiptTxSet]);
+
+  const selectedBoothCard = useMemo(() => boothStatusCards.find((card) => card.id === selectedBoothId) || null, [boothStatusCards, selectedBoothId]);
+
+  const boothPanelOpenShift = useMemo(() => {
+    if (!selectedBoothId) return null;
+    return openShifts.find((shift) => shift.booth_id === selectedBoothId) || null;
+  }, [openShifts, selectedBoothId]);
+
+  const boothPanelLastClosedShift = useMemo(() => {
+    if (!selectedBoothId) return null;
+    return closedShifts.find((shift) => shift.booth_id === selectedBoothId) || null;
+  }, [closedShifts, selectedBoothId]);
+
+  const boothPanelOperatorName = useMemo(() => {
+    if (boothPanelOpenShift?.operator_id) return operatorMap.get(boothPanelOpenShift.operator_id) || "Sem operador";
+    if (boothPanelLastClosedShift?.operator_id) return operatorMap.get(boothPanelLastClosedShift.operator_id) || "Sem operador";
+    return "Sem operador";
+  }, [boothPanelOpenShift, boothPanelLastClosedShift, operatorMap]);
+
+  const filteredBoothTx = useMemo(() => {
+    if (!selectedBoothId) return [] as Tx[];
+    return postedTxs.filter((tx) => {
+      if (tx.booth_id !== selectedBoothId) return false;
+      const soldDate = new Date(tx.sold_at);
+      if (boothPanelDateFrom) {
+        const from = new Date(`${boothPanelDateFrom}T00:00:00`);
+        if (soldDate < from) return false;
+      }
+      if (boothPanelDateTo) {
+        const to = new Date(`${boothPanelDateTo}T23:59:59`);
+        if (soldDate > to) return false;
+      }
+      return true;
+    });
+  }, [selectedBoothId, postedTxs, boothPanelDateFrom, boothPanelDateTo]);
+
+  const boothTxTotalsByMethod = useMemo(() => {
+    return filteredBoothTx.reduce(
+      (acc, tx) => {
+        const amount = Number(tx.amount || 0);
+        acc[tx.payment_method] += amount;
+        return acc;
+      },
+      { pix: 0, credit: 0, debit: 0, cash: 0 }
+    );
+  }, [filteredBoothTx]);
+
+  const boothFeeTotals = useMemo(() => {
+    return filteredBoothTx.reduce(
+      (acc, tx) => {
+        const fee = Number(tx.boarding_fee_amount || 0);
+        acc.total += fee;
+        if (tx.boarding_fee_city === "belem") acc.belem += fee;
+        if (tx.boarding_fee_city === "goiania") acc.goiania += fee;
+        return acc;
+      },
+      { total: 0, belem: 0, goiania: 0 }
+    );
+  }, [filteredBoothTx]);
+
+  const filteredBoothPunches = useMemo(() => {
+    if (!selectedBoothId) return [] as TimePunch[];
+    return timePunches.filter((punch) => {
+      if (punch.booth_id !== selectedBoothId) return false;
+      const punchDate = new Date(punch.punched_at);
+      if (boothPanelDateFrom) {
+        const from = new Date(`${boothPanelDateFrom}T00:00:00`);
+        if (punchDate < from) return false;
+      }
+      if (boothPanelDateTo) {
+        const to = new Date(`${boothPanelDateTo}T23:59:59`);
+        if (punchDate > to) return false;
+      }
+      return true;
+    });
+  }, [selectedBoothId, timePunches, boothPanelDateFrom, boothPanelDateTo]);
+
+  const filteredBoothCashMovements = useMemo(() => {
+    if (!selectedBoothId) return [] as CashMovement[];
+    return cashMovements.filter((movement) => {
+      if (movement.booth_id !== selectedBoothId) return false;
+      const moveDate = new Date(movement.created_at);
+      if (boothPanelDateFrom) {
+        const from = new Date(`${boothPanelDateFrom}T00:00:00`);
+        if (moveDate < from) return false;
+      }
+      if (boothPanelDateTo) {
+        const to = new Date(`${boothPanelDateTo}T23:59:59`);
+        if (moveDate > to) return false;
+      }
+      return true;
+    });
+  }, [selectedBoothId, cashMovements, boothPanelDateFrom, boothPanelDateTo]);
+
+  const lastBoothPunch = filteredBoothPunches[0] || null;
+
+  const boothPanelCashBalance = useMemo(() => {
+    const cashSales = filteredBoothTx.filter((tx) => tx.payment_method === "cash").reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+    const cashIn = filteredBoothCashMovements.filter((movement) => movement.movement_type !== "sangria").reduce((acc, movement) => acc + Number(movement.amount || 0), 0);
+    const cashOut = filteredBoothCashMovements.filter((movement) => movement.movement_type === "sangria").reduce((acc, movement) => acc + Number(movement.amount || 0), 0);
+    return cashSales + cashIn - cashOut;
+  }, [filteredBoothTx, filteredBoothCashMovements]);
+
+  function exportCsvPainelGuiche() {
+    if (!selectedBoothCard) return;
+    const headers = ["data", "tipo", "operador", "metodo", "valor", "taxa_embarque", "cidade_taxa", "detalhe"];
+    const txRows = filteredBoothTx.map((tx) => ({
+      stamp: new Date(tx.sold_at).getTime(),
+      row: [
+        new Date(tx.sold_at).toLocaleString("pt-BR"),
+        "transacao",
+        operatorMap.get(tx.operator_id || "") || "Sem operador",
+        tx.payment_method.toUpperCase(),
+        String(Number(tx.amount || 0).toFixed(2)).replace(".", ","),
+        String(Number(tx.boarding_fee_amount || 0).toFixed(2)).replace(".", ","),
+        boardingFeeLabel(tx.boarding_fee_city),
+        tx.status === "posted" ? "Lançado" : "Cancelado",
+      ],
+    }));
+    const cashRows = filteredBoothCashMovements.map((movement) => ({
+      stamp: new Date(movement.created_at).getTime(),
+      row: [
+        new Date(movement.created_at).toLocaleString("pt-BR"),
+        "movimento_caixa",
+        operatorMap.get(movement.user_id || "") || "Sem operador",
+        movementTypeLabel(movement.movement_type),
+        String(Number(movement.amount || 0).toFixed(2)).replace(".", ","),
+        "0,00",
+        "Sem taxa",
+        movement.note || "-",
+      ],
+    }));
+    const punchRows = filteredBoothPunches.map((punch) => ({
+      stamp: new Date(punch.punched_at).getTime(),
+      row: [
+        new Date(punch.punched_at).toLocaleString("pt-BR"),
+        "ponto",
+        operatorMap.get(punch.user_id || "") || "Sem operador",
+        punchTypeLabel(punch.punch_type),
+        "0,00",
+        "0,00",
+        "Sem taxa",
+        punch.note || "-",
+      ],
+    }));
+    const rows = [...txRows, ...cashRows, ...punchRows]
+      .sort((a, b) => b.stamp - a.stamp)
+      .map((entry) => entry.row);
+    downloadCsv(`relatorio-guiche-${selectedBoothCard.code}-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
+  }
 
   const dashboardCards = useMemo(() => {
     const today = new Date();
@@ -892,7 +1059,12 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
             {boothStatusCards.length === 0 ? (
               <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500 col-span-full">Nenhum guichê ativo encontrado para montar o painel.</div>
             ) : boothStatusCards.map((card) => (
-              <div key={card.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <button
+                key={card.id}
+                type="button"
+                onClick={() => setSelectedBoothId(card.id)}
+                className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:-translate-y-[1px] hover:border-sky-300 hover:shadow-md"
+              >
                 <div className="flex items-center justify-between">
                   <p className="font-bold text-slate-900">{card.code}</p>
                   <span className={`text-xs px-2 py-1 rounded-full ${card.status === "em-atendimento" ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{card.status === "em-atendimento" ? "Em atendimento" : "Sem turno"}</span>
@@ -904,7 +1076,8 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                   <div className="rounded-md bg-white border p-2"><p className="text-slate-500">Operadores</p><p className="font-semibold">{card.operatorsLinked}</p></div>
                   <div className="rounded-md bg-white border p-2"><p className="text-slate-500">Mov. caixa hoje</p><p className="font-semibold">{card.cashToday}</p></div>
                 </div>
-              </div>
+                <p className="mt-2 text-[11px] font-semibold text-sky-700">Clique para abrir painel detalhado</p>
+              </button>
             ))}
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
@@ -1303,6 +1476,160 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
           </div>
         </SectionBox>
       )}
+
+      <BoothDetailPanel
+        selectedBoothCard={selectedBoothCard}
+        boothPanelDateFrom={boothPanelDateFrom}
+        boothPanelDateTo={boothPanelDateTo}
+        onChangeDateFrom={setBoothPanelDateFrom}
+        onChangeDateTo={setBoothPanelDateTo}
+        onClose={() => setSelectedBoothId("")}
+        onResetFilters={() => {
+          setBoothPanelDateFrom("");
+          setBoothPanelDateTo("");
+        }}
+        onExport={exportCsvPainelGuiche}
+        boothPanelOperatorName={boothPanelOperatorName}
+        boothPanelOpenShift={boothPanelOpenShift}
+        boothPanelLastClosedShift={boothPanelLastClosedShift}
+        boothPanelCashBalance={boothPanelCashBalance}
+        boothTxTotalsByMethod={boothTxTotalsByMethod}
+        boothFeeTotals={boothFeeTotals}
+        filteredBoothTx={filteredBoothTx}
+        filteredBoothPunches={filteredBoothPunches}
+        filteredBoothCashMovements={filteredBoothCashMovements}
+        lastBoothPunch={lastBoothPunch}
+        operatorMap={operatorMap}
+      />
+    </div>
+  );
+}
+
+function BoothDetailPanel({
+  selectedBoothCard,
+  boothPanelDateFrom,
+  boothPanelDateTo,
+  onChangeDateFrom,
+  onChangeDateTo,
+  onClose,
+  onResetFilters,
+  onExport,
+  boothPanelOperatorName,
+  boothPanelOpenShift,
+  boothPanelLastClosedShift,
+  boothPanelCashBalance,
+  boothTxTotalsByMethod,
+  boothFeeTotals,
+  filteredBoothTx,
+  filteredBoothPunches,
+  filteredBoothCashMovements,
+  lastBoothPunch,
+  operatorMap,
+}: {
+  selectedBoothCard: { code: string; name: string; status: string } | null;
+  boothPanelDateFrom: string;
+  boothPanelDateTo: string;
+  onChangeDateFrom: (value: string) => void;
+  onChangeDateTo: (value: string) => void;
+  onClose: () => void;
+  onResetFilters: () => void;
+  onExport: () => void;
+  boothPanelOperatorName: string;
+  boothPanelOpenShift: Shift | null;
+  boothPanelLastClosedShift: Shift | null;
+  boothPanelCashBalance: number;
+  boothTxTotalsByMethod: { pix: number; credit: number; debit: number; cash: number };
+  boothFeeTotals: { total: number; belem: number; goiania: number };
+  filteredBoothTx: Tx[];
+  filteredBoothPunches: TimePunch[];
+  filteredBoothCashMovements: CashMovement[];
+  lastBoothPunch: TimePunch | null;
+  operatorMap: Map<string, string>;
+}) {
+  if (!selectedBoothCard) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-[1px]" onClick={onClose}>
+      <aside className="absolute right-0 top-0 h-full w-full max-w-3xl overflow-y-auto bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 z-10 border-b bg-white/95 px-5 py-4 backdrop-blur">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Painel detalhado do guichê</p>
+              <h3 className="text-xl font-bold text-slate-900">{selectedBoothCard.code} • {selectedBoothCard.name}</h3>
+            </div>
+            <button className="rounded-lg border px-3 py-1.5 text-sm font-semibold text-slate-700" onClick={onClose}>Fechar</button>
+          </div>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-4 gap-2">
+            <input className="border rounded-lg px-3 py-2 text-sm" type="date" value={boothPanelDateFrom} onChange={(e) => onChangeDateFrom(e.target.value)} />
+            <input className="border rounded-lg px-3 py-2 text-sm" type="date" value={boothPanelDateTo} onChange={(e) => onChangeDateTo(e.target.value)} />
+            <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700" onClick={onResetFilters}>Limpar filtro</button>
+            <button className="rounded-lg bg-[#0da2e7] px-3 py-2 text-sm font-semibold text-white" onClick={onExport}>Exportar CSV do guichê</button>
+          </div>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          <section className="rounded-xl border border-slate-200 p-4">
+            <p className="text-sm font-semibold text-slate-900 mb-2">Resumo do guichê</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+              <div className="rounded-lg bg-slate-50 border p-3"><p className="text-slate-500">Status atual</p><p className="font-semibold text-slate-900">{selectedBoothCard.status === "em-atendimento" ? "Em atendimento" : "Sem turno"}</p></div>
+              <div className="rounded-lg bg-slate-50 border p-3"><p className="text-slate-500">Operador ativo</p><p className="font-semibold text-slate-900">{boothPanelOperatorName}</p></div>
+              <div className="rounded-lg bg-slate-50 border p-3"><p className="text-slate-500">Turno aberto / último fechamento</p><p className="font-semibold text-slate-900">{boothPanelOpenShift ? new Date(boothPanelOpenShift.opened_at).toLocaleString("pt-BR") : "Sem turno aberto"} • {boothPanelLastClosedShift ? new Date(boothPanelLastClosedShift.closed_at || boothPanelLastClosedShift.opened_at).toLocaleString("pt-BR") : "Sem fechamento"}</p></div>
+              <div className="rounded-lg bg-slate-50 border p-3"><p className="text-slate-500">Saldo de caixa do turno</p><p className={`font-semibold ${boothPanelCashBalance < 0 ? "text-rose-700" : "text-emerald-700"}`}>{brl(boothPanelCashBalance)}</p></div>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 p-4">
+            <p className="text-sm font-semibold text-slate-900 mb-2">Transações do guichê</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3 text-sm">
+              <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">PIX</p><p className="font-semibold">{brl(boothTxTotalsByMethod.pix)}</p></div>
+              <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">Crédito</p><p className="font-semibold">{brl(boothTxTotalsByMethod.credit)}</p></div>
+              <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">Débito</p><p className="font-semibold">{brl(boothTxTotalsByMethod.debit)}</p></div>
+              <div className="rounded-lg bg-slate-50 border p-2"><p className="text-slate-500">Dinheiro</p><p className="font-semibold">{brl(boothTxTotalsByMethod.cash)}</p></div>
+            </div>
+            <p className="text-xs text-slate-500 mb-2">Taxas (boarding_fee): Belém {brl(boothFeeTotals.belem)} • Goiânia {brl(boothFeeTotals.goiania)} • Total {brl(boothFeeTotals.total)}</p>
+            {filteredBoothTx.length === 0 ? <Empty text="Sem transações no período filtrado." /> : (
+              <div className="max-h-56 overflow-auto rounded-lg border">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Operador</th><th className="p-2 text-left">Método</th><th className="p-2 text-right">Valor</th><th className="p-2 text-right">Taxa</th></tr></thead>
+                  <tbody>
+                    {filteredBoothTx.map((tx) => (
+                      <tr key={tx.id} className="border-t"><td className="p-2">{new Date(tx.sold_at).toLocaleString("pt-BR")}</td><td className="p-2">{operatorMap.get(tx.operator_id || "") || "Sem operador"}</td><td className="p-2">{tx.payment_method.toUpperCase()}</td><td className="p-2 text-right">{brl(Number(tx.amount || 0))}</td><td className="p-2 text-right">{brl(Number(tx.boarding_fee_amount || 0))}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-slate-200 p-4">
+            <p className="text-sm font-semibold text-slate-900 mb-2">Ponto dos operadores do guichê</p>
+            <p className="text-xs text-slate-500 mb-2">Última batida: {lastBoothPunch ? `${punchTypeLabel(lastBoothPunch.punch_type)} em ${new Date(lastBoothPunch.punched_at).toLocaleString("pt-BR")}` : "Sem batidas"}</p>
+            {filteredBoothPunches.length === 0 ? <Empty text="Sem registros de ponto no período." /> : (
+              <div className="max-h-48 overflow-auto space-y-1 text-sm">
+                {filteredBoothPunches.map((punch) => (
+                  <div key={punch.id} className="flex justify-between border-b py-1"><span>{operatorMap.get(punch.user_id || "") || "Sem operador"} • {punchTypeLabel(punch.punch_type)}</span><span className="text-slate-500">{new Date(punch.punched_at).toLocaleString("pt-BR")}</span></div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-xl border border-slate-200 p-4">
+            <p className="text-sm font-semibold text-slate-900 mb-2">Movimentos de caixa do guichê</p>
+            {filteredBoothCashMovements.length === 0 ? <Empty text="Sem movimentos de caixa no período." /> : (
+              <div className="max-h-56 overflow-auto rounded-lg border">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600"><tr><th className="p-2 text-left">Data</th><th className="p-2 text-left">Operador</th><th className="p-2 text-left">Tipo</th><th className="p-2 text-right">Valor</th><th className="p-2 text-left">Observação</th></tr></thead>
+                  <tbody>
+                    {filteredBoothCashMovements.map((movement) => (
+                      <tr key={movement.id} className="border-t"><td className="p-2">{new Date(movement.created_at).toLocaleString("pt-BR")}</td><td className="p-2">{operatorMap.get(movement.user_id || "") || "Sem operador"}</td><td className="p-2">{movementTypeLabel(movement.movement_type)}</td><td className="p-2 text-right">{brl(Number(movement.amount || 0))}</td><td className="p-2">{movement.note || "-"}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      </aside>
     </div>
   );
 }
