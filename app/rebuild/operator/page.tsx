@@ -672,10 +672,41 @@ export default function RebuildOperatorPage() {
     setShowCloseModal(true);
   }
 
+  async function ensureOpenShiftForUser(currentUserId: string) {
+    if (shift) return shift;
+    const res = await supabase
+      .from("shifts")
+      .select("id,booth_id,status")
+      .eq("operator_id", currentUserId)
+      .eq("status", "open")
+      .order("opened_at", { ascending: false })
+      .limit(1);
+
+    if (res.error) {
+      setFeedbackMessage(`Não foi possível validar o turno aberto: ${res.error.message}`, "error");
+      return null;
+    }
+
+    const recovered = ((res.data as Shift[] | null) ?? [])[0] ?? null;
+    if (recovered) {
+      setShift(recovered);
+      await Promise.all([loadTransactions(recovered.id), loadCashMovements(recovered.id)]);
+      setFeedbackMessage("Turno aberto recuperado automaticamente.", "info");
+    }
+
+    return recovered;
+  }
+
   async function submitTransaction(e: FormEvent) {
     e.preventDefault();
 
-    if (!shift || !userId) {
+    if (!userId) {
+      setFeedbackMessage("Sessão inválida. Faça login novamente.", "error");
+      return;
+    }
+
+    const activeShift = await ensureOpenShiftForUser(userId);
+    if (!activeShift) {
       setFeedbackMessage("Abra um turno para lançar vendas.", "error");
       return;
     }
@@ -719,8 +750,8 @@ export default function RebuildOperatorPage() {
     const selectedFee = BOARDING_FEE_OPTIONS.find((opt) => opt.city === selectedBoardingFeeCity);
 
     const insertRes = await supabase.from("transactions").insert({
-      shift_id: shift.id,
-      booth_id: shift.booth_id,
+      shift_id: activeShift.id,
+      booth_id: activeShift.booth_id,
       operator_id: userId,
       company_id: companyId,
       category_id: categoryId,
@@ -754,7 +785,7 @@ export default function RebuildOperatorPage() {
     setNote("");
     setReceiptFile(null);
     setSelectedBoardingFeeCity("");
-    await loadTransactions(shift.id);
+    await loadTransactions(activeShift.id);
 
     setBusy(null);
     setFeedbackMessage("Lançamento registrado com sucesso.", "success");
