@@ -23,6 +23,7 @@ type Tx = {
   boarding_fee_city?: BoardingFeeCity | null;
 };
 type Company = { id: string; name: string; active: boolean; commission_percent?: number | null; payout_days?: number | null; account_manager?: string | null; whatsapp?: string | null; rating?: "alta" | "boa" | "media" | "ruim" | null };
+type CompanyDraft = { name: string; commission_percent: string; payout_days: string; account_manager: string; whatsapp: string; rating: "alta" | "boa" | "media" | "ruim" };
 type Booth = { id: string; code: string; name: string; active: boolean };
 type Category = { id: string; name: string; active: boolean };
 type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
@@ -95,13 +96,7 @@ export default function RebuildAdminPage() {
   const [companyManager, setCompanyManager] = useState("");
   const [companyWhatsapp, setCompanyWhatsapp] = useState("");
   const [companyRating, setCompanyRating] = useState<"alta" | "boa" | "media" | "ruim">("boa");
-  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
-  const [editingCompanyName, setEditingCompanyName] = useState("");
-  const [editingCompanyCommission, setEditingCompanyCommission] = useState("0");
-  const [editingCompanyPayoutDays, setEditingCompanyPayoutDays] = useState("0");
-  const [editingCompanyManager, setEditingCompanyManager] = useState("");
-  const [editingCompanyWhatsapp, setEditingCompanyWhatsapp] = useState("");
-  const [editingCompanyRating, setEditingCompanyRating] = useState<"alta" | "boa" | "media" | "ruim">("boa");
+  const [companyDrafts, setCompanyDrafts] = useState<Record<string, CompanyDraft>>({});
   const [boothCode, setBoothCode] = useState("");
   const [boothName, setBoothName] = useState("");
   const [linkOperatorId, setLinkOperatorId] = useState("");
@@ -419,6 +414,52 @@ export default function RebuildAdminPage() {
     };
   }, [filteredReportTx, operatorMap, boothMap, categoryMap]);
 
+  const ratingOrder: Array<"alta" | "boa" | "media" | "ruim"> = ["alta", "boa", "media", "ruim"];
+
+  const companyRatingRanking = useMemo(() => {
+    const byRating = new Map<"alta" | "boa" | "media" | "ruim", Company[]>();
+    ratingOrder.forEach((rating) => byRating.set(rating, []));
+
+    companies.forEach((company) => {
+      const rating = company.rating || "ruim";
+      byRating.get(rating)?.push(company);
+    });
+
+    return ratingOrder.map((rating) => ({
+      rating,
+      label: rating === "alta" ? "Alta" : rating === "boa" ? "Boa" : rating === "media" ? "Média" : "Ruim",
+      total: byRating.get(rating)?.length || 0,
+      companies: (byRating.get(rating) || []).slice().sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR")),
+    }));
+  }, [companies]);
+
+  const payoutInsights = useMemo(() => {
+    const withPayout = companies.filter((company) => Number.isFinite(Number(company.payout_days)));
+    const sorted = withPayout.slice().sort((a, b) => Number(a.payout_days || 0) - Number(b.payout_days || 0));
+
+    return {
+      shortest: sorted.slice(0, 5),
+      longest: sorted.slice(-5).reverse(),
+    };
+  }, [companies]);
+
+  useEffect(() => {
+    setCompanyDrafts((prev) => {
+      const next: Record<string, CompanyDraft> = {};
+      companies.forEach((company) => {
+        next[company.id] = prev[company.id] || {
+          name: company.name || "",
+          commission_percent: String(company.commission_percent ?? 0),
+          payout_days: String(company.payout_days ?? 0),
+          account_manager: company.account_manager || "",
+          whatsapp: company.whatsapp || "",
+          rating: (company.rating as "alta" | "boa" | "media" | "ruim" | null) || "boa",
+        };
+      });
+      return next;
+    });
+  }, [companies]);
+
   useEffect(() => {
     async function guard() {
       setAuthLoading(true);
@@ -662,51 +703,43 @@ export default function RebuildAdminPage() {
     await loadAll();
   }
 
-  function startEditCompany(company: Company) {
-    setEditingCompanyId(company.id);
-    setEditingCompanyName(company.name || "");
-    setEditingCompanyCommission(String(company.commission_percent ?? 0));
-    setEditingCompanyPayoutDays(String(company.payout_days ?? 0));
-    setEditingCompanyManager(company.account_manager || "");
-    setEditingCompanyWhatsapp(company.whatsapp || "");
-    setEditingCompanyRating((company.rating as "alta" | "boa" | "media" | "ruim" | null) || "boa");
+  function updateCompanyDraft(companyId: string, field: keyof CompanyDraft, value: CompanyDraft[keyof CompanyDraft]) {
+    setCompanyDrafts((prev) => {
+      const current = prev[companyId];
+      if (!current) return prev;
+      return { ...prev, [companyId]: { ...current, [field]: value } };
+    });
   }
 
-  function cancelEditCompany() {
-    setEditingCompanyId(null);
-    setEditingCompanyName("");
-    setEditingCompanyCommission("0");
-    setEditingCompanyPayoutDays("0");
-    setEditingCompanyManager("");
-    setEditingCompanyWhatsapp("");
-    setEditingCompanyRating("boa");
-  }
+  async function saveCompanyInline(company: Company) {
+    const draft = companyDrafts[company.id];
+    if (!draft) return;
 
-  async function saveCompanyEdit(companyId: string) {
-    if (!editingCompanyName.trim()) return setNotice("Informe o nome da empresa.");
+    const name = draft.name.trim();
+    if (!name) return setNotice("Informe o nome da empresa.");
 
-    const commission = Number(editingCompanyCommission || 0);
-    const payoutDays = Number(editingCompanyPayoutDays || 0);
-    const sanitizedWhatsapp = normalizeWhatsapp(editingCompanyWhatsapp);
+    const commission = Number(draft.commission_percent || 0);
+    const payoutDays = Number(draft.payout_days || 0);
+    const sanitizedWhatsapp = normalizeWhatsapp(draft.whatsapp);
 
     if (!Number.isFinite(commission) || commission < 0 || commission > 100) return setNotice("Comissão inválida. Informe um percentual entre 0 e 100.");
     if (!Number.isFinite(payoutDays) || payoutDays < 0) return setNotice("Repasse inválido. Informe a quantidade de dias igual ou maior que zero.");
     if (sanitizedWhatsapp && sanitizedWhatsapp.length < 10) return setNotice("WhatsApp inválido. Informe DDD + número.");
 
     const res = await supabase.from("companies").update({
-      name: editingCompanyName.trim(),
-      commission_percent: Number.isFinite(commission) ? Math.min(100, commission) : 0,
-      payout_days: Number.isFinite(payoutDays) ? payoutDays : null,
-      account_manager: editingCompanyManager.trim() || null,
+      name,
+      commission_percent: Math.min(100, commission),
+      payout_days: payoutDays,
+      account_manager: draft.account_manager.trim() || null,
       whatsapp: sanitizedWhatsapp || null,
-      rating: editingCompanyRating || null,
-    }).eq("id", companyId);
+      rating: draft.rating || null,
+    }).eq("id", company.id);
 
     if (res.error) return setNotice(`Não foi possível atualizar a empresa: ${mapDbError(res.error.message, "Falha ao atualizar empresa")}`);
-    setNotice("Empresa atualizada com sucesso.");
-    cancelEditCompany();
+    setNotice(`Empresa ${name} atualizada com sucesso.`);
     await loadAll();
   }
+
 function downloadCsv(name: string, headers: string[], rows: Array<Array<string | number>>) {
     const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(";")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -1024,6 +1057,38 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
             <Card title="Total de taxas" value={brl(reportTotals.feeTotals.total)} />
             <Card title="Taxas Belém / Goiânia" value={`${brl(reportTotals.feeTotals.belem)} / ${brl(reportTotals.feeTotals.goiania)}`} />
           </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div className="rounded-lg border p-3">
+              <p className="font-semibold text-slate-800 mb-2">Ranking por classificação de empresa</p>
+              {companyRatingRanking.every((item) => item.total === 0) ? <p className="text-sm text-slate-500">Sem empresas classificadas.</p> : (
+                <div className="space-y-2">
+                  {companyRatingRanking.map((item) => (
+                    <div key={item.rating} className="rounded-md border p-2 bg-slate-50">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-semibold text-slate-800">{item.label}</span>
+                        <span className="text-slate-600">{item.total} empresa(s)</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{item.companies.slice(0, 4).map((company) => company.name).join(" • ") || "-"}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="font-semibold text-slate-800 mb-2">Visão de repasses (dias)</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <p className="text-xs uppercase text-emerald-700 font-semibold mb-1">Repasses mais curtos</p>
+                  {payoutInsights.shortest.length === 0 ? <p className="text-sm text-slate-500">Sem dados.</p> : payoutInsights.shortest.map((company) => <p key={`short-${company.id}`} className="text-sm">{company.name} • <span className="font-semibold">{company.payout_days ?? 0}d</span></p>)}
+                </div>
+                <div>
+                  <p className="text-xs uppercase text-rose-700 font-semibold mb-1">Repasses mais longos</p>
+                  {payoutInsights.longest.length === 0 ? <p className="text-sm text-slate-500">Sem dados.</p> : payoutInsights.longest.map((company) => <p key={`long-${company.id}`} className="text-sm">{company.name} • <span className="font-semibold">{company.payout_days ?? 0}d</span></p>)}
+                </div>
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
             {reportTotals.byBooth.length === 0 ? (
               <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500 col-span-full">Sem dados por guichê para o período selecionado.</div>
@@ -1170,46 +1235,49 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
               <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2" onClick={createCompany}>Cadastrar empresa</button>
 
               {companies.length === 0 ? <p className="text-sm text-slate-500">Sem registros.</p> : (
-                <div className="max-h-72 overflow-auto space-y-2">
-                  {companies.map((c) => {
-                    const editing = editingCompanyId === c.id;
-                    return (
-                      <div key={c.id} className="rounded-lg border p-2 space-y-2">
-                        {editing ? (
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <input className="border rounded-lg px-3 py-2" value={editingCompanyName} onChange={(e) => setEditingCompanyName(e.target.value)} placeholder="Nome da empresa" />
-                            <input className="border rounded-lg px-3 py-2" type="number" min="0" step="0.1" value={editingCompanyCommission} onChange={(e) => setEditingCompanyCommission(e.target.value)} placeholder="Comissão (%)" />
-                            <input className="border rounded-lg px-3 py-2" type="number" min="0" value={editingCompanyPayoutDays} onChange={(e) => setEditingCompanyPayoutDays(e.target.value)} placeholder="Repasse (dias)" />
-                            <input className="border rounded-lg px-3 py-2" value={editingCompanyManager} onChange={(e) => setEditingCompanyManager(e.target.value)} placeholder="Responsável" />
-                            <input className="border rounded-lg px-3 py-2" value={editingCompanyWhatsapp} onChange={(e) => setEditingCompanyWhatsapp(e.target.value)} placeholder="WhatsApp" />
-                            <select className="border rounded-lg px-3 py-2" value={editingCompanyRating} onChange={(e) => setEditingCompanyRating(e.target.value as "alta" | "boa" | "media" | "ruim")}>
-                              <option value="alta">Alta</option>
-                              <option value="boa">Boa</option>
-                              <option value="media">Média</option>
-                              <option value="ruim">Ruim</option>
-                            </select>
-                          </div>
-                        ) : (
-                          <div className="text-sm text-slate-700">
-                            <p className="font-medium text-slate-900">{c.name}</p>
-                            <p>Comissão: <span className="font-semibold">{Number(c.commission_percent || 0).toFixed(1)}%</span> • Repasse: <span className="font-semibold">{c.payout_days ?? 0} dias</span></p>
-                            <p>Responsável: {c.account_manager || "-"} • WhatsApp: {c.whatsapp || "-"} • Classificação: {c.rating ? c.rating[0].toUpperCase() + c.rating.slice(1) : "-"}</p>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2">
-                          {editing ? (
-                            <>
-                              <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-1.5 text-xs" onClick={() => saveCompanyEdit(c.id)}>Salvar edição</button>
-                              <button className="rounded-lg border px-3 py-1.5 text-xs" onClick={cancelEditCompany}>Cancelar</button>
-                            </>
-                          ) : (
-                            <button className="rounded-lg border px-3 py-1.5 text-xs" onClick={() => startEditCompany(c)}>Editar</button>
-                          )}
-                          <button className="rounded-lg border px-3 py-1.5 text-xs" onClick={() => toggleRow("companies", "id", c.id, c.active, "Empresa atualizada com sucesso.")}>{c.active ? "Inativar" : "Ativar"}</button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="max-h-80 overflow-auto rounded-lg border">
+                  <table className="w-full text-xs md:text-sm">
+                    <thead className="bg-slate-50 text-slate-600 sticky top-0">
+                      <tr>
+                        <th className="p-2 text-left">Empresa</th>
+                        <th className="p-2 text-left">Comissão %</th>
+                        <th className="p-2 text-left">Repasse (dias)</th>
+                        <th className="p-2 text-left">Responsável</th>
+                        <th className="p-2 text-left">WhatsApp</th>
+                        <th className="p-2 text-left">Classificação</th>
+                        <th className="p-2 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {companies.map((company) => {
+                        const draft = companyDrafts[company.id];
+                        if (!draft) return null;
+                        return (
+                          <tr key={company.id} className="border-t align-top">
+                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.name} onChange={(e) => updateCompanyDraft(company.id, "name", e.target.value)} /></td>
+                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-24" type="number" min="0" max="100" step="0.1" value={draft.commission_percent} onChange={(e) => updateCompanyDraft(company.id, "commission_percent", e.target.value)} /></td>
+                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-24" type="number" min="0" value={draft.payout_days} onChange={(e) => updateCompanyDraft(company.id, "payout_days", e.target.value)} /></td>
+                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.account_manager} onChange={(e) => updateCompanyDraft(company.id, "account_manager", e.target.value)} /></td>
+                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.whatsapp} onChange={(e) => updateCompanyDraft(company.id, "whatsapp", e.target.value)} /></td>
+                            <td className="p-2">
+                              <select className="border rounded-lg px-2 py-1 w-full" value={draft.rating} onChange={(e) => updateCompanyDraft(company.id, "rating", e.target.value)}>
+                                <option value="alta">Alta</option>
+                                <option value="boa">Boa</option>
+                                <option value="media">Média</option>
+                                <option value="ruim">Ruim</option>
+                              </select>
+                            </td>
+                            <td className="p-2">
+                              <div className="flex justify-end gap-2">
+                                <button className="rounded-lg bg-[#0da2e7] text-white px-2 py-1" onClick={() => saveCompanyInline(company)}>Salvar</button>
+                                <button className="rounded-lg border px-2 py-1" onClick={() => toggleRow("companies", "id", company.id, company.active, "Empresa atualizada com sucesso.")}>{company.active ? "Inativar" : "Ativar"}</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
