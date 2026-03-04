@@ -507,6 +507,7 @@ export default function RebuildOperatorPage() {
       setBooths(hydratedBooths);
       setBoothId(hydratedBooths[0]?.booth_id ?? "");
       setCompanies(loadedCompanies);
+      setCompanyId((current) => current || loadedCompanies[0]?.id || "");
       setCategories(loadedCategories);
       setSubcategories(loadedSubcategories);
 
