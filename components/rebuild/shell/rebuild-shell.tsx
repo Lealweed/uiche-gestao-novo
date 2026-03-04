@@ -30,7 +30,7 @@ const systemNavigation = [
 
 const operatorNavigation = [
   { href: "/rebuild/operator#resumo", label: "Resumo do Turno", section: "resumo", Icon: LayoutDashboard },
-  { href: "/rebuild/operator#lancamentos", label: "Lançamentos", section: "lancamentos", Icon: ScanSearch },
+  { href: "/rebuild/operator#caixa-pdv", label: "Lançamentos", section: "caixa-pdv", Icon: ScanSearch },
   { href: "/rebuild/operator#caixa-pdv", label: "Caixa PDV", section: "caixa-pdv", Icon: Ticket },
   { href: "/rebuild/operator#ponto-digital", label: "Ponto Digital", section: "ponto-digital", Icon: Users },
   { href: "/rebuild/operator#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },
@@ -48,7 +48,7 @@ const adminSectionLabels: Record<string, string> = {
 const operatorSectionLabels: Record<string, string> = {
   resumo: "Resumo do Turno",
   "caixa-pdv": "Caixa PDV",
-  lancamentos: "Lançamentos",
+  lancamentos: "Caixa PDV",
   "ponto-digital": "Ponto Digital",
   configuracoes: "Configurações",
 };

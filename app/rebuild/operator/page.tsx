@@ -218,8 +218,9 @@ export default function RebuildOperatorPage() {
   useEffect(() => {
     const syncSectionFromHash = () => {
       const raw = window.location.hash.replace("#", "") as OperatorSection | "";
-      const valid: OperatorSection[] = ["resumo", "lancamentos", "caixa-pdv", "ponto-digital", "configuracoes"];
-      setActiveSection(valid.includes(raw as OperatorSection) ? (raw as OperatorSection) : "resumo");
+      const resolved = raw === "lancamentos" ? "caixa-pdv" : raw;
+      const valid: OperatorSection[] = ["resumo", "caixa-pdv", "ponto-digital", "configuracoes"];
+      setActiveSection(valid.includes(resolved as OperatorSection) ? (resolved as OperatorSection) : "resumo");
     };
     syncSectionFromHash();
     window.addEventListener("hashchange", syncSectionFromHash);
@@ -922,6 +923,30 @@ export default function RebuildOperatorPage() {
     [filteredCashSales]
   );
 
+  const unifiedCashHistory = useMemo(() => {
+    const sales = filteredCashSales.map((tx) => ({
+      id: `tx-${tx.id}`,
+      at: tx.sold_at,
+      tipo: "Venda",
+      metodo: paymentMethodMeta(tx.payment_method).label,
+      descricao: tx.company_name,
+      valor: Number(tx.amount || 0),
+      operador: "-",
+    }));
+
+    const moves = filteredCashMovements.map((m) => ({
+      id: `mov-${m.id}`,
+      at: m.created_at,
+      tipo: m.movement_type === "suprimento" ? "Suprimento" : m.movement_type === "sangria" ? "Sangria" : "Ajuste",
+      metodo: "Caixa",
+      descricao: m.note || "-",
+      valor: Number(m.amount || 0),
+      operador: (m.user_id && cashOperatorMap[m.user_id]) || (m.user_id === userId ? "Você" : "-"),
+    }));
+
+    return [...sales, ...moves].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }, [filteredCashSales, filteredCashMovements, cashOperatorMap, userId]);
+
   const cashExpected = cashSummary.currentBalance;
   const cashDeclaredValue = Number(cashDeclared || 0);
   const cashDifference = cashDeclared ? cashDeclaredValue - cashExpected : 0;
@@ -1069,7 +1094,7 @@ export default function RebuildOperatorPage() {
 
       <div className="flex flex-wrap gap-2 mb-4">
         <button className={`btn-ghost ${activeSection === "resumo" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "resumo"; }}>Resumo do Turno</button>
-        <button className={`btn-ghost ${activeSection === "lancamentos" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "lancamentos"; }}>Lançamentos</button>
+        <button className={`btn-ghost ${activeSection === "caixa-pdv" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "caixa-pdv"; }}>Lançamentos</button>
         <button className={`btn-ghost ${activeSection === "caixa-pdv" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "caixa-pdv"; }}>Caixa PDV</button>
         <button className={`btn-ghost ${activeSection === "ponto-digital" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "ponto-digital"; }}>Ponto Digital</button>
         <button className={`btn-ghost ${activeSection === "configuracoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "configuracoes"; }}>Configurações</button>
@@ -1163,7 +1188,7 @@ export default function RebuildOperatorPage() {
 
       </div>
 
-      {activeSection === "lancamentos" && (
+      {false && (
       <section className="rb-operator-layout" aria-label="Fluxo operacional">
         <Card className="rb-operator-main">
           <CardTitle>Novo Lançamento</CardTitle>
@@ -1255,7 +1280,7 @@ export default function RebuildOperatorPage() {
             <div className="rb-upload-highlight">
               <p className="rb-form-label">Comprovante (opcional no lançamento)</p>
               <label className="btn-ghost cursor-pointer text-sm inline-flex items-center gap-2">
-                <Receipt size={14} /> {receiptFile ? receiptFile.name : "Selecionar comprovante"}
+                <Receipt size={14} /> {receiptFile?.name || "Selecionar comprovante"}
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
               </label>
               {pendingReceiptTxs.length > 0 ? <p className="text-xs text-amber-700 mt-2">Pendências de cartão: {pendingReceiptTxs.length}</p> : null}
@@ -1343,7 +1368,55 @@ export default function RebuildOperatorPage() {
               <StatCard label="Saldo atual" value={brl(cashSummary.currentBalance)} icon={<HandCoins size={16} />} />
             </div>
 
-            <div className="mt-4 grid lg:grid-cols-[1.2fr_2fr] gap-3">
+            <div className="mt-4 grid lg:grid-cols-2 gap-3">
+              <form onSubmit={submitTransaction} className="rounded-xl border border-slate-200 p-3 space-y-2">
+                <p className="text-sm font-semibold text-slate-800">Novo lançamento (dentro do Caixa PDV)</p>
+                <input className={`field ${txErrors.amount ? "border-rose-400" : ""}`} type="number" min="0" step="0.01" value={amount} onChange={(e) => { setAmount(e.target.value); setTxErrors((prev) => ({ ...prev, amount: undefined })); }} placeholder="Valor da transação" required />
+                <select className={`field ${txErrors.companyId ? "border-rose-400" : ""}`} value={companyId} onChange={(e) => { setCompanyId(e.target.value); setTxErrors((prev) => ({ ...prev, companyId: undefined })); }} required>
+                  <option value="">Selecione a empresa</option>
+                  {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <select className={`field ${txErrors.categoryId ? "border-rose-400" : ""}`} value={categoryId} onChange={(e) => {
+                    const nextCategory = e.target.value;
+                    setCategoryId(nextCategory);
+                    setTxErrors((prev) => ({ ...prev, categoryId: undefined, subcategoryId: undefined }));
+                    setSubcategoryId(subcategories.find((s) => s.category_id === nextCategory)?.id ?? "");
+                  }} required>
+                    <option value="">Categoria</option>
+                    {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                  </select>
+                  <select className={`field ${txErrors.subcategoryId ? "border-rose-400" : ""}`} value={subcategoryId} onChange={(e) => { setSubcategoryId(e.target.value); setTxErrors((prev) => ({ ...prev, subcategoryId: undefined })); }} required>
+                    <option value="">Subcategoria</option>
+                    {filteredSubcategories.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="field" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ref / Reserva" />
+                  <select className="field" value={selectedBoardingFeeCity} onChange={(e) => setSelectedBoardingFeeCity(e.target.value as "" | BoardingFeeCity)}>
+                    <option value="">Sem taxa de embarque</option>
+                    {BOARDING_FEE_OPTIONS.map((opt) => (<option key={opt.city} value={opt.city}>{opt.label} ({brl(opt.amount)})</option>))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-5 gap-2">
+                  {([
+                    { id: "pix", label: "PIX" },
+                    { id: "credit", label: "Crédito" },
+                    { id: "debit", label: "Débito" },
+                    { id: "cash", label: "Dinheiro" },
+                    { id: "link", label: "Link" },
+                  ] as const).map((item) => (
+                    <button type="button" key={item.id} onClick={() => setPaymentMethod(item.id)} className={`btn-ghost text-xs ${paymentMethod === item.id ? "ring-1 ring-blue-400" : ""}`}>{item.label}</button>
+                  ))}
+                </div>
+                <input className="field" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observações" />
+                <label className="btn-ghost cursor-pointer text-sm inline-flex items-center gap-2">
+                  <Receipt size={14} /> {receiptFile?.name || "Selecionar comprovante"}
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)} />
+                </label>
+                <button className="btn-primary w-full" disabled={busy === "transaction" || !shift || !availability.transactions}>{busy === "transaction" ? "Registrando..." : "Registrar lançamento"}</button>
+              </form>
+
               <form onSubmit={submitCashMovement} className="rounded-xl border border-slate-200 p-3 space-y-2">
                 <p className="text-sm font-semibold text-slate-800">Ação rápida de movimento</p>
                 <div className="grid grid-cols-3 gap-2">
@@ -1361,20 +1434,20 @@ export default function RebuildOperatorPage() {
                 <input className="field" value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Observação" disabled={!shift} />
                 <button className="btn-primary w-full" disabled={!shift || busy === "cash" || !availability.cashMovements}>{busy === "cash" ? "Registrando..." : "Registrar movimento"}</button>
               </form>
+            </div>
 
-              <div className="rounded-xl border border-slate-200 p-3 space-y-2">
-                <p className="text-sm font-semibold text-slate-800">Filtros do histórico</p>
-                <div className="grid md:grid-cols-4 gap-2">
-                  <select className="field" value={cashFilterType} onChange={(e) => setCashFilterType(e.target.value as "" | "suprimento" | "sangria" | "ajuste")}>
-                    <option value="">Todos os tipos</option>
-                    <option value="suprimento">Suprimento</option>
-                    <option value="sangria">Sangria</option>
-                    <option value="ajuste">Ajuste</option>
-                  </select>
-                  <input className="field" type="datetime-local" value={cashFilterFrom} onChange={(e) => setCashFilterFrom(e.target.value)} />
-                  <input className="field" type="datetime-local" value={cashFilterTo} onChange={(e) => setCashFilterTo(e.target.value)} />
-                  <input className="field" value={cashFilterText} onChange={(e) => setCashFilterText(e.target.value)} placeholder="Filtrar por observação" />
-                </div>
+            <div className="rounded-xl border border-slate-200 p-3 space-y-2 mt-3">
+              <p className="text-sm font-semibold text-slate-800">Filtros do histórico unificado</p>
+              <div className="grid md:grid-cols-4 gap-2">
+                <select className="field" value={cashFilterType} onChange={(e) => setCashFilterType(e.target.value as "" | "suprimento" | "sangria" | "ajuste")}>
+                  <option value="">Todos os tipos de movimento</option>
+                  <option value="suprimento">Suprimento</option>
+                  <option value="sangria">Sangria</option>
+                  <option value="ajuste">Ajuste</option>
+                </select>
+                <input className="field" type="datetime-local" value={cashFilterFrom} onChange={(e) => setCashFilterFrom(e.target.value)} />
+                <input className="field" type="datetime-local" value={cashFilterTo} onChange={(e) => setCashFilterTo(e.target.value)} />
+                <input className="field" value={cashFilterText} onChange={(e) => setCashFilterText(e.target.value)} placeholder="Filtrar por empresa, observação ou referência" />
               </div>
             </div>
 
@@ -1389,38 +1462,20 @@ export default function RebuildOperatorPage() {
               </div>
             </div>
 
-            <div className="mt-4 overflow-auto max-h-[280px] rounded-xl border border-blue-100">
-              <table className="w-full text-sm min-w-[760px]">
-                <thead><tr className="text-slate-500 bg-blue-50"><th className="text-left py-2 px-3">Hora</th><th className="text-left">Empresa</th><th className="text-left">Método</th><th className="text-right">Valor</th><th className="text-left pr-3">Referência</th></tr></thead>
+            <div className="mt-4 overflow-auto max-h-[420px] rounded-xl border border-slate-200">
+              <table className="w-full text-sm min-w-[820px]">
+                <thead><tr className="text-slate-500 bg-slate-50"><th className="text-left py-2 px-3">Data/hora</th><th className="text-left">Tipo</th><th className="text-left">Método</th><th className="text-left">Descrição</th><th className="text-right">Valor</th><th className="text-left pr-3">Operador</th></tr></thead>
                 <tbody>
-                  {filteredCashSales.length === 0 ? (
-                    <tr><td colSpan={5} className="py-4 px-3 text-slate-500">Nenhuma venda encontrada no período filtrado.</td></tr>
-                  ) : filteredCashSales.map((tx) => (
-                    <tr key={tx.id} className="border-t border-blue-100">
-                      <td className="py-2 px-3">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
-                      <td>{tx.company_name}</td>
-                      <td>{paymentMethodMeta(tx.payment_method).label}</td>
-                      <td className={`text-right font-semibold ${tx.payment_method === "cash" ? "text-emerald-700" : "text-slate-800"}`}>{brl(Number(tx.amount || 0))}</td>
-                      <td className="pr-3">{tx.ticket_reference || tx.note || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-4 overflow-auto max-h-[380px] rounded-xl border border-slate-200">
-              <table className="w-full text-sm min-w-[760px]">
-                <thead><tr className="text-slate-500 bg-slate-50"><th className="text-left py-2 px-3">Data/hora</th><th className="text-left">Tipo</th><th className="text-right">Valor</th><th className="text-left">Observação</th><th className="text-left pr-3">Operador</th></tr></thead>
-                <tbody>
-                  {filteredCashMovements.length === 0 ? (
-                    <tr><td colSpan={5} className="py-4 px-3 text-slate-500">Nenhum movimento de caixa encontrado com os filtros atuais.</td></tr>
-                  ) : filteredCashMovements.map((m) => (
-                    <tr key={m.id} className="border-t">
-                      <td className="py-2 px-3">{new Date(m.created_at).toLocaleString("pt-BR")}</td>
-                      <td className="capitalize">{m.movement_type}</td>
-                      <td className={`text-right font-semibold ${Number(m.amount || 0) < 0 ? "text-rose-600" : "text-emerald-700"}`}>{brl(Number(m.amount || 0))}</td>
-                      <td>{m.note || "-"}</td>
-                      <td className="pr-3">{(m.user_id && cashOperatorMap[m.user_id]) || (m.user_id === userId ? "Você" : "-")}</td>
+                  {unifiedCashHistory.length === 0 ? (
+                    <tr><td colSpan={6} className="py-4 px-3 text-slate-500">Nenhum lançamento ou movimento encontrado com os filtros atuais.</td></tr>
+                  ) : unifiedCashHistory.map((item) => (
+                    <tr key={item.id} className="border-t">
+                      <td className="py-2 px-3">{new Date(item.at).toLocaleString("pt-BR")}</td>
+                      <td>{item.tipo}</td>
+                      <td>{item.metodo}</td>
+                      <td>{item.descricao}</td>
+                      <td className={`text-right font-semibold ${item.valor < 0 ? "text-rose-600" : "text-emerald-700"}`}>{brl(item.valor)}</td>
+                      <td className="pr-3">{item.operador}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1452,7 +1507,7 @@ export default function RebuildOperatorPage() {
       )}
 
 
-      {activeSection === "lancamentos" && (
+      {false && (
         <Card>
           <CardTitle>Transações do Turno</CardTitle>
           <CardDescription>Lista completa de lançamentos do operador com filtros por método e período do turno.</CardDescription>
