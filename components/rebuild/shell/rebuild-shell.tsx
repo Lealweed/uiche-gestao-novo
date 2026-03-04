@@ -30,7 +30,6 @@ const systemNavigation = [
 
 const operatorNavigation = [
   { href: "/rebuild/operator#resumo", label: "Resumo do Turno", section: "resumo", Icon: LayoutDashboard },
-  { href: "/rebuild/operator#caixa-pdv", label: "Lançamentos", section: "caixa-pdv", Icon: ScanSearch },
   { href: "/rebuild/operator#caixa-pdv", label: "Caixa PDV", section: "caixa-pdv", Icon: Ticket },
   { href: "/rebuild/operator#ponto-digital", label: "Ponto Digital", section: "ponto-digital", Icon: Users },
   { href: "/rebuild/operator#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },

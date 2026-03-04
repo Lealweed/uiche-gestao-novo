@@ -1094,7 +1094,6 @@ export default function RebuildOperatorPage() {
 
       <div className="flex flex-wrap gap-2 mb-4">
         <button className={`btn-ghost ${activeSection === "resumo" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "resumo"; }}>Resumo do Turno</button>
-        <button className={`btn-ghost ${activeSection === "caixa-pdv" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "caixa-pdv"; }}>Lançamentos</button>
         <button className={`btn-ghost ${activeSection === "caixa-pdv" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "caixa-pdv"; }}>Caixa PDV</button>
         <button className={`btn-ghost ${activeSection === "ponto-digital" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "ponto-digital"; }}>Ponto Digital</button>
         <button className={`btn-ghost ${activeSection === "configuracoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "configuracoes"; }}>Configurações</button>
