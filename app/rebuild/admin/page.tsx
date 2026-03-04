@@ -95,6 +95,20 @@ function normalizeWhatsapp(value: string) {
   return value.replace(/\D/g, "");
 }
 
+function formatWhatsapp(value: string) {
+  const digits = normalizeWhatsapp(value).slice(0, 11);
+  if (!digits) return "";
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function isValidWhatsapp(value: string) {
+  const digits = normalizeWhatsapp(value);
+  return digits.length === 10 || digits.length === 11;
+}
+
 export default function RebuildAdminPage() {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
@@ -176,6 +190,13 @@ export default function RebuildAdminPage() {
   const categoryMap = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
 
   const operators = useMemo(() => profiles.filter((p) => p.role === "operator"), [profiles]);
+  const eligibleOperators = useMemo(
+    () =>
+      operators
+        .filter((p) => p.active !== false && p.user_id && p.full_name?.trim())
+        .sort((a, b) => a.full_name.localeCompare(b.full_name, "pt-BR")),
+    [operators]
+  );
   const canManageUsers = useMemo(() => profiles.some((p) => p.user_id === sessionUserId && (p.role === "tenant_admin" || p.role === "admin")), [profiles, sessionUserId]);
   const users = useMemo(() => profiles, [profiles]);
   const openShifts = useMemo(() => shifts.filter((s) => s.status === "open"), [shifts]);
@@ -806,35 +827,44 @@ export default function RebuildAdminPage() {
   }
 
   async function createCompany() {
-    if (!companyName.trim()) return setNotice("Informe o nome da empresa.");
+    if (!companyName.trim()) return setNotice("Preencha o nome da empresa para salvar.");
     const sanitizedWhatsapp = normalizeWhatsapp(companyWhatsapp);
-    if (sanitizedWhatsapp && sanitizedWhatsapp.length < 10) return setNotice("Informe um WhatsApp válido com DDD.");
+    if (sanitizedWhatsapp && !isValidWhatsapp(companyWhatsapp)) return setNotice("WhatsApp inválido. Use DDD + número (10 ou 11 dígitos).");
+
     const commission = Number(companyCommission || 0);
     const payoutDays = Number(companyPayoutDays || 0);
+
+    if (!Number.isFinite(commission) || commission < 0 || commission > 100) {
+      return setNotice("Comissão inválida. Informe um percentual entre 0 e 100.");
+    }
+    if (!Number.isFinite(payoutDays) || payoutDays < 0) {
+      return setNotice("Repasse inválido. Informe dias iguais ou maiores que 0.");
+    }
+
     const res = await supabase.from("companies").insert({
       name: companyName.trim(),
-      commission_percent: Number.isFinite(commission) ? Math.min(100, commission) : 0,
-      payout_days: Number.isFinite(payoutDays) ? payoutDays : null,
+      commission_percent: commission,
+      payout_days: payoutDays,
       account_manager: companyManager.trim() || null,
       whatsapp: sanitizedWhatsapp || null,
       rating: companyRating || null,
       active: true,
     });
-    if (res.error) return setNotice(`Não foi possível cadastrar a empresa: ${mapDbError(res.error.message, "Falha ao cadastrar empresa")}`);
+    if (res.error) return setNotice(`Erro ao salvar empresa: ${mapDbError(res.error.message, "Falha ao salvar empresa")}`);
     setCompanyName("");
     setCompanyCommission("10");
     setCompanyPayoutDays("30");
     setCompanyManager("");
     setCompanyWhatsapp("");
     setCompanyRating("boa");
-    setNotice("Empresa cadastrada com sucesso.");
+    setNotice("Empresa salva com sucesso.");
     await loadAll();
   }
 
   async function createBooth() {
-    if (!boothCode.trim() || !boothName.trim()) return setNotice("Informe código e nome do guichê.");
+    if (!boothCode.trim() || !boothName.trim()) return setNotice("Preencha código e nome para cadastrar o guichê.");
     const res = await supabase.from("booths").insert({ code: boothCode.trim(), name: boothName.trim(), active: true });
-    if (res.error) return setNotice(`Não foi possível cadastrar o guichê: ${mapDbError(res.error.message, "Falha ao cadastrar guichê")}`);
+    if (res.error) return setNotice(`Erro ao cadastrar guichê: ${mapDbError(res.error.message, "Falha ao cadastrar guichê")}`);
     setBoothCode("");
     setBoothName("");
     setNotice("Guichê cadastrado com sucesso.");
@@ -843,26 +873,28 @@ export default function RebuildAdminPage() {
 
 
   async function createLink() {
-    if (!linkOperatorId || !linkBoothId) return setNotice("Selecione operador e guichê para vincular.");
+    const selectedOperator = eligibleOperators.find((operator) => operator.user_id === linkOperatorId);
+    if (!selectedOperator) return setNotice("Selecione um operador válido para vincular ao guichê.");
+    if (!linkBoothId) return setNotice("Selecione um guichê válido para concluir o vínculo.");
 
     const existingLink = links.find((l) => l.operator_id === linkOperatorId && l.booth_id === linkBoothId);
-    if (existingLink?.active) return setNotice("Esse vínculo já existe e está ativo.");
+    if (existingLink?.active) return setNotice("Esse vínculo operador↔guichê já está ativo.");
 
     if (existingLink && !existingLink.active) {
       const reactivate = await supabase.from("operator_booths").update({ active: true }).eq("id", existingLink.id);
-      if (reactivate.error) return setNotice(`Não foi possível reativar o vínculo: ${mapDbError(reactivate.error.message, "Falha ao reativar vínculo")}`);
+      if (reactivate.error) return setNotice(`Erro ao vincular operador ao guichê: ${mapDbError(reactivate.error.message, "Falha ao vincular operador ao guichê")}`);
       setLinkOperatorId("");
       setLinkBoothId("");
-      setNotice("Vínculo reativado com sucesso.");
+      setNotice("Vínculo operador↔guichê salvo com sucesso.");
       await loadAll();
       return;
     }
 
     const res = await supabase.from("operator_booths").insert({ operator_id: linkOperatorId, booth_id: linkBoothId, active: true });
-    if (res.error) return setNotice(`Não foi possível criar o vínculo: ${mapDbError(res.error.message, "Falha ao criar vínculo")}`);
+    if (res.error) return setNotice(`Erro ao vincular operador ao guichê: ${mapDbError(res.error.message, "Falha ao vincular operador ao guichê")}`);
     setLinkOperatorId("");
     setLinkBoothId("");
-    setNotice("Vínculo criado com sucesso.");
+    setNotice("Vínculo operador↔guichê salvo com sucesso.");
     await loadAll();
   }
 
@@ -892,8 +924,8 @@ export default function RebuildAdminPage() {
     const sanitizedWhatsapp = normalizeWhatsapp(draft.whatsapp);
 
     if (!Number.isFinite(commission) || commission < 0 || commission > 100) return setNotice("Comissão inválida. Informe um percentual entre 0 e 100.");
-    if (!Number.isFinite(payoutDays) || payoutDays < 0) return setNotice("Repasse inválido. Informe a quantidade de dias igual ou maior que zero.");
-    if (sanitizedWhatsapp && sanitizedWhatsapp.length < 10) return setNotice("WhatsApp inválido. Informe DDD + número.");
+    if (!Number.isFinite(payoutDays) || payoutDays < 0) return setNotice("Repasse inválido. Informe dias iguais ou maiores que 0.");
+    if (sanitizedWhatsapp && !isValidWhatsapp(draft.whatsapp)) return setNotice("WhatsApp inválido. Use DDD + número (10 ou 11 dígitos).");
 
     const res = await supabase.from("companies").update({
       name,
@@ -904,8 +936,8 @@ export default function RebuildAdminPage() {
       rating: draft.rating || null,
     }).eq("id", company.id);
 
-    if (res.error) return setNotice(`Não foi possível atualizar a empresa: ${mapDbError(res.error.message, "Falha ao atualizar empresa")}`);
-    setNotice(`Empresa ${name} atualizada com sucesso.`);
+    if (res.error) return setNotice(`Erro ao salvar empresa: ${mapDbError(res.error.message, "Falha ao salvar empresa")}`);
+    setNotice(`Empresa ${name} salva com sucesso.`);
     await loadAll();
   }
 
@@ -1401,7 +1433,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                 <input className="border rounded-lg px-3 py-2" type="number" min="0" step="0.1" placeholder="Comissão (%)" value={companyCommission} onChange={(e) => setCompanyCommission(e.target.value)} />
                 <input className="border rounded-lg px-3 py-2" type="number" min="0" placeholder="Repasse (dias)" value={companyPayoutDays} onChange={(e) => setCompanyPayoutDays(e.target.value)} />
                 <input className="border rounded-lg px-3 py-2" placeholder="Responsável" value={companyManager} onChange={(e) => setCompanyManager(e.target.value)} />
-                <input className="border rounded-lg px-3 py-2" placeholder="WhatsApp" value={companyWhatsapp} onChange={(e) => setCompanyWhatsapp(e.target.value)} />
+                <input className="border rounded-lg px-3 py-2" placeholder="WhatsApp" value={companyWhatsapp} onChange={(e) => setCompanyWhatsapp(formatWhatsapp(e.target.value))} />
                 <select className="border rounded-lg px-3 py-2" value={companyRating} onChange={(e) => setCompanyRating(e.target.value as "alta" | "boa" | "media" | "ruim")}>
                   <option value="alta">Alta</option>
                   <option value="boa">Boa</option>
@@ -1435,7 +1467,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                             <td className="p-2"><input className="border rounded-lg px-2 py-1 w-24" type="number" min="0" max="100" step="0.1" value={draft.commission_percent} onChange={(e) => updateCompanyDraft(company.id, "commission_percent", e.target.value)} /></td>
                             <td className="p-2"><input className="border rounded-lg px-2 py-1 w-24" type="number" min="0" value={draft.payout_days} onChange={(e) => updateCompanyDraft(company.id, "payout_days", e.target.value)} /></td>
                             <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.account_manager} onChange={(e) => updateCompanyDraft(company.id, "account_manager", e.target.value)} /></td>
-                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.whatsapp} onChange={(e) => updateCompanyDraft(company.id, "whatsapp", e.target.value)} /></td>
+                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.whatsapp} onChange={(e) => updateCompanyDraft(company.id, "whatsapp", formatWhatsapp(e.target.value))} /></td>
                             <td className="p-2">
                               <select className="border rounded-lg px-2 py-1 w-full" value={draft.rating} onChange={(e) => updateCompanyDraft(company.id, "rating", e.target.value)}>
                                 <option value="alta">Alta</option>
@@ -1447,7 +1479,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                             <td className="p-2">
                               <div className="flex justify-end gap-2">
                                 <button className="rounded-lg bg-[#0da2e7] text-white px-2 py-1" onClick={() => saveCompanyInline(company)}>Salvar</button>
-                                <button className="rounded-lg border px-2 py-1" onClick={() => toggleRow("companies", "id", company.id, company.active, "Empresa atualizada com sucesso.")}>{company.active ? "Inativar" : "Ativar"}</button>
+                                <button className="rounded-lg border px-2 py-1" onClick={() => toggleRow("companies", "id", company.id, company.active, company.active ? "Empresa inativada com sucesso." : "Empresa ativada com sucesso.")}>{company.active ? "Inativar" : "Ativar"}</button>
                               </div>
                             </td>
                           </tr>
@@ -1459,9 +1491,9 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
               )}
             </div>
 
-            <CrudPanel title="Guichês" createForm={<div className="flex gap-2 flex-wrap"><input className="border rounded-lg px-3 py-2 w-28" placeholder="Código (ex.: G01)" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} /><input className="border rounded-lg px-3 py-2 flex-1 min-w-40" placeholder="Nome do guichê (ex.: Guichê Principal)" value={boothName} onChange={(e) => setBoothName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createBooth}>Cadastrar guichê</button></div>} items={booths.map((b) => ({ id: b.id, label: `${b.code} - ${b.name}`, active: b.active, onToggle: () => toggleRow("booths", "id", b.id, b.active, "Guichê atualizado com sucesso.") }))} />
+            <CrudPanel title="Guichês" createForm={<div className="flex gap-2 flex-wrap"><input className="border rounded-lg px-3 py-2 w-28" placeholder="Código (ex.: G01)" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} /><input className="border rounded-lg px-3 py-2 flex-1 min-w-40" placeholder="Nome do guichê (ex.: Guichê Principal)" value={boothName} onChange={(e) => setBoothName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createBooth}>Cadastrar guichê</button></div>} items={booths.map((b) => ({ id: b.id, label: `${b.code} - ${b.name}`, active: b.active, onToggle: () => toggleRow("booths", "id", b.id, b.active, b.active ? "Guichê inativado com sucesso." : "Guichê ativado com sucesso.") }))} />
 
-            <CrudPanel title="Vínculos operador↔guichê" createForm={<div className="flex gap-2 flex-wrap"><select className="border rounded-lg px-3 py-2" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)}><option value="">Operador</option>{operators.map((o) => <option key={o.user_id} value={o.user_id}>{o.full_name}</option>)}</select><select className="border rounded-lg px-3 py-2" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)}><option value="">Guichê</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createLink}>Vincular</button></div>} items={links.map((l) => ({ id: l.id, label: `${operatorMap.get(l.operator_id) || "Sem operador"} ↔ ${boothMap.get(l.booth_id) || "Sem guichê"}`, active: l.active, onToggle: () => toggleRow("operator_booths", "id", l.id, l.active, "Vínculo atualizado com sucesso.") }))} />
+            <CrudPanel title="Vínculos operador↔guichê" createForm={<div className="flex gap-2 flex-wrap"><select className="border rounded-lg px-3 py-2" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)}><option value="" disabled>Selecione o operador</option>{eligibleOperators.map((o) => <option key={o.user_id} value={o.user_id}>{o.full_name}</option>)}</select><select className="border rounded-lg px-3 py-2" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)}><option value="">Guichê</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createLink}>Vincular</button></div>} items={links.map((l) => ({ id: l.id, label: `${operatorMap.get(l.operator_id) || "Sem operador"} ↔ ${boothMap.get(l.booth_id) || "Sem guichê"}`, active: l.active, onToggle: () => toggleRow("operator_booths", "id", l.id, l.active, l.active ? "Vínculo operador↔guichê inativado com sucesso." : "Vínculo operador↔guichê ativado com sucesso.") }))} />
           </div>
           <div className="rounded-lg border p-3 mt-4">
             <p className="font-semibold text-slate-800 mb-2">Consolidado de vínculos por operador</p>
