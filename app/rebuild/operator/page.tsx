@@ -36,7 +36,7 @@ type BoardingFeeCity = "belem" | "goiania";
 type TxBase = {
   id: string;
   amount: number;
-  payment_method: "pix" | "credit" | "debit" | "cash";
+  payment_method: "pix" | "credit" | "debit" | "cash" | "link";
   sold_at: string;
   ticket_reference: string | null;
   note: string | null;
@@ -57,10 +57,11 @@ const BOARDING_FEE_OPTIONS: Array<{ city: BoardingFeeCity; label: string; amount
   { city: "goiania", label: "Goiânia", amount: 5.83 },
 ];
 
-function paymentMethodMeta(method: "pix" | "credit" | "debit" | "cash") {
+function paymentMethodMeta(method: "pix" | "credit" | "debit" | "cash" | "link") {
   if (method === "credit") return { label: "Crédito", className: "rb-payment-badge rb-payment-credit" };
   if (method === "debit") return { label: "Débito", className: "rb-payment-badge rb-payment-debit" };
   if (method === "cash") return { label: "Dinheiro", className: "rb-payment-badge rb-payment-cash" };
+  if (method === "link") return { label: "Link", className: "rb-payment-badge rb-payment-link" };
   return { label: "PIX", className: "rb-payment-badge rb-payment-pix" };
 }
 
@@ -112,7 +113,7 @@ export default function RebuildOperatorPage() {
   const [companyId, setCompanyId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [subcategoryId, setSubcategoryId] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit" | "debit" | "cash">("pix");
+  const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit" | "debit" | "cash" | "link">("pix");
   const [selectedBoardingFeeCity, setSelectedBoardingFeeCity] = useState<"" | BoardingFeeCity>("");
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
@@ -131,7 +132,7 @@ export default function RebuildOperatorPage() {
   const [cashClosingNote, setCashClosingNote] = useState("");
   const [cashOperatorMap, setCashOperatorMap] = useState<Record<string, string>>({});
   const [uploadingTxId, setUploadingTxId] = useState<string | null>(null);
-  const [txMethodFilter, setTxMethodFilter] = useState<"" | "pix" | "credit" | "debit" | "cash">("");
+  const [txMethodFilter, setTxMethodFilter] = useState<"" | "pix" | "credit" | "debit" | "cash" | "link">("");
   const [txPeriodFilter, setTxPeriodFilter] = useState<"all" | "lastHour" | "today" | "custom">("all");
   const [txDateFrom, setTxDateFrom] = useState("");
   const [txDateTo, setTxDateTo] = useState("");
@@ -151,12 +152,12 @@ export default function RebuildOperatorPage() {
           acc[tx.payment_method] += Number(tx.amount || 0);
           return acc;
         },
-        { pix: 0, credit: 0, debit: 0, cash: 0 }
+        { pix: 0, credit: 0, debit: 0, cash: 0, link: 0 }
       ),
     [transactions]
   );
 
-  const totalSales = useMemo(() => totals.pix + totals.credit + totals.debit + totals.cash, [totals]);
+  const totalSales = useMemo(() => totals.pix + totals.credit + totals.debit + totals.cash + totals.link, [totals]);
 
   const boardingFeeTotals = useMemo(() => {
     return transactions.reduce(
@@ -235,6 +236,7 @@ export default function RebuildOperatorPage() {
       if (event.key === "2") { event.preventDefault(); setPaymentMethod("credit"); }
       if (event.key === "3") { event.preventDefault(); setPaymentMethod("debit"); }
       if (event.key === "4") { event.preventDefault(); setPaymentMethod("cash"); }
+      if (event.key === "5") { event.preventDefault(); setPaymentMethod("link"); }
     };
 
     window.addEventListener("keydown", onShortcut);
@@ -984,6 +986,26 @@ export default function RebuildOperatorPage() {
         <button className={`btn-ghost ${activeSection === "configuracoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "configuracoes"; }}>Configurações</button>
       </div>
 
+      {feedback ? (
+        <Card>
+          <p className={`rb-card-description ${feedbackTone === "error" ? "text-rose-700" : feedbackTone === "success" ? "text-emerald-700" : "text-slate-700"}`} style={{ marginTop: 0 }}>
+            {feedback}
+          </p>
+        </Card>
+      ) : null}
+
+      {sectionWarnings.length > 0 ? (
+        <Card>
+          <CardTitle>Avisos de recuperação</CardTitle>
+          <CardDescription>Algumas seções operam com limitação até o banco estar completo.</CardDescription>
+          <ul className="mt-3 list-disc pl-5 text-sm text-amber-700 space-y-1">
+            {sectionWarnings.map((warning) => (
+              <li key={`${warning.section}-${warning.message}`}>{warning.section}: {warning.message}</li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
       <div className={activeSection === "resumo" ? "block" : "hidden"}>
       <section className="rb-stat-grid" aria-label="Resumo do turno">
         <StatCard
@@ -1006,26 +1028,6 @@ export default function RebuildOperatorPage() {
           icon={<Wallet size={16} />}
         />
       </section>
-
-      {feedback ? (
-        <Card>
-          <p className={`rb-card-description ${feedbackTone === "error" ? "text-rose-700" : feedbackTone === "success" ? "text-emerald-700" : "text-slate-700"}`} style={{ marginTop: 0 }}>
-            {feedback}
-          </p>
-        </Card>
-      ) : null}
-
-      {sectionWarnings.length > 0 ? (
-        <Card>
-          <CardTitle>Avisos de recuperação</CardTitle>
-          <CardDescription>Algumas seções operam com limitação até o banco estar completo.</CardDescription>
-          <ul className="mt-3 list-disc pl-5 text-sm text-amber-700 space-y-1">
-            {sectionWarnings.map((warning) => (
-              <li key={`${warning.section}-${warning.message}`}>{warning.section}: {warning.message}</li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
 
       {!shift ? (
         <Card>
@@ -1124,13 +1126,14 @@ export default function RebuildOperatorPage() {
             <input className="field" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ex.: RES-10293" />
 
             <label className="rb-form-label">Método de pagamento</label>
-            <p className="text-xs text-slate-500 -mt-1">Atalhos: Alt+1 PIX • Alt+2 Crédito • Alt+3 Débito • Alt+4 Dinheiro</p>
+            <p className="text-xs text-slate-500 -mt-1">Atalhos: Alt+1 PIX • Alt+2 Crédito • Alt+3 Débito • Alt+4 Dinheiro • Alt+5 Link</p>
             <div className="rb-pay-methods">
               {([
                 { id: "pix", label: "PIX" },
                 { id: "credit", label: "Crédito" },
                 { id: "debit", label: "Débito" },
                 { id: "cash", label: "Dinheiro" },
+                { id: "link", label: "Link" },
               ] as const).map((item) => (
                 <button
                   type="button"
@@ -1329,12 +1332,13 @@ export default function RebuildOperatorPage() {
           <CardTitle>Transações do Turno</CardTitle>
           <CardDescription>Lista completa de lançamentos do operador com filtros por método e período do turno.</CardDescription>
           <div className="mt-3 grid md:grid-cols-4 gap-2">
-            <select className="field" value={txMethodFilter} onChange={(e) => setTxMethodFilter(e.target.value as "" | "pix" | "credit" | "debit" | "cash")}>
+            <select className="field" value={txMethodFilter} onChange={(e) => setTxMethodFilter(e.target.value as "" | "pix" | "credit" | "debit" | "cash" | "link")}>
               <option value="">Todos os métodos</option>
               <option value="pix">PIX</option>
               <option value="credit">Crédito</option>
               <option value="debit">Débito</option>
               <option value="cash">Dinheiro</option>
+              <option value="link">Link</option>
             </select>
             <select className="field" value={txPeriodFilter} onChange={(e) => setTxPeriodFilter(e.target.value as "all" | "lastHour" | "today" | "custom")}>
               <option value="all">Período: turno inteiro</option>
