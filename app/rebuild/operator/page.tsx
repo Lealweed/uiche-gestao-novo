@@ -722,7 +722,7 @@ export default function RebuildOperatorPage() {
     if (!amount) nextErrors.amount = "Informe o valor da transação.";
     if (!companyId) nextErrors.companyId = "Selecione a empresa/fornecedor.";
     if (!categoryId) nextErrors.categoryId = "Selecione a categoria.";
-    if (!subcategoryId) nextErrors.subcategoryId = "Selecione a subcategoria.";
+    if (filteredSubcategories.length > 0 && !subcategoryId) nextErrors.subcategoryId = "Selecione a subcategoria.";
 
     const parsedAmount = Number(amount);
     if (amount && (!Number.isFinite(parsedAmount) || parsedAmount <= 0)) {
@@ -757,7 +757,7 @@ export default function RebuildOperatorPage() {
       operator_id: userId,
       company_id: companyId,
       category_id: categoryId,
-      subcategory_id: subcategoryId,
+      subcategory_id: subcategoryId || null,
       payment_method: paymentMethod,
       amount: parsedAmount,
       ticket_reference: reference.trim() || null,
@@ -1231,7 +1231,7 @@ export default function RebuildOperatorPage() {
 
               <div>
                 <label className="rb-form-label">Subcategoria</label>
-                <select className={`field ${txErrors.subcategoryId ? "border-rose-400" : ""}`} value={subcategoryId} onChange={(e) => { setSubcategoryId(e.target.value); setTxErrors((prev) => ({ ...prev, subcategoryId: undefined })); }} required>
+                <select className={`field ${txErrors.subcategoryId ? "border-rose-400" : ""}`} value={subcategoryId} onChange={(e) => { setSubcategoryId(e.target.value); setTxErrors((prev) => ({ ...prev, subcategoryId: undefined })); }} required={filteredSubcategories.length > 0}>
                   <option value="">Selecione a subcategoria</option>
                   {filteredSubcategories.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
@@ -1385,7 +1385,7 @@ export default function RebuildOperatorPage() {
                     <option value="">Categoria</option>
                     {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
                   </select>
-                  <select className={`field ${txErrors.subcategoryId ? "border-rose-400" : ""}`} value={subcategoryId} onChange={(e) => { setSubcategoryId(e.target.value); setTxErrors((prev) => ({ ...prev, subcategoryId: undefined })); }} required>
+                  <select className={`field ${txErrors.subcategoryId ? "border-rose-400" : ""}`} value={subcategoryId} onChange={(e) => { setSubcategoryId(e.target.value); setTxErrors((prev) => ({ ...prev, subcategoryId: undefined })); }} required={filteredSubcategories.length > 0}>
                     <option value="">Subcategoria</option>
                     {filteredSubcategories.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
                   </select>
