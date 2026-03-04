@@ -14,7 +14,7 @@ import { Card, CardDescription, CardTitle } from "@/components/rebuild/ui/card";
 type Profile = { role: "tenant_admin" | "operator" | "financeiro" | "admin"; active?: boolean | null; tenant_id?: string | null; full_name?: string | null; user_id?: string };
 type BoothLink = { booth_id: string };
 type Booth = { id: string; name: string };
-type Shift = { id: string; booth_id: string; status: "open" | "closed" };
+type Shift = { id: string; booth_id: string; status: "open" | "closed"; opened_at?: string | null };
 type Company = { id: string; name: string };
 type Category = { id: string; name: string };
 type Subcategory = { id: string; name: string; category_id: string };
@@ -100,6 +100,7 @@ export default function RebuildOperatorPage() {
 
   const [userId, setUserId] = useState<string | null>(null);
   const [shift, setShift] = useState<Shift | null>(null);
+  const [shiftRecoveryNotice, setShiftRecoveryNotice] = useState<string | null>(null);
   const [booths, setBooths] = useState<Array<{ booth_id: string; booth_name: string }>>([]);
   const linkedBoothIds = useMemo(() => new Set(booths.map((b) => b.booth_id)), [booths]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -404,15 +405,16 @@ export default function RebuildOperatorPage() {
   }
 
 
-  async function loadTimePunches() {
-    if (!userId) return;
+  async function loadTimePunches(targetUserId?: string | null) {
+    const currentUserId = targetUserId ?? userId;
+    if (!currentUserId) return;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const res = await supabase
       .from("time_punches")
       .select("id,punch_type,punched_at")
-      .eq("user_id", userId)
+      .eq("user_id", currentUserId)
       .gte("punched_at", today.toISOString())
       .order("punched_at", { ascending: false })
       .limit(80);
@@ -485,7 +487,15 @@ export default function RebuildOperatorPage() {
         safeLoadArray<Subcategory>("Subcategorias", supabase.from("transaction_subcategories").select("id,name,category_id").eq("active", true).order("name"), () => setAvailability((prev) => ({ ...prev, subcategories: false }))),
       ]);
 
-      const shiftRes = await supabase.from("shifts").select("id,booth_id,status").eq("operator_id", authUserId).eq("status", "open").maybeSingle();
+      setShiftRecoveryNotice(null);
+      const shiftRes = await supabase
+        .from("shifts")
+        .select("id,booth_id,status,opened_at")
+        .eq("operator_id", authUserId)
+        .eq("status", "open")
+        .order("opened_at", { ascending: false })
+        .limit(10);
+
       if (shiftRes.error) {
         addWarning("Turno", shiftRes.error.message);
         if (isMissingStructure(shiftRes.error.message)) setAvailability((prev) => ({ ...prev, shifts: false }));
@@ -504,15 +514,22 @@ export default function RebuildOperatorPage() {
       setCategoryId(firstCategory);
       setSubcategoryId(loadedSubcategories.find((sub) => sub.category_id === firstCategory)?.id ?? "");
 
-      const openShift = (shiftRes.data as Shift | null) ?? null;
+      const openShifts = (shiftRes.data as Shift[] | null) ?? [];
+      const openShift = openShifts[0] ?? null;
       setShift(openShift);
 
+      if (openShifts.length > 1) {
+        const msg = `Foram encontrados ${openShifts.length} turnos abertos legados. O sistema retomou o mais recente automaticamente.`;
+        setShiftRecoveryNotice(msg);
+        addWarning("Turno", msg);
+      }
+
       if (openShift) {
-        await Promise.all([loadTransactions(openShift.id), loadCashMovements(openShift.id), loadTimePunches()]);
+        await Promise.all([loadTransactions(openShift.id), loadCashMovements(openShift.id), loadTimePunches(authUserId)]);
       } else {
         setTransactions([]);
         setCashMovements([]);
-        await loadTimePunches();
+        await loadTimePunches(authUserId);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar o painel do operador.");
@@ -551,11 +568,11 @@ export default function RebuildOperatorPage() {
 
     const existingOpenShift = await supabase
       .from("shifts")
-      .select("id,booth_id,status")
+      .select("id,booth_id,status,opened_at")
       .eq("operator_id", userId)
       .eq("status", "open")
       .order("opened_at", { ascending: false })
-      .limit(1);
+      .limit(10);
 
     if (existingOpenShift.error) {
       setBusy(null);
@@ -563,10 +580,16 @@ export default function RebuildOperatorPage() {
       return;
     }
 
-    const existingShift = ((existingOpenShift.data as Shift[] | null) ?? [])[0] ?? null;
+    const existingShiftList = (existingOpenShift.data as Shift[] | null) ?? [];
+    const existingShift = existingShiftList[0] ?? null;
     if (existingShift) {
       setShift(existingShift);
-      await Promise.all([loadTransactions(existingShift.id), loadCashMovements(existingShift.id), loadTimePunches()]);
+      if (existingShiftList.length > 1) {
+        const msg = `Foram encontrados ${existingShiftList.length} turnos abertos legados. O sistema retomou o mais recente automaticamente.`;
+        setShiftRecoveryNotice(msg);
+        addWarning("Turno", msg);
+      }
+      await Promise.all([loadTransactions(existingShift.id), loadCashMovements(existingShift.id), loadTimePunches(userId)]);
       setBusy(null);
       setFeedbackMessage("Você já possui um turno aberto e ele foi retomado automaticamente.", "info");
       return;
@@ -595,7 +618,8 @@ export default function RebuildOperatorPage() {
     }
 
     setShift(newShift);
-    await Promise.all([loadTransactions(newShift.id), loadCashMovements(newShift.id), loadTimePunches()]);
+    setShiftRecoveryNotice(null);
+    await Promise.all([loadTransactions(newShift.id), loadCashMovements(newShift.id), loadTimePunches(userId)]);
 
     setBusy(null);
     setFeedbackMessage("Turno aberto com sucesso.", "success");
@@ -627,11 +651,12 @@ export default function RebuildOperatorPage() {
     }
 
     setShift(null);
+    setShiftRecoveryNotice(null);
     setTransactions([]);
     setCashMovements([]);
     setShowCloseModal(false);
     setCloseNotes("");
-    await loadTimePunches();
+    await loadTimePunches(userId);
     setBusy(null);
     setFeedbackMessage("Turno encerrado com sucesso.", "success");
   }
@@ -833,6 +858,38 @@ export default function RebuildOperatorPage() {
     });
   }, [cashMovements, cashFilterType, cashFilterFrom, cashFilterTo, cashFilterText]);
 
+  const filteredCashSales = useMemo(() => {
+    const term = cashFilterText.trim().toLowerCase();
+    return transactions.filter((tx) => {
+      const soldAt = new Date(tx.sold_at);
+      if (cashFilterFrom) {
+        const from = new Date(cashFilterFrom);
+        if (soldAt < from) return false;
+      }
+      if (cashFilterTo) {
+        const to = new Date(cashFilterTo);
+        if (soldAt > to) return false;
+      }
+      if (term) {
+        const blob = `${tx.company_name} ${tx.ticket_reference || ""} ${tx.note || ""}`.toLowerCase();
+        if (!blob.includes(term)) return false;
+      }
+      return true;
+    });
+  }, [transactions, cashFilterFrom, cashFilterTo, cashFilterText]);
+
+  const cashSalesByMethod = useMemo(
+    () =>
+      filteredCashSales.reduce(
+        (acc, tx) => {
+          acc[tx.payment_method] += Number(tx.amount || 0);
+          return acc;
+        },
+        { pix: 0, credit: 0, debit: 0, cash: 0, link: 0 }
+      ),
+    [filteredCashSales]
+  );
+
   const cashExpected = cashSummary.currentBalance;
   const cashDeclaredValue = Number(cashDeclared || 0);
   const cashDifference = cashDeclared ? cashDeclaredValue - cashExpected : 0;
@@ -891,7 +948,7 @@ export default function RebuildOperatorPage() {
       setFeedbackMessage(`Não foi possível registrar ponto (${type.replace("_", " ")}): ${res.error.message}`, "error");
       return;
     }
-    await loadTimePunches();
+    await loadTimePunches(userId);
     setFeedbackMessage(`Ponto registrado: ${type.replace("_", " ")}.`, "success");
   }
 
@@ -991,6 +1048,12 @@ export default function RebuildOperatorPage() {
           <p className={`rb-card-description ${feedbackTone === "error" ? "text-rose-700" : feedbackTone === "success" ? "text-emerald-700" : "text-slate-700"}`} style={{ marginTop: 0 }}>
             {feedback}
           </p>
+        </Card>
+      ) : null}
+
+      {shiftRecoveryNotice ? (
+        <Card>
+          <p className="rb-card-description text-amber-700" style={{ marginTop: 0 }}>{shiftRecoveryNotice}</p>
         </Card>
       ) : null}
 
@@ -1283,12 +1346,42 @@ export default function RebuildOperatorPage() {
               </div>
             </div>
 
+            <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+              <p className="text-sm font-semibold text-slate-800">Vendas no contexto do caixa (turno atual)</p>
+              <div className="mt-2 grid sm:grid-cols-2 xl:grid-cols-5 gap-2 text-xs">
+                <div className="rounded-md bg-white border p-2"><span className="text-slate-500">PIX</span><p className="font-semibold text-slate-900">{brl(cashSalesByMethod.pix)}</p></div>
+                <div className="rounded-md bg-white border p-2"><span className="text-slate-500">Crédito</span><p className="font-semibold text-slate-900">{brl(cashSalesByMethod.credit)}</p></div>
+                <div className="rounded-md bg-white border p-2"><span className="text-slate-500">Débito</span><p className="font-semibold text-slate-900">{brl(cashSalesByMethod.debit)}</p></div>
+                <div className="rounded-md bg-white border p-2"><span className="text-slate-500">Dinheiro (integra no saldo)</span><p className="font-semibold text-emerald-700">{brl(cashSalesByMethod.cash)}</p></div>
+                <div className="rounded-md bg-white border p-2"><span className="text-slate-500">LINK</span><p className="font-semibold text-slate-900">{brl(cashSalesByMethod.link)}</p></div>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-auto max-h-[280px] rounded-xl border border-blue-100">
+              <table className="w-full text-sm min-w-[760px]">
+                <thead><tr className="text-slate-500 bg-blue-50"><th className="text-left py-2 px-3">Hora</th><th className="text-left">Empresa</th><th className="text-left">Método</th><th className="text-right">Valor</th><th className="text-left pr-3">Referência</th></tr></thead>
+                <tbody>
+                  {filteredCashSales.length === 0 ? (
+                    <tr><td colSpan={5} className="py-4 px-3 text-slate-500">Nenhuma venda encontrada no período filtrado.</td></tr>
+                  ) : filteredCashSales.map((tx) => (
+                    <tr key={tx.id} className="border-t border-blue-100">
+                      <td className="py-2 px-3">{new Date(tx.sold_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</td>
+                      <td>{tx.company_name}</td>
+                      <td>{paymentMethodMeta(tx.payment_method).label}</td>
+                      <td className={`text-right font-semibold ${tx.payment_method === "cash" ? "text-emerald-700" : "text-slate-800"}`}>{brl(Number(tx.amount || 0))}</td>
+                      <td className="pr-3">{tx.ticket_reference || tx.note || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
             <div className="mt-4 overflow-auto max-h-[380px] rounded-xl border border-slate-200">
               <table className="w-full text-sm min-w-[760px]">
                 <thead><tr className="text-slate-500 bg-slate-50"><th className="text-left py-2 px-3">Data/hora</th><th className="text-left">Tipo</th><th className="text-right">Valor</th><th className="text-left">Observação</th><th className="text-left pr-3">Operador</th></tr></thead>
                 <tbody>
                   {filteredCashMovements.length === 0 ? (
-                    <tr><td colSpan={5} className="py-4 px-3 text-slate-500">Nenhum movimento encontrado com os filtros atuais.</td></tr>
+                    <tr><td colSpan={5} className="py-4 px-3 text-slate-500">Nenhum movimento de caixa encontrado com os filtros atuais.</td></tr>
                   ) : filteredCashMovements.map((m) => (
                     <tr key={m.id} className="border-t">
                       <td className="py-2 px-3">{new Date(m.created_at).toLocaleString("pt-BR")}</td>
