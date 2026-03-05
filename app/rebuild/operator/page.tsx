@@ -115,6 +115,7 @@ export default function RebuildOperatorPage() {
   const [categoryId, setCategoryId] = useState("");
   const [subcategoryId, setSubcategoryId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit" | "debit" | "cash" | "link">("pix");
+  const [cardMachineOwner, setCardMachineOwner] = useState<"" | "empresa_onibus" | "central_viagens">("");
   const [selectedBoardingFeeCity, setSelectedBoardingFeeCity] = useState<"" | BoardingFeeCity>("");
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
@@ -777,6 +778,7 @@ export default function RebuildOperatorPage() {
     }
 
     const nextErrors: Partial<Record<"amount" | "companyId" | "categoryId" | "subcategoryId", string>> = {};
+    const isCardPayment = paymentMethod === "credit" || paymentMethod === "debit";
     if (!amount) nextErrors.amount = "Informe o valor da transação.";
     if (!companyId) nextErrors.companyId = "Selecione a empresa/fornecedor.";
     if (!categoryId) nextErrors.categoryId = "Selecione a categoria.";
@@ -803,11 +805,18 @@ export default function RebuildOperatorPage() {
       return;
     }
 
+    if (isCardPayment && !cardMachineOwner) {
+      setFeedbackMessage("Selecione qual maquininha foi usada (Empresa do ônibus ou Central Viagens).", "error");
+      return;
+    }
+
     setTxErrors({});
     setBusy("transaction");
     setFeedback(null);
 
     const selectedFee = BOARDING_FEE_OPTIONS.find((opt) => opt.city === selectedBoardingFeeCity);
+    const cardMachineLabel = cardMachineOwner === "empresa_onibus" ? "Empresa do ônibus" : cardMachineOwner === "central_viagens" ? "Central Viagens" : null;
+    const finalNote = [cardMachineLabel ? `[Maquininha: ${cardMachineLabel}]` : null, note.trim() || null].filter(Boolean).join(" ");
 
     const insertRes = await supabase.from("transactions").insert({
       shift_id: activeShift.id,
@@ -819,7 +828,7 @@ export default function RebuildOperatorPage() {
       payment_method: paymentMethod,
       amount: parsedAmount,
       ticket_reference: reference.trim() || null,
-      note: note.trim() || null,
+      note: finalNote || null,
       commission_percent: null,
       boarding_fee_city: selectedFee?.city ?? null,
       boarding_fee_amount: selectedFee?.amount ?? 0,
@@ -843,6 +852,7 @@ export default function RebuildOperatorPage() {
     setAmount("");
     setReference("");
     setNote("");
+    setCardMachineOwner("");
     setReceiptFile(null);
     setSelectedBoardingFeeCity("");
     await loadTransactions(activeShift.id);
@@ -1326,13 +1336,27 @@ export default function RebuildOperatorPage() {
                 <button
                   type="button"
                   key={item.id}
-                  onClick={() => setPaymentMethod(item.id)}
+                  onClick={() => {
+                    setPaymentMethod(item.id);
+                    if (item.id !== "credit" && item.id !== "debit") setCardMachineOwner("");
+                  }}
                   className={`rb-pay-chip ${paymentMethod === item.id ? "is-active" : ""}`}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
+
+            {(paymentMethod === "credit" || paymentMethod === "debit") ? (
+              <>
+                <label className="rb-form-label">Maquininha usada</label>
+                <select className="field" value={cardMachineOwner} onChange={(e) => setCardMachineOwner(e.target.value as "" | "empresa_onibus" | "central_viagens")} required>
+                  <option value="">Selecione</option>
+                  <option value="empresa_onibus">Empresa do ônibus</option>
+                  <option value="central_viagens">Central Viagens</option>
+                </select>
+              </>
+            ) : null}
 
             <label className="rb-form-label">Taxa de embarque</label>
             <select className="field" value={selectedBoardingFeeCity} onChange={(e) => setSelectedBoardingFeeCity(e.target.value as "" | BoardingFeeCity)}>
@@ -1361,7 +1385,7 @@ export default function RebuildOperatorPage() {
               <button
                 type="button"
                 className="btn-ghost"
-                onClick={() => { setAmount(""); setReference(""); setNote(""); setReceiptFile(null); setSelectedBoardingFeeCity(""); setTxErrors({}); }}
+                onClick={() => { setAmount(""); setReference(""); setNote(""); setCardMachineOwner(""); setReceiptFile(null); setSelectedBoardingFeeCity(""); setTxErrors({}); }}
               >
                 Limpar
               </button>
