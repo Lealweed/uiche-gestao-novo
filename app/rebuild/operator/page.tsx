@@ -178,6 +178,15 @@ export default function RebuildOperatorPage() {
     [transactions]
   );
 
+  const systemStatus = useMemo(() => {
+    if (!timePunches.length) return { label: "Fechado", detail: "Sem registro de abertura hoje" };
+    const lastPunch = [...timePunches].sort((a, b) => +new Date(b.punched_at) - +new Date(a.punched_at))[0];
+    if (lastPunch.punch_type === "saida") {
+      return { label: "Fechado", detail: `Última saída às ${new Date(lastPunch.punched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` };
+    }
+    return { label: "Aberto", detail: `Aberto desde ${new Date(lastPunch.punched_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` };
+  }, [timePunches]);
+
   const filteredTransactions = useMemo(() => {
     const now = new Date();
     const startToday = new Date(now);
@@ -408,7 +417,7 @@ export default function RebuildOperatorPage() {
 
   async function loadTimePunches(targetUserId?: string | null) {
     const currentUserId = targetUserId ?? userId;
-    if (!currentUserId) return;
+    if (!currentUserId) return [] as TimePunch[];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -424,11 +433,34 @@ export default function RebuildOperatorPage() {
       addWarning("Ponto Digital", res.error.message);
       if (isMissingStructure(res.error.message)) setAvailability((prev) => ({ ...prev, timePunches: false }));
       setTimePunches([]);
-      return;
+      return [] as TimePunch[];
     }
 
-    setTimePunches((res.data as TimePunch[] | null) ?? []);
+    const loaded = (res.data as TimePunch[] | null) ?? [];
+    setTimePunches(loaded);
+    return loaded;
   }
+  async function ensureSystemAccessPunch(params: { userId: string; type: "entrada" | "saida"; boothId?: string | null; shiftId?: string | null }) {
+    const payload = {
+      user_id: params.userId,
+      booth_id: params.boothId ?? null,
+      shift_id: params.shiftId ?? null,
+      punch_type: params.type,
+      punched_at: new Date().toISOString(),
+    };
+
+    const res = await supabase.from("time_punches").insert(payload);
+    if (res.error) {
+      if (isMissingStructure(res.error.message)) {
+        setAvailability((prev) => ({ ...prev, timePunches: false }));
+      }
+      addWarning("Ponto Digital", `Não foi possível registrar ${params.type === "entrada" ? "abertura" : "saída"} automática do sistema: ${res.error.message}`);
+      return false;
+    }
+
+    return true;
+  }
+
   async function bootstrap() {
     setLoading(true);
     setError(null);
@@ -526,12 +558,29 @@ export default function RebuildOperatorPage() {
         addWarning("Turno", msg);
       }
 
+      let punchesToday: TimePunch[] = [];
       if (openShift) {
-        await Promise.all([loadTransactions(openShift.id), loadCashMovements(openShift.id), loadTimePunches(authUserId)]);
+        const [, , punches] = await Promise.all([loadTransactions(openShift.id), loadCashMovements(openShift.id), loadTimePunches(authUserId)]);
+        punchesToday = punches;
       } else {
         setTransactions([]);
         setCashMovements([]);
-        await loadTimePunches(authUserId);
+        punchesToday = await loadTimePunches(authUserId);
+      }
+
+      const hasTodayEntry = punchesToday.some((p) => p.punch_type === "entrada");
+      if (!hasTodayEntry && availability.timePunches) {
+        const defaultBoothId = openShift?.booth_id ?? hydratedBooths[0]?.booth_id ?? null;
+        const registered = await ensureSystemAccessPunch({
+          userId: authUserId,
+          type: "entrada",
+          boothId: defaultBoothId,
+          shiftId: openShift?.id ?? null,
+        });
+        if (registered) {
+          await loadTimePunches(authUserId);
+          setFeedbackMessage("Sistema aberto e entrada registrada automaticamente.", "success");
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível carregar o painel do operador.");
@@ -651,6 +700,25 @@ export default function RebuildOperatorPage() {
     await loadTimePunches(userId);
     setBusy(null);
     setFeedbackMessage("Turno encerrado com sucesso.", "success");
+  }
+
+  async function logoutSystem() {
+    if (!userId) {
+      await supabase.auth.signOut();
+      router.replace("/login");
+      return;
+    }
+
+    if (shift) {
+      setFeedbackMessage("Encerre o turno antes de sair do sistema para registrar a saída corretamente.", "error");
+      return;
+    }
+
+    setBusy("logout-system");
+    await ensureSystemAccessPunch({ userId, type: "saida", boothId: booths[0]?.booth_id ?? null, shiftId: null });
+    await supabase.auth.signOut();
+    setBusy(null);
+    router.replace("/login");
   }
 
   function requestCloseShift() {
@@ -1080,6 +1148,11 @@ export default function RebuildOperatorPage() {
       <SectionHeader
         title="Painel do Operador"
         subtitle="Abra/encerre turno, registre lançamentos, anexe comprovantes e controle o caixa em tempo real."
+        action={(
+          <button className="btn-ghost" onClick={logoutSystem} disabled={busy === "logout-system"}>
+            {busy === "logout-system" ? "Saindo..." : "Sair do sistema"}
+          </button>
+        )}
       />
 
       <div className="flex flex-wrap gap-2 mb-4">
@@ -1122,6 +1195,12 @@ export default function RebuildOperatorPage() {
           value={shift ? "Aberto" : "Fechado"}
           delta={shift ? "Operação em andamento" : "Aguardando abertura"}
           icon={<Clock3 size={16} />}
+        />
+        <StatCard
+          label="Status do sistema"
+          value={systemStatus.label}
+          delta={systemStatus.detail}
+          icon={<CheckCircle2 size={16} />}
         />
         <StatCard label="Vendas no turno" value={brl(totalSales)} delta={`${transactions.length} lançamento(s)`} icon={<CreditCard size={16} />} />
         <StatCard
