@@ -1014,6 +1014,18 @@ export default function RebuildAdminPage() {
     });
   }
 
+  function isCompanyDraftDirty(company: Company, draft: CompanyDraft) {
+    const originalWhatsapp = formatWhatsapp(company.whatsapp || "");
+    return (
+      (draft.name || "").trim() !== (company.name || "").trim() ||
+      Number(draft.commission_percent || 0) !== Number(company.commission_percent || 0) ||
+      Number(draft.payout_days || 0) !== Number(company.payout_days || 0) ||
+      (draft.account_manager || "").trim() !== (company.account_manager || "").trim() ||
+      (draft.whatsapp || "").trim() !== originalWhatsapp.trim() ||
+      (draft.rating || "boa") !== ((company.rating as "alta" | "boa" | "media" | "ruim" | null) || "boa")
+    );
+  }
+
   async function saveCompanyInline(company: Company) {
     const draft = companyDrafts[company.id];
     if (!draft) return;
@@ -1546,9 +1558,13 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
               <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2" onClick={createCompany}>Cadastrar empresa</button>
 
               {companies.length === 0 ? <p className="text-sm text-slate-500">Sem registros.</p> : (
-                <div className="max-h-80 overflow-auto rounded-lg border">
+                <>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Alterou comissão (%) ou repasse (dias)? Clique em <b>Salvar alterações</b> na linha da empresa.
+                  </div>
+                  <div className="max-h-96 overflow-auto rounded-lg border">
                   <table className="w-full text-xs md:text-sm">
-                    <thead className="bg-slate-50 text-slate-600 sticky top-0">
+                    <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10">
                       <tr>
                         <th className="p-2 text-left">Empresa</th>
                         <th className="p-2 text-left">Comissão %</th>
@@ -1563,11 +1579,13 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                       {companies.map((company) => {
                         const draft = companyDrafts[company.id];
                         if (!draft) return null;
+                        const isDirty = isCompanyDraftDirty(company, draft);
+                        const financialDirty = Number(draft.commission_percent || 0) !== Number(company.commission_percent || 0) || Number(draft.payout_days || 0) !== Number(company.payout_days || 0);
                         return (
-                          <tr key={company.id} className="border-t align-top">
+                          <tr key={company.id} className={`border-t align-top ${isDirty ? "bg-amber-50/60" : ""}`}>
                             <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.name} onChange={(e) => updateCompanyDraft(company.id, "name", e.target.value)} /></td>
-                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-24" type="number" min="0" max="100" step="0.1" value={draft.commission_percent} onChange={(e) => updateCompanyDraft(company.id, "commission_percent", e.target.value)} /></td>
-                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-24" type="number" min="0" value={draft.payout_days} onChange={(e) => updateCompanyDraft(company.id, "payout_days", e.target.value)} /></td>
+                            <td className="p-2"><input className={`border rounded-lg px-2 py-1 w-24 ${financialDirty ? "border-amber-400 bg-amber-50" : ""}`} type="number" min="0" max="100" step="0.1" value={draft.commission_percent} onChange={(e) => updateCompanyDraft(company.id, "commission_percent", e.target.value)} /></td>
+                            <td className="p-2"><input className={`border rounded-lg px-2 py-1 w-24 ${financialDirty ? "border-amber-400 bg-amber-50" : ""}`} type="number" min="0" value={draft.payout_days} onChange={(e) => updateCompanyDraft(company.id, "payout_days", e.target.value)} /></td>
                             <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.account_manager} onChange={(e) => updateCompanyDraft(company.id, "account_manager", e.target.value)} /></td>
                             <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.whatsapp} onChange={(e) => updateCompanyDraft(company.id, "whatsapp", formatWhatsapp(e.target.value))} /></td>
                             <td className="p-2">
@@ -1580,7 +1598,9 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                             </td>
                             <td className="p-2">
                               <div className="flex justify-end gap-2">
-                                <button className="rounded-lg bg-[#0da2e7] text-white px-2 py-1" onClick={() => saveCompanyInline(company)}>Salvar</button>
+                                <button className={`rounded-lg px-3 py-1.5 font-semibold text-white ${isDirty ? "bg-[#0da2e7]" : "bg-slate-300 cursor-not-allowed"}`} disabled={!isDirty} onClick={() => saveCompanyInline(company)}>
+                                  Salvar alterações
+                                </button>
                                 <button className="rounded-lg border px-2 py-1" onClick={() => toggleRow("companies", "id", company.id, company.active, company.active ? "Empresa inativada com sucesso." : "Empresa ativada com sucesso.")}>{company.active ? "Inativar" : "Ativar"}</button>
                               </div>
                             </td>
@@ -1590,6 +1610,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
             </div>
 
