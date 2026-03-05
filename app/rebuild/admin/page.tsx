@@ -27,6 +27,7 @@ type Tx = {
 type Company = { id: string; name: string; active: boolean; commission_percent?: number | null; payout_days?: number | null; account_manager?: string | null; whatsapp?: string | null; rating?: "alta" | "boa" | "media" | "ruim" | null };
 type CompanyDraft = { name: string; commission_percent: string; payout_days: string; account_manager: string; whatsapp: string; rating: "alta" | "boa" | "media" | "ruim" };
 type Booth = { id: string; code: string; name: string; active: boolean };
+type BoothDraft = { code: string; name: string };
 type Category = { id: string; name: string; active: boolean };
 type OperatorBooth = { id: string; operator_id: string; booth_id: string; active: boolean };
 type TimePunch = { id: string; user_id?: string | null; booth_id?: string | null; punch_type: string; punched_at: string; note?: string | null };
@@ -137,6 +138,11 @@ export default function RebuildAdminPage() {
   const [companyWhatsapp, setCompanyWhatsapp] = useState("");
   const [companyRating, setCompanyRating] = useState<"alta" | "boa" | "media" | "ruim">("boa");
   const [companyDrafts, setCompanyDrafts] = useState<Record<string, CompanyDraft>>({});
+  const [boothDrafts, setBoothDrafts] = useState<Record<string, BoothDraft>>({});
+  const [savingBoothId, setSavingBoothId] = useState<string | null>(null);
+  const [linkingBoothId, setLinkingBoothId] = useState<string | null>(null);
+  const [processingLinkId, setProcessingLinkId] = useState<string | null>(null);
+  const [boothOperatorSelections, setBoothOperatorSelections] = useState<Record<string, string>>({});
   const [boothCode, setBoothCode] = useState("");
   const [boothName, setBoothName] = useState("");
   const [linkOperatorId, setLinkOperatorId] = useState("");
@@ -241,6 +247,8 @@ export default function RebuildAdminPage() {
       })
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   }, [operators, links, boothMap]);
+
+  const activeLinks = useMemo(() => links.filter((link) => link.active), [links]);
 
   const boothStatusCards = useMemo(() => {
     const activeLinks = links.filter((link) => link.active);
@@ -662,6 +670,16 @@ export default function RebuildAdminPage() {
   }, [companies]);
 
   useEffect(() => {
+    setBoothDrafts((prev) => {
+      const next: Record<string, BoothDraft> = {};
+      booths.forEach((booth) => {
+        next[booth.id] = prev[booth.id] || { code: booth.code || "", name: booth.name || "" };
+      });
+      return next;
+    });
+  }, [booths]);
+
+  useEffect(() => {
     async function guard() {
       setAuthLoading(true);
       try {
@@ -899,6 +917,90 @@ export default function RebuildAdminPage() {
   }
 
   
+
+  function updateBoothDraft(boothId: string, field: keyof BoothDraft, value: string) {
+    setBoothDrafts((prev) => {
+      const current = prev[boothId];
+      if (!current) return prev;
+      return { ...prev, [boothId]: { ...current, [field]: value } };
+    });
+  }
+
+  async function saveBoothInline(booth: Booth) {
+    const draft = boothDrafts[booth.id];
+    if (!draft) return;
+
+    const name = draft.name.trim();
+    const code = draft.code.trim();
+
+    if (!name) {
+      setNotice("Informe um nome válido para salvar o guichê.");
+      return;
+    }
+
+    if (!code) {
+      setNotice("Informe um código válido para salvar o guichê.");
+      return;
+    }
+
+    setSavingBoothId(booth.id);
+    const res = await supabase.from("booths").update({ name, code }).eq("id", booth.id);
+    setSavingBoothId(null);
+
+    if (res.error) {
+      setNotice(`Erro ao salvar guichê: ${mapDbError(res.error.message, "Falha ao salvar guichê")}`);
+      return;
+    }
+
+    setNotice(`Guichê ${code} - ${name} salvo com sucesso.`);
+    await loadAll();
+  }
+
+  async function linkOperatorToBooth(boothId: string) {
+    const selectedOperatorId = boothOperatorSelections[boothId] || "";
+    const selectedOperator = eligibleOperators.find((operator) => operator.user_id === selectedOperatorId);
+    const selectedBooth = booths.find((booth) => booth.id === boothId);
+
+    if (!selectedBooth) return setNotice("Guichê não encontrado para concluir o vínculo.");
+    if (!selectedOperator) return setNotice("Selecione um operador válido para vincular neste guichê.");
+
+    const existingLink = links.find((l) => l.operator_id === selectedOperator.user_id && l.booth_id === boothId);
+    if (existingLink?.active) return setNotice("Esse operador já está ativo neste guichê.");
+
+    setLinkingBoothId(boothId);
+
+    if (existingLink && !existingLink.active) {
+      const reactivate = await supabase.from("operator_booths").update({ active: true }).eq("id", existingLink.id);
+      setLinkingBoothId(null);
+      if (reactivate.error) return setNotice(`Erro ao vincular operador: ${mapDbError(reactivate.error.message, "Falha ao vincular operador")}`);
+      setBoothOperatorSelections((prev) => ({ ...prev, [boothId]: "" }));
+      setNotice("Vínculo reativado com sucesso.");
+      await loadAll();
+      return;
+    }
+
+    const res = await supabase.from("operator_booths").insert({ operator_id: selectedOperator.user_id, booth_id: boothId, active: true });
+    setLinkingBoothId(null);
+    if (res.error) return setNotice(`Erro ao vincular operador: ${mapDbError(res.error.message, "Falha ao vincular operador")}`);
+
+    setBoothOperatorSelections((prev) => ({ ...prev, [boothId]: "" }));
+    setNotice("Operador vinculado ao guichê com sucesso.");
+    await loadAll();
+  }
+
+  async function deactivateLink(linkId: string) {
+    const link = links.find((item) => item.id === linkId);
+    if (!link) return setNotice("Vínculo não encontrado.");
+    if (!link.active) return setNotice("Esse vínculo já está inativo.");
+
+    setProcessingLinkId(linkId);
+    const res = await supabase.from("operator_booths").update({ active: false }).eq("id", linkId);
+    setProcessingLinkId(null);
+
+    if (res.error) return setNotice(`Erro ao remover vínculo: ${mapDbError(res.error.message, "Falha ao remover vínculo")}`);
+    setNotice("Vínculo removido com sucesso.");
+    await loadAll();
+  }
 
   async function createOperatorAndLink() {
     await createUserViaAdminApi(linkBoothId || undefined);
@@ -1491,9 +1593,77 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
               )}
             </div>
 
-            <CrudPanel title="Guichês" createForm={<div className="flex gap-2 flex-wrap"><input className="border rounded-lg px-3 py-2 w-28" placeholder="Código (ex.: G01)" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} /><input className="border rounded-lg px-3 py-2 flex-1 min-w-40" placeholder="Nome do guichê (ex.: Guichê Principal)" value={boothName} onChange={(e) => setBoothName(e.target.value)} /><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createBooth}>Cadastrar guichê</button></div>} items={booths.map((b) => ({ id: b.id, label: `${b.code} - ${b.name}`, active: b.active, onToggle: () => toggleRow("booths", "id", b.id, b.active, b.active ? "Guichê inativado com sucesso." : "Guichê ativado com sucesso.") }))} />
+            <div className="rounded-lg border p-3 space-y-3 lg:col-span-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="font-semibold text-slate-800">Gestão visual de guichês</p>
+                  <p className="text-xs text-slate-500">Edite nome/código e faça os vínculos direto no cartão de cada guichê.</p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <input className="border rounded-lg px-3 py-2 w-28" placeholder="Código (ex.: G01)" value={boothCode} onChange={(e) => setBoothCode(e.target.value)} />
+                  <input className="border rounded-lg px-3 py-2 min-w-52" placeholder="Nome do guichê" value={boothName} onChange={(e) => setBoothName(e.target.value)} />
+                  <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 font-semibold" onClick={createBooth}>Cadastrar guichê</button>
+                </div>
+              </div>
 
-            <CrudPanel title="Vínculos operador↔guichê" createForm={<div className="flex gap-2 flex-wrap"><select className="border rounded-lg px-3 py-2" value={linkOperatorId} onChange={(e) => setLinkOperatorId(e.target.value)}><option value="" disabled>Selecione o operador</option>{eligibleOperators.map((o) => <option key={o.user_id} value={o.user_id}>{o.full_name}</option>)}</select><select className="border rounded-lg px-3 py-2" value={linkBoothId} onChange={(e) => setLinkBoothId(e.target.value)}><option value="">Guichê</option>{booths.map((b) => <option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}</select><button className="rounded-lg bg-[#0da2e7] text-white px-3" onClick={createLink}>Vincular</button></div>} items={links.map((l) => ({ id: l.id, label: `${operatorMap.get(l.operator_id) || "Sem operador"} ↔ ${boothMap.get(l.booth_id) || "Sem guichê"}`, active: l.active, onToggle: () => toggleRow("operator_booths", "id", l.id, l.active, l.active ? "Vínculo operador↔guichê inativado com sucesso." : "Vínculo operador↔guichê ativado com sucesso.") }))} />
+              {booths.length === 0 ? <Empty text="Nenhum guichê cadastrado ainda." /> : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                  {booths.map((booth) => {
+                    const draft = boothDrafts[booth.id] || { code: booth.code, name: booth.name };
+                    const linkedOperators = activeLinks.filter((link) => link.booth_id === booth.id);
+
+                    return (
+                      <article key={booth.id} className="rounded-xl border border-slate-200 bg-white p-3 space-y-3 shadow-sm">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Guichê</p>
+                            <p className="font-semibold text-slate-900">{booth.code} • {booth.name}</p>
+                          </div>
+                          <button className="rounded-lg border px-3 py-1.5 text-xs" onClick={() => toggleRow("booths", "id", booth.id, booth.active, booth.active ? "Guichê inativado com sucesso." : "Guichê ativado com sucesso.")}>{booth.active ? "Inativar" : "Ativar"}</button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <input className="border rounded-lg px-3 py-2" value={draft.code} onChange={(e) => updateBoothDraft(booth.id, "code", e.target.value)} placeholder="Código" />
+                          <input className="border rounded-lg px-3 py-2" value={draft.name} onChange={(e) => updateBoothDraft(booth.id, "name", e.target.value)} placeholder="Nome do guichê" />
+                        </div>
+
+                        <button className="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm font-semibold disabled:opacity-60" disabled={savingBoothId === booth.id} onClick={() => saveBoothInline(booth)}>
+                          {savingBoothId === booth.id ? "Salvando..." : "Salvar dados do guichê"}
+                        </button>
+
+                        <div className="rounded-lg border bg-slate-50 p-2 space-y-2">
+                          <p className="text-xs font-semibold text-slate-700">Vincular operador neste guichê</p>
+                          <div className="flex gap-2 flex-wrap">
+                            <select className="border rounded-lg px-3 py-2 flex-1 min-w-52" value={boothOperatorSelections[booth.id] || ""} onChange={(e) => setBoothOperatorSelections((prev) => ({ ...prev, [booth.id]: e.target.value }))}>
+                              <option value="">Selecione um operador</option>
+                              {eligibleOperators.map((operator) => <option key={operator.user_id} value={operator.user_id}>{operator.full_name}</option>)}
+                            </select>
+                            <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2 text-sm font-semibold disabled:opacity-60" disabled={linkingBoothId === booth.id} onClick={() => linkOperatorToBooth(booth.id)}>
+                              {linkingBoothId === booth.id ? "Vinculando..." : "Vincular"}
+                            </button>
+                          </div>
+
+                          {linkedOperators.length === 0 ? (
+                            <p className="text-xs text-slate-500">Sem operadores ativos neste guichê.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {linkedOperators.map((link) => (
+                                <div key={link.id} className="rounded-lg border bg-white px-2 py-1.5 flex items-center justify-between gap-2">
+                                  <p className="text-sm text-slate-700">{operatorMap.get(link.operator_id) || "Operador não encontrado"}</p>
+                                  <button className="rounded-lg border px-2 py-1 text-xs text-rose-700 border-rose-200 disabled:opacity-60" disabled={processingLinkId === link.id} onClick={() => deactivateLink(link.id)}>
+                                    {processingLinkId === link.id ? "Removendo..." : "Remover vínculo"}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
           <div className="rounded-lg border p-3 mt-4">
             <p className="font-semibold text-slate-800 mb-2">Consolidado de vínculos por operador</p>
