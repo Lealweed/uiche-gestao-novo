@@ -15,7 +15,7 @@ type Profile = { role: "tenant_admin" | "operator" | "financeiro" | "admin"; act
 type BoothLink = { booth_id: string };
 type Booth = { id: string; name: string };
 type Shift = { id: string; booth_id: string; status: "open" | "closed"; opened_at?: string | null };
-type Company = { id: string; name: string };
+type Company = { id: string; name: string; active?: boolean | null };
 type Category = { id: string; name: string };
 type Subcategory = { id: string; name: string; category_id: string };
 type CashMovement = {
@@ -515,7 +515,7 @@ export default function RebuildOperatorPage() {
       const [links, allBooths, loadedCompanies, loadedCategories, loadedSubcategories] = await Promise.all([
         safeLoadArray<BoothLink>("Guichês do operador", supabase.from("operator_booths").select("booth_id").eq("operator_id", authUserId).eq("active", true), () => setAvailability((prev) => ({ ...prev, operatorBooths: false }))),
         safeLoadArray<Booth>("Guichês", supabase.from("booths").select("id,name").eq("active", true), () => setAvailability((prev) => ({ ...prev, booths: false }))),
-        safeLoadArray<Company>("Empresas", supabase.from("companies").select("id,name").eq("active", true).order("name"), () => setAvailability((prev) => ({ ...prev, companies: false }))),
+        safeLoadArray<Company>("Empresas", supabase.from("companies").select("id,name,active").order("name"), () => setAvailability((prev) => ({ ...prev, companies: false }))),
         safeLoadArray<Category>("Categorias", supabase.from("transaction_categories").select("id,name").eq("active", true).order("name"), () => setAvailability((prev) => ({ ...prev, categories: false }))),
         safeLoadArray<Subcategory>("Subcategorias", supabase.from("transaction_subcategories").select("id,name,category_id").eq("active", true).order("name"), () => setAvailability((prev) => ({ ...prev, subcategories: false }))),
       ]);
@@ -1271,7 +1271,7 @@ export default function RebuildOperatorPage() {
             <select className={`field ${txErrors.companyId ? "border-rose-400" : ""}`} value={companyId} onChange={(e) => { setCompanyId(e.target.value); setTxErrors((prev) => ({ ...prev, companyId: undefined })); }} required>
               <option value="">Selecione a empresa</option>
               {companies.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>{c.name}{c.active === false ? " (inativa)" : ""}</option>
               ))}
             </select>
             {txErrors.companyId ? <p className="text-xs text-rose-600 mt-1">{txErrors.companyId}</p> : null}
@@ -1442,7 +1442,7 @@ export default function RebuildOperatorPage() {
                 <input className={`field ${txErrors.amount ? "border-rose-400" : ""}`} type="number" min="0" step="0.01" value={amount} onChange={(e) => { setAmount(e.target.value); setTxErrors((prev) => ({ ...prev, amount: undefined })); }} placeholder="Valor da transação" required />
                 <select className={`field ${txErrors.companyId ? "border-rose-400" : ""}`} value={companyId} onChange={(e) => { setCompanyId(e.target.value); setTxErrors((prev) => ({ ...prev, companyId: undefined })); }} required>
                   <option value="">Selecione a empresa</option>
-                  {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+                  {companies.map((c) => (<option key={c.id} value={c.id}>{c.name}{c.active === false ? " (inativa)" : ""}</option>))}
                 </select>
                 <div className="grid grid-cols-2 gap-2">
                   <select className={`field ${txErrors.categoryId ? "border-rose-400" : ""}`} value={categoryId} onChange={(e) => {
