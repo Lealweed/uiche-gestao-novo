@@ -1019,6 +1019,8 @@ export default function RebuildOperatorPage() {
   const cashDeclaredValue = Number(cashDeclared || 0);
   const cashDifference = cashDeclared ? cashDeclaredValue - cashExpected : 0;
   const cashDifferenceOk = Math.abs(cashDifference) < 0.01;
+  const requiresDifferenceJustification = !cashDifferenceOk;
+  const operationalNetTotal = totalSales - boardingFeeTotals.total;
 
   async function submitCashClosing(e: FormEvent) {
     e.preventDefault();
@@ -1029,6 +1031,15 @@ export default function RebuildOperatorPage() {
     const parsedDeclared = Number(cashDeclared);
     if (!Number.isFinite(parsedDeclared) || parsedDeclared < 0) return setFeedbackMessage("Informe um valor declarado válido.", "error");
 
+    if (pendingReceiptTxs.length > 0) {
+      return setFeedbackMessage(`Fechamento bloqueado: existem ${pendingReceiptTxs.length} comprovante(s) de cartão pendente(s).`, "error");
+    }
+
+    const closingNote = cashClosingNote.trim();
+    if (Math.abs(parsedDeclared - cashExpected) >= 0.01 && !closingNote) {
+      return setFeedbackMessage("Diferença identificada no caixa. Informe uma justificativa para salvar o fechamento.", "error");
+    }
+
     setBusy("cash-closing");
     const payload = {
       shift_id: shift.id,
@@ -1037,7 +1048,13 @@ export default function RebuildOperatorPage() {
       expected_cash: cashExpected,
       declared_cash: parsedDeclared,
       difference: parsedDeclared - cashExpected,
-      note: cashClosingNote.trim() || null,
+      note: [
+        closingNote || null,
+        `Taxas embarque total: ${brl(boardingFeeTotals.total)} (Belém: ${brl(boardingFeeTotals.belem)} | Goiânia: ${brl(boardingFeeTotals.goiania)})`,
+        `Total bruto: ${brl(totalSales)} | Total líquido operacional: ${brl(operationalNetTotal)}`,
+      ]
+        .filter(Boolean)
+        .join(" | "),
     };
 
     const res = await supabase.from("shift_cash_closings").upsert(payload, { onConflict: "shift_id" });
@@ -1577,21 +1594,30 @@ export default function RebuildOperatorPage() {
 
           <Card>
             <CardTitle>Fechamento de caixa</CardTitle>
-            <CardDescription>Registre o valor declarado e valide automaticamente a diferença do turno.</CardDescription>
+            <CardDescription>Registre o valor declarado, valide diferença e consolide taxas de embarque no fechamento do turno.</CardDescription>
             <form className="mt-3 grid lg:grid-cols-2 gap-3" onSubmit={submitCashClosing}>
               <div className="space-y-2">
                 <input className="field" type="number" min="0" step="0.01" placeholder="Valor declarado" value={cashDeclared} onChange={(e) => setCashDeclared(e.target.value)} />
                 <textarea className="field" rows={3} placeholder="Observação do fechamento" value={cashClosingNote} onChange={(e) => setCashClosingNote(e.target.value)} />
-                <button className="btn-primary" disabled={!shift || busy === "cash-closing"}>{busy === "cash-closing" ? "Salvando..." : "Salvar fechamento"}</button>
+                <button className="btn-primary" disabled={!shift || busy === "cash-closing" || pendingReceiptTxs.length > 0 || (requiresDifferenceJustification && !cashClosingNote.trim())}>{busy === "cash-closing" ? "Salvando..." : "Salvar fechamento"}</button>
+                {pendingReceiptTxs.length > 0 ? <p className="text-xs text-rose-700">Fechamento bloqueado: anexe os comprovantes pendentes de cartão antes de salvar.</p> : null}
                 {!availability.shiftCashClosings ? <p className="text-xs text-amber-700">Persistência temporariamente indisponível. O cálculo segue disponível na tela.</p> : null}
               </div>
               <div className="rounded-xl border border-slate-200 p-3 space-y-2">
-                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Esperado</span><b>{brl(cashExpected)}</b></div>
-                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Declarado</span><b>{brl(cashDeclared ? cashDeclaredValue : 0)}</b></div>
-                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Diferença</span><b className={cashDifferenceOk ? "text-emerald-700" : "text-amber-700"}>{brl(cashDifference)}</b></div>
+                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Esperado (caixa)</span><b>{brl(cashExpected)}</b></div>
+                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Declarado (caixa)</span><b>{brl(cashDeclared ? cashDeclaredValue : 0)}</b></div>
+                <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Diferença de caixa</span><b className={cashDifferenceOk ? "text-emerald-700" : "text-amber-700"}>{brl(cashDifference)}</b></div>
+                <div className="border-t border-slate-200 pt-2 mt-2 space-y-1">
+                  <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Taxas de embarque (total)</span><b>{brl(boardingFeeTotals.total)}</b></div>
+                  <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Belém</span><b>{brl(boardingFeeTotals.belem)}</b></div>
+                  <div className="flex items-center justify-between text-xs"><span className="text-slate-500">Goiânia</span><b>{brl(boardingFeeTotals.goiania)}</b></div>
+                  <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Total bruto vendido</span><b>{brl(totalSales)}</b></div>
+                  <div className="flex items-center justify-between text-sm"><span className="text-slate-500">Total líquido operacional</span><b>{brl(operationalNetTotal)}</b></div>
+                </div>
                 <div className={`rounded-lg px-3 py-2 text-sm inline-flex items-center gap-2 ${cashDifferenceOk ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
                   {cashDifferenceOk ? <CheckCircle2 size={15} /> : <TriangleAlert size={15} />} Status: {cashDifferenceOk ? "OK" : "Atenção"}
                 </div>
+                {requiresDifferenceJustification ? <p className="text-xs text-amber-700">Diferença detectada: informe justificativa no campo de observação para salvar.</p> : null}
               </div>
             </form>
           </Card>
@@ -1705,6 +1731,8 @@ export default function RebuildOperatorPage() {
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Taxas embarque</p><p className="font-semibold text-slate-100">{brl(boardingFeeTotals.total)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Belém</p><p className="font-semibold text-slate-100">{brl(boardingFeeTotals.belem)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Goiânia</p><p className="font-semibold text-slate-100">{brl(boardingFeeTotals.goiania)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Total bruto</p><p className="font-semibold text-slate-100">{brl(totalSales)}</p></div>
+              <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Líquido operacional</p><p className="font-semibold text-slate-100">{brl(operationalNetTotal)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Saldo de caixa</p><p className="font-semibold text-slate-100">{brl(cashTotals.saldo)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Suprimento</p><p className="font-semibold text-slate-100">{brl(cashTotals.suprimento)}</p></div>
               <div className="rounded-lg bg-slate-800 p-3"><p className="text-slate-400">Sangria</p><p className="font-semibold text-slate-100">{brl(cashTotals.sangria)}</p></div>
