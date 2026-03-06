@@ -11,6 +11,7 @@ import {
   Grid2x2,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   ScanSearch,
   Settings,
   Ticket,
@@ -27,6 +28,7 @@ const primaryNavigation = [
 const systemNavigation = [
   { href: "/rebuild/admin#usuarios", label: "Usuários", section: "usuarios", Icon: Users },
   { href: "/rebuild/admin#empresas", label: "Empresas", section: "empresas", Icon: Building2 },
+  { href: "/rebuild/admin#conversas", label: "Conversas", section: "conversas", Icon: MessageSquare },
   { href: "/rebuild/admin#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },
 ] as const;
 
@@ -34,6 +36,7 @@ const operatorNavigation = [
   { href: "/rebuild/operator#resumo", label: "Resumo do Turno", section: "resumo", Icon: LayoutDashboard },
   { href: "/rebuild/operator#caixa-pdv", label: "Caixa PDV", section: "caixa-pdv", Icon: Ticket },
   { href: "/rebuild/operator#ponto-digital", label: "Ponto Digital", section: "ponto-digital", Icon: Users },
+  { href: "/rebuild/operator#conversas", label: "Conversas", section: "conversas", Icon: MessageSquare },
   { href: "/rebuild/operator#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },
 ] as const;
 
@@ -44,6 +47,7 @@ const adminSectionLabels: Record<string, string> = {
   relatorios: "Relatórios",
   usuarios: "Usuários",
   empresas: "Empresas",
+  conversas: "Conversas",
   configuracoes: "Configurações",
 };
 
@@ -52,6 +56,7 @@ const operatorSectionLabels: Record<string, string> = {
   "caixa-pdv": "Caixa PDV",
   lancamentos: "Caixa PDV",
   "ponto-digital": "Ponto Digital",
+  conversas: "Conversas",
   configuracoes: "Configurações",
 };
 

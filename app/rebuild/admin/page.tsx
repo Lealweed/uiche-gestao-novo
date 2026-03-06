@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 
-type AdminSection = "dashboard" | "controle-turno" | "historico" | "relatorios" | "usuarios" | "empresas" | "configuracoes";
+type AdminSection = "dashboard" | "controle-turno" | "historico" | "relatorios" | "usuarios" | "empresas" | "conversas" | "configuracoes";
 
 type Profile = { user_id: string; full_name: string; role: "tenant_admin" | "operator" | "financeiro" | "admin"; active?: boolean | null; tenant_id?: string | null };
 type Shift = { id: string; status: "open" | "closed"; opened_at: string; closed_at?: string | null; operator_id?: string | null; booth_id?: string | null };
@@ -33,6 +33,14 @@ type OperatorBooth = { id: string; operator_id: string; booth_id: string; active
 type TimePunch = { id: string; user_id?: string | null; booth_id?: string | null; punch_type: string; punched_at: string; note?: string | null };
 type CashMovement = { id: string; user_id?: string | null; booth_id?: string | null; movement_type: string; amount: number; created_at: string; note?: string | null };
 type TxReceipt = { transaction_id: string };
+type OperatorAdminMessage = {
+  id: string;
+  sender_user_id: string;
+  sender_role: "operator" | "tenant_admin" | "admin" | "financeiro";
+  body: string;
+  created_at: string;
+  read_at?: string | null;
+};
 
 type UiState = { loading: boolean; error: string | null };
 type SectionWarning = { section: string; message: string };
@@ -44,6 +52,7 @@ const sections: Record<AdminSection, string> = {
   relatorios: "Relatórios",
   usuarios: "Usuários",
   empresas: "Empresas",
+  conversas: "Conversas",
   configuracoes: "Configurações",
 };
 
@@ -117,6 +126,7 @@ export default function RebuildAdminPage() {
 
   const [authLoading, setAuthLoading] = useState(true);
   const [sessionUserId, setSessionUserId] = useState("");
+  const [tenantId, setTenantId] = useState<string | null>(null);
   const [ui, setUi] = useState<UiState>({ loading: true, error: null });
   const [notice, setNotice] = useState<string | null>(null);
   const [sectionWarnings, setSectionWarnings] = useState<SectionWarning[]>([]);
@@ -131,6 +141,8 @@ export default function RebuildAdminPage() {
   const [timePunches, setTimePunches] = useState<TimePunch[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [txReceipts, setTxReceipts] = useState<TxReceipt[]>([]);
+  const [messages, setMessages] = useState<OperatorAdminMessage[]>([]);
+  const [newAdminMessage, setNewAdminMessage] = useState("");
 
   const [companyName, setCompanyName] = useState("");
   const [companyCommission, setCompanyCommission] = useState("10");
@@ -191,6 +203,29 @@ export default function RebuildAdminPage() {
       window.removeEventListener("rebuild:section-change", onSectionChange as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (!tenantId || !sessionUserId) return;
+
+    const channel = supabase
+      .channel(`admin-operator-chat-${tenantId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "operator_admin_messages", filter: `tenant_id=eq.${tenantId}` },
+        async (payload) => {
+          const msg = payload.new as OperatorAdminMessage;
+          if (msg.sender_user_id !== sessionUserId) {
+            playNotificationTone();
+          }
+          await loadAll();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tenantId, sessionUserId]);
 
   const operatorMap = useMemo(() => new Map(profiles.map((p) => [p.user_id, p.full_name])), [profiles]);
   const boothMap = useMemo(() => new Map(booths.map((b) => [b.id, `${b.code} - ${b.name}`])), [booths]);
@@ -688,8 +723,9 @@ export default function RebuildAdminPage() {
         const userId = data.user?.id;
         if (!userId) return router.replace("/login");
 
-        const profileRes = await supabase.from("profiles").select("role,active").eq("user_id", userId).single();
+        const profileRes = await supabase.from("profiles").select("role,active,tenant_id").eq("user_id", userId).single();
         setSessionUserId(userId);
+        setTenantId((profileRes.data as { tenant_id?: string | null } | null)?.tenant_id || null);
         if (profileRes.error || !profileRes.data || profileRes.data.active === false) {
           await supabase.auth.signOut();
           return router.replace("/login");
@@ -727,7 +763,7 @@ export default function RebuildAdminPage() {
       const txRequestWithFee = supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id,boarding_fee_amount,boarding_fee_city").order("sold_at", { ascending: false }).limit(400);
       const txRequestWithoutFee = supabase.from("transactions").select("id,sold_at,amount,payment_method,status,operator_id,booth_id,category_id").order("sold_at", { ascending: false }).limit(400);
 
-      const [nextProfiles, nextShifts, nextTxsRaw, nextCompanies, nextBooths, nextCategories, nextLinks, nextPunches, nextCash] = await Promise.all([
+      const [nextProfiles, nextShifts, nextTxsRaw, nextCompanies, nextBooths, nextCategories, nextLinks, nextPunches, nextCash, nextMessages] = await Promise.all([
         loadChunk<Profile>("Usuários", supabase.from("profiles").select("user_id,full_name,role,active,tenant_id").order("full_name")),
         loadChunk<Shift>("Controle de turno", supabase.from("shifts").select("id,status,opened_at,closed_at,operator_id,booth_id").order("opened_at", { ascending: false }).limit(120)),
         loadChunk<Tx>("Histórico", txRequestWithFee),
@@ -737,6 +773,7 @@ export default function RebuildAdminPage() {
         loadChunk<OperatorBooth>("Vínculos operador-guichê", supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250)),
         loadChunk<TimePunch>("Ponto", supabase.from("time_punches").select("id,user_id,booth_id,punch_type,punched_at,note").order("punched_at", { ascending: false }).limit(300)),
         loadChunk<CashMovement>("Caixa PDV", supabase.from("cash_movements").select("id,user_id,booth_id,movement_type,amount,created_at,note").order("created_at", { ascending: false }).limit(300)),
+        loadChunk<OperatorAdminMessage>("Conversas", supabase.from("operator_admin_messages").select("id,sender_user_id,sender_role,body,created_at,read_at").order("created_at", { ascending: true }).limit(200)),
       ]);
 
       let nextTxs = nextTxsRaw;
@@ -757,6 +794,7 @@ export default function RebuildAdminPage() {
       setLinks(nextLinks);
       setTimePunches(nextPunches);
       setCashMovements(nextCash);
+      setMessages(nextMessages);
       const txIds = nextTxs.map((tx) => tx.id);
       if (txIds.length > 0) {
         const receiptsRes = await supabase.from("transaction_receipts").select("transaction_id").in("transaction_id", txIds);
@@ -870,6 +908,45 @@ export default function RebuildAdminPage() {
 
     setNotice("Usuário excluído com sucesso.");
     await loadAll();
+  }
+
+  function playNotificationTone() {
+    if (typeof window === "undefined") return;
+    const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(740, ctx.currentTime);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.26);
+  }
+
+  async function sendAdminMessage() {
+    if (!sessionUserId || !tenantId) return;
+    const body = newAdminMessage.trim();
+    if (!body) return setNotice("Digite uma mensagem para enviar aos operadores.");
+
+    const res = await supabase.from("operator_admin_messages").insert({
+      tenant_id: tenantId,
+      sender_user_id: sessionUserId,
+      sender_role: "tenant_admin",
+      body,
+    });
+
+    if (res.error) return setNotice(`Erro ao enviar mensagem: ${res.error.message}`);
+    setNewAdminMessage("");
+    await loadAll();
+    setNotice("Mensagem enviada para os operadores.");
   }
 
   async function createCompany() {
@@ -1600,6 +1677,36 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
               </div>
               </>
             )}
+          </div>
+        </SectionBox>
+      )}
+
+      {activeSection === "conversas" && canManageUsers && (
+        <SectionBox title="Conversas" subtitle="Canal direto entre operadores e administração com alerta sonoro para novas mensagens.">
+          <div className="rounded-lg border p-3 space-y-3">
+            <div className="max-h-[420px] overflow-auto rounded-lg border bg-slate-50 p-3 space-y-2">
+              {messages.length === 0 ? (
+                <p className="text-sm text-slate-500">Sem mensagens no momento.</p>
+              ) : (
+                messages.map((msg) => {
+                  const mine = msg.sender_user_id === sessionUserId;
+                  const senderName = mine ? "Você" : operatorMap.get(msg.sender_user_id || "") || (msg.sender_role === "operator" ? "Operador" : "Admin");
+                  return (
+                    <div key={msg.id} className={`rounded-lg px-3 py-2 text-sm ${mine ? "bg-slate-900 text-white ml-10" : "bg-white border border-slate-200 mr-10"}`}>
+                      <p className={`text-[11px] mb-1 ${mine ? "text-slate-300" : "text-slate-500"}`}>{senderName} • {new Date(msg.created_at).toLocaleString("pt-BR")}</p>
+                      <p>{msg.body}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <textarea className="border rounded-lg px-3 py-2" rows={3} placeholder="Mensagem para operadores" value={newAdminMessage} onChange={(e) => setNewAdminMessage(e.target.value)} />
+              <div className="flex justify-end">
+                <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2" onClick={sendAdminMessage}>Enviar mensagem</button>
+              </div>
+            </div>
           </div>
         </SectionBox>
       )}

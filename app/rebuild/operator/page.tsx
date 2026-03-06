@@ -71,7 +71,15 @@ function boardingFeeLabel(city?: BoardingFeeCity | null) {
   return "Sem taxa";
 }
 
-type OperatorSection = "resumo" | "lancamentos" | "caixa-pdv" | "ponto-digital" | "configuracoes";
+type OperatorSection = "resumo" | "lancamentos" | "caixa-pdv" | "ponto-digital" | "conversas" | "configuracoes";
+
+type OperatorAdminMessage = {
+  id: string;
+  sender_user_id: string;
+  sender_role: "operator" | "tenant_admin" | "admin" | "financeiro";
+  body: string;
+  created_at: string;
+};
 
 export default function RebuildOperatorPage() {
   const router = useRouter();
@@ -99,6 +107,10 @@ export default function RebuildOperatorPage() {
   });
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [operatorName, setOperatorName] = useState("Operador");
+  const [messages, setMessages] = useState<OperatorAdminMessage[]>([]);
+  const [newMessage, setNewMessage] = useState("");
   const [shift, setShift] = useState<Shift | null>(null);
   const [shiftRecoveryNotice, setShiftRecoveryNotice] = useState<string | null>(null);
   const [booths, setBooths] = useState<Array<{ booth_id: string; booth_name: string }>>([]);
@@ -229,7 +241,7 @@ export default function RebuildOperatorPage() {
     const syncSectionFromHash = () => {
       const raw = window.location.hash.replace("#", "") as OperatorSection | "";
       const resolved = raw === "lancamentos" ? "caixa-pdv" : raw;
-      const valid: OperatorSection[] = ["resumo", "caixa-pdv", "ponto-digital", "configuracoes"];
+      const valid: OperatorSection[] = ["resumo", "caixa-pdv", "ponto-digital", "conversas", "configuracoes"];
       setActiveSection(valid.includes(resolved as OperatorSection) ? (resolved as OperatorSection) : "resumo");
     };
     syncSectionFromHash();
@@ -254,6 +266,29 @@ export default function RebuildOperatorPage() {
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
   }, []);
+
+  useEffect(() => {
+    if (!tenantId || !userId) return;
+
+    const channel = supabase
+      .channel(`operator-admin-chat-${tenantId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "operator_admin_messages", filter: `tenant_id=eq.${tenantId}` },
+        async (payload) => {
+          const msg = payload.new as OperatorAdminMessage;
+          if (msg.sender_user_id !== userId) {
+            playNotificationTone();
+          }
+          await loadMessages(tenantId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tenantId, userId]);
 
   const sideHistory = useMemo(() => {
     const txEntries = transactions.map((tx) => ({
@@ -310,6 +345,66 @@ export default function RebuildOperatorPage() {
       return [] as T[];
     }
     return (res.data ?? []) as T[];
+  }
+
+  async function loadMessages(currentTenantId: string) {
+    const res = await supabase
+      .from("operator_admin_messages")
+      .select("id,sender_user_id,sender_role,body,created_at")
+      .eq("tenant_id", currentTenantId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+
+    if (res.error) {
+      addWarning("Conversas", res.error.message);
+      return;
+    }
+
+    setMessages((res.data as OperatorAdminMessage[] | null) ?? []);
+  }
+
+  async function sendMessage() {
+    if (!userId || !tenantId) return;
+    const body = newMessage.trim();
+    if (!body) return setFeedbackMessage("Digite uma mensagem para enviar ao admin.", "error");
+
+    setBusy("send-message");
+    const res = await supabase.from("operator_admin_messages").insert({
+      tenant_id: tenantId,
+      sender_user_id: userId,
+      sender_role: "operator",
+      body,
+    });
+
+    if (res.error) {
+      setBusy(null);
+      return setFeedbackMessage(`Não foi possível enviar a mensagem: ${res.error.message}`, "error");
+    }
+    setNewMessage("");
+    await loadMessages(tenantId);
+    setBusy(null);
+    setFeedbackMessage("Mensagem enviada para o admin.", "success");
+  }
+
+  function playNotificationTone() {
+    if (typeof window === "undefined") return;
+    const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
   }
 
   async function loadTransactions(shiftId: string) {
@@ -490,7 +585,7 @@ export default function RebuildOperatorPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("role,active")
+        .select("role,active,tenant_id,full_name")
         .eq("user_id", authUserId)
         .single();
 
@@ -510,8 +605,14 @@ export default function RebuildOperatorPage() {
       }
 
       setUserId(authUserId);
+      setTenantId(typedProfile.tenant_id || null);
+      setOperatorName(typedProfile.full_name?.trim() || "Operador");
 
       setSectionWarnings([]);
+
+      if (typedProfile.tenant_id) {
+        await loadMessages(typedProfile.tenant_id);
+      }
 
       const [links, allBooths, loadedCompanies, loadedCategories, loadedSubcategories] = await Promise.all([
         safeLoadArray<BoothLink>("Guichês do operador", supabase.from("operator_booths").select("booth_id").eq("operator_id", authUserId).eq("active", true), () => setAvailability((prev) => ({ ...prev, operatorBooths: false }))),
@@ -1186,6 +1287,7 @@ export default function RebuildOperatorPage() {
         <button className={`btn-ghost ${activeSection === "resumo" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "resumo"; }}>Resumo do Turno</button>
         <button className={`btn-ghost ${activeSection === "caixa-pdv" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "caixa-pdv"; }}>Caixa PDV</button>
         <button className={`btn-ghost ${activeSection === "ponto-digital" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "ponto-digital"; }}>Ponto Digital</button>
+        <button className={`btn-ghost ${activeSection === "conversas" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "conversas"; }}>Conversas</button>
         <button className={`btn-ghost ${activeSection === "configuracoes" ? "ring-1 ring-blue-400" : ""}`} onClick={() => { window.location.hash = "configuracoes"; }}>Configurações</button>
       </div>
 
@@ -1745,6 +1847,38 @@ export default function RebuildOperatorPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeSection === "conversas" && (
+        <Card>
+          <CardTitle>Portal de Conversa com o Admin</CardTitle>
+          <CardDescription>Envie mensagens para a gestão. Novas mensagens recebidas disparam alerta sonoro.</CardDescription>
+          <div className="mt-3 space-y-3">
+            <div className="max-h-[340px] overflow-auto rounded-lg border bg-slate-50 p-3 space-y-2">
+              {messages.length === 0 ? (
+                <p className="text-sm text-slate-500">Sem mensagens ainda. Inicie a conversa com o admin.</p>
+              ) : (
+                messages.map((msg) => {
+                  const mine = msg.sender_user_id === userId;
+                  return (
+                    <div key={msg.id} className={`rounded-lg px-3 py-2 text-sm ${mine ? "bg-blue-600 text-white ml-8" : "bg-white border border-slate-200 mr-8"}`}>
+                      <p className={`text-[11px] mb-1 ${mine ? "text-blue-100" : "text-slate-500"}`}>
+                        {mine ? operatorName : "Admin"} • {new Date(msg.created_at).toLocaleString("pt-BR")}
+                      </p>
+                      <p>{msg.body}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div className="grid gap-2">
+              <textarea className="field" rows={3} placeholder="Digite sua mensagem para o admin" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} />
+              <div className="flex justify-end">
+                <button type="button" className="btn-primary" onClick={sendMessage} disabled={!tenantId || busy === "send-message"}>Enviar mensagem</button>
+              </div>
+            </div>
+          </div>
+        </Card>
       )}
 
       {activeSection === "configuracoes" && (
