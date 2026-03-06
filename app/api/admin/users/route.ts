@@ -14,10 +14,15 @@ type DeleteUserBody = {
   userId?: string;
 };
 
-function envOrThrow(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Variável obrigatória ausente: ${name}`);
-  return value;
+function envOrThrow(name: string, aliases: string[] = []) {
+  const candidates = [name, ...aliases];
+
+  for (const key of candidates) {
+    const value = process.env[key];
+    if (value) return value;
+  }
+
+  throw new Error(`Variável obrigatória ausente: ${candidates.join(" ou ")}`);
 }
 
 async function resolveRequester(req: Request) {
@@ -76,7 +81,7 @@ export async function POST(req: Request) {
     if (password.length < 6) return NextResponse.json({ error: "Senha precisa ter ao menos 6 caracteres." }, { status: 400 });
 
     const url = envOrThrow("NEXT_PUBLIC_SUPABASE_URL");
-    const serviceRole = envOrThrow("SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = envOrThrow("SUPABASE_SERVICE_ROLE_KEY", ["SUPABASE_SERVICE_KEY", "SUPABASE_SECRET_KEY"]);
     const { requesterProfile } = requester;
 
     const adminClient = createClient(url, serviceRole, {
@@ -149,7 +154,7 @@ export async function DELETE(req: Request) {
     if (userId === requester.requesterId) return NextResponse.json({ error: "Você não pode excluir seu próprio usuário." }, { status: 400 });
 
     const url = envOrThrow("NEXT_PUBLIC_SUPABASE_URL");
-    const serviceRole = envOrThrow("SUPABASE_SERVICE_ROLE_KEY");
+    const serviceRole = envOrThrow("SUPABASE_SERVICE_ROLE_KEY", ["SUPABASE_SERVICE_KEY", "SUPABASE_SECRET_KEY"]);
     const adminClient = createClient(url, serviceRole, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
