@@ -844,6 +844,33 @@ export default function RebuildAdminPage() {
     await createUserViaAdminApi();
   }
 
+  async function deleteUserViaAdminApi(userId: string, fullName: string) {
+    const confirmDelete = window.confirm(`Excluir usuário ${fullName || userId}? Esta ação remove o acesso quando não há histórico operacional.`);
+    if (!confirmDelete) return;
+
+    const { data: authData, error: authError } = await supabase.auth.getSession();
+    if (authError || !authData.session?.access_token) {
+      return setNotice("Sua sessão expirou. Entre novamente para continuar.");
+    }
+
+    const response = await fetch("/api/admin/users", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authData.session.access_token}`,
+      },
+      body: JSON.stringify({ userId }),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      return setNotice(payload?.error || "Não foi possível excluir o usuário agora.");
+    }
+
+    setNotice("Usuário excluído com sucesso.");
+    await loadAll();
+  }
+
   async function createCompany() {
     if (!companyName.trim()) return setNotice("Preencha o nome da empresa para salvar.");
     const sanitizedWhatsapp = normalizeWhatsapp(companyWhatsapp);
@@ -1471,6 +1498,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                     <button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => toggleRow("profiles", "user_id", u.user_id, u.active !== false, `Usuário ${u.active === false ? "ativado" : "inativado"} com sucesso.`)}>
                       {u.active === false ? "Ativar" : "Inativar"}
                     </button>
+                    <button className="rounded-lg border border-rose-300 text-rose-700 px-3 py-1.5 text-sm" onClick={() => deleteUserViaAdminApi(u.user_id, u.full_name || "")}>Excluir</button>
                   </div>
                 </div>
               ))}
