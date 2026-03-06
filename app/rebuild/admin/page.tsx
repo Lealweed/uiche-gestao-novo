@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 
-type AdminSection = "dashboard" | "controle-turno" | "historico" | "relatorios" | "usuarios" | "configuracoes";
+type AdminSection = "dashboard" | "controle-turno" | "historico" | "relatorios" | "usuarios" | "empresas" | "configuracoes";
 
 type Profile = { user_id: string; full_name: string; role: "tenant_admin" | "operator" | "financeiro" | "admin"; active?: boolean | null; tenant_id?: string | null };
 type Shift = { id: string; status: "open" | "closed"; opened_at: string; closed_at?: string | null; operator_id?: string | null; booth_id?: string | null };
@@ -43,6 +43,7 @@ const sections: Record<AdminSection, string> = {
   historico: "Histórico",
   relatorios: "Relatórios",
   usuarios: "Usuários",
+  empresas: "Empresas",
   configuracoes: "Configurações",
 };
 
@@ -1507,8 +1508,86 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
         </SectionBox>
       )}
 
+      {activeSection === "empresas" && canManageUsers && (
+        <SectionBox title="Empresas" subtitle="Cadastro e manutenção de empresas, com comissão, repasse e status de operação.">
+          <div className="rounded-lg border p-3 space-y-3">
+            <p className="font-semibold text-slate-800">Empresas</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <input className="border rounded-lg px-3 py-2" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" type="number" min="0" step="0.1" placeholder="Comissão (%)" value={companyCommission} onChange={(e) => setCompanyCommission(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" type="number" min="0" placeholder="Repasse (dias)" value={companyPayoutDays} onChange={(e) => setCompanyPayoutDays(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" placeholder="Responsável" value={companyManager} onChange={(e) => setCompanyManager(e.target.value)} />
+              <input className="border rounded-lg px-3 py-2" placeholder="WhatsApp" value={companyWhatsapp} onChange={(e) => setCompanyWhatsapp(formatWhatsapp(e.target.value))} />
+              <select className="border rounded-lg px-3 py-2" value={companyRating} onChange={(e) => setCompanyRating(e.target.value as "alta" | "boa" | "media" | "ruim")}>
+                <option value="alta">Alta</option>
+                <option value="boa">Boa</option>
+                <option value="media">Média</option>
+                <option value="ruim">Ruim</option>
+              </select>
+            </div>
+            <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2" onClick={createCompany}>Cadastrar empresa</button>
+
+            {companies.length === 0 ? <p className="text-sm text-slate-500">Sem registros.</p> : (
+              <>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Alterou comissão (%) ou repasse (dias)? Clique em <b>Salvar alterações</b> na linha da empresa.
+                </div>
+                <div className="max-h-96 overflow-auto rounded-lg border">
+                <table className="w-full text-xs md:text-sm">
+                  <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10">
+                    <tr>
+                      <th className="p-2 text-left">Empresa</th>
+                      <th className="p-2 text-left">Comissão %</th>
+                      <th className="p-2 text-left">Repasse (dias)</th>
+                      <th className="p-2 text-left">Responsável</th>
+                      <th className="p-2 text-left">WhatsApp</th>
+                      <th className="p-2 text-left">Classificação</th>
+                      <th className="p-2 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {companies.map((company) => {
+                      const draft = companyDrafts[company.id];
+                      if (!draft) return null;
+                      const isDirty = isCompanyDraftDirty(company, draft);
+                      const financialDirty = Number(draft.commission_percent || 0) !== Number(company.commission_percent || 0) || Number(draft.payout_days || 0) !== Number(company.payout_days || 0);
+                      return (
+                        <tr key={company.id} className={`border-t align-top ${isDirty ? "bg-amber-50/60" : ""}`}>
+                          <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.name} onChange={(e) => updateCompanyDraft(company.id, "name", e.target.value)} /></td>
+                          <td className="p-2"><input className={`border rounded-lg px-2 py-1 w-24 ${financialDirty ? "border-amber-400 bg-amber-50" : ""}`} type="number" min="0" max="100" step="0.1" value={draft.commission_percent} onChange={(e) => updateCompanyDraft(company.id, "commission_percent", e.target.value)} /></td>
+                          <td className="p-2"><input className={`border rounded-lg px-2 py-1 w-24 ${financialDirty ? "border-amber-400 bg-amber-50" : ""}`} type="number" min="0" value={draft.payout_days} onChange={(e) => updateCompanyDraft(company.id, "payout_days", e.target.value)} /></td>
+                          <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.account_manager} onChange={(e) => updateCompanyDraft(company.id, "account_manager", e.target.value)} /></td>
+                          <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.whatsapp} onChange={(e) => updateCompanyDraft(company.id, "whatsapp", formatWhatsapp(e.target.value))} /></td>
+                          <td className="p-2">
+                            <select className="border rounded-lg px-2 py-1 w-full" value={draft.rating} onChange={(e) => updateCompanyDraft(company.id, "rating", e.target.value)}>
+                              <option value="alta">Alta</option>
+                              <option value="boa">Boa</option>
+                              <option value="media">Média</option>
+                              <option value="ruim">Ruim</option>
+                            </select>
+                          </td>
+                          <td className="p-2">
+                            <div className="flex justify-end gap-2">
+                              <button className={`rounded-lg px-3 py-1.5 font-semibold text-white ${isDirty ? "bg-[#0da2e7]" : "bg-slate-300 cursor-not-allowed"}`} disabled={!isDirty} onClick={() => saveCompanyInline(company)}>
+                                Salvar alterações
+                              </button>
+                              <button className="rounded-lg border px-2 py-1" onClick={() => toggleRow("companies", "id", company.id, company.active, company.active ? "Empresa inativada com sucesso." : "Empresa ativada com sucesso.")}>{company.active ? "Inativar" : "Ativar"}</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              </>
+            )}
+          </div>
+        </SectionBox>
+      )}
+
 {activeSection === "configuracoes" && canManageUsers && (
-        <SectionBox title="Configurações" subtitle="Fluxo unificado no topo para cadastro de operador com vínculo inicial e gestão completa abaixo.">
+        <SectionBox title="Configurações" subtitle="Fluxo unificado para cadastro de operador, vínculo inicial e gestão de guichês.">
           <div className="rounded-xl border border-sky-200 bg-sky-50/70 p-4 mb-4">
             <div className="flex flex-col gap-1 mb-3">
               <p className="font-semibold text-slate-900">Cadastro de Operador e Vínculo</p>
@@ -1568,80 +1647,6 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-<div className="rounded-lg border p-3 space-y-3">
-              <p className="font-semibold text-slate-800">Empresas</p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <input className="border rounded-lg px-3 py-2" placeholder="Nova empresa" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-                <input className="border rounded-lg px-3 py-2" type="number" min="0" step="0.1" placeholder="Comissão (%)" value={companyCommission} onChange={(e) => setCompanyCommission(e.target.value)} />
-                <input className="border rounded-lg px-3 py-2" type="number" min="0" placeholder="Repasse (dias)" value={companyPayoutDays} onChange={(e) => setCompanyPayoutDays(e.target.value)} />
-                <input className="border rounded-lg px-3 py-2" placeholder="Responsável" value={companyManager} onChange={(e) => setCompanyManager(e.target.value)} />
-                <input className="border rounded-lg px-3 py-2" placeholder="WhatsApp" value={companyWhatsapp} onChange={(e) => setCompanyWhatsapp(formatWhatsapp(e.target.value))} />
-                <select className="border rounded-lg px-3 py-2" value={companyRating} onChange={(e) => setCompanyRating(e.target.value as "alta" | "boa" | "media" | "ruim")}>
-                  <option value="alta">Alta</option>
-                  <option value="boa">Boa</option>
-                  <option value="media">Média</option>
-                  <option value="ruim">Ruim</option>
-                </select>
-              </div>
-              <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2" onClick={createCompany}>Cadastrar empresa</button>
-
-              {companies.length === 0 ? <p className="text-sm text-slate-500">Sem registros.</p> : (
-                <>
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    Alterou comissão (%) ou repasse (dias)? Clique em <b>Salvar alterações</b> na linha da empresa.
-                  </div>
-                  <div className="max-h-96 overflow-auto rounded-lg border">
-                  <table className="w-full text-xs md:text-sm">
-                    <thead className="bg-slate-50 text-slate-600 sticky top-0 z-10">
-                      <tr>
-                        <th className="p-2 text-left">Empresa</th>
-                        <th className="p-2 text-left">Comissão %</th>
-                        <th className="p-2 text-left">Repasse (dias)</th>
-                        <th className="p-2 text-left">Responsável</th>
-                        <th className="p-2 text-left">WhatsApp</th>
-                        <th className="p-2 text-left">Classificação</th>
-                        <th className="p-2 text-right">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {companies.map((company) => {
-                        const draft = companyDrafts[company.id];
-                        if (!draft) return null;
-                        const isDirty = isCompanyDraftDirty(company, draft);
-                        const financialDirty = Number(draft.commission_percent || 0) !== Number(company.commission_percent || 0) || Number(draft.payout_days || 0) !== Number(company.payout_days || 0);
-                        return (
-                          <tr key={company.id} className={`border-t align-top ${isDirty ? "bg-amber-50/60" : ""}`}>
-                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.name} onChange={(e) => updateCompanyDraft(company.id, "name", e.target.value)} /></td>
-                            <td className="p-2"><input className={`border rounded-lg px-2 py-1 w-24 ${financialDirty ? "border-amber-400 bg-amber-50" : ""}`} type="number" min="0" max="100" step="0.1" value={draft.commission_percent} onChange={(e) => updateCompanyDraft(company.id, "commission_percent", e.target.value)} /></td>
-                            <td className="p-2"><input className={`border rounded-lg px-2 py-1 w-24 ${financialDirty ? "border-amber-400 bg-amber-50" : ""}`} type="number" min="0" value={draft.payout_days} onChange={(e) => updateCompanyDraft(company.id, "payout_days", e.target.value)} /></td>
-                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.account_manager} onChange={(e) => updateCompanyDraft(company.id, "account_manager", e.target.value)} /></td>
-                            <td className="p-2"><input className="border rounded-lg px-2 py-1 w-full" value={draft.whatsapp} onChange={(e) => updateCompanyDraft(company.id, "whatsapp", formatWhatsapp(e.target.value))} /></td>
-                            <td className="p-2">
-                              <select className="border rounded-lg px-2 py-1 w-full" value={draft.rating} onChange={(e) => updateCompanyDraft(company.id, "rating", e.target.value)}>
-                                <option value="alta">Alta</option>
-                                <option value="boa">Boa</option>
-                                <option value="media">Média</option>
-                                <option value="ruim">Ruim</option>
-                              </select>
-                            </td>
-                            <td className="p-2">
-                              <div className="flex justify-end gap-2">
-                                <button className={`rounded-lg px-3 py-1.5 font-semibold text-white ${isDirty ? "bg-[#0da2e7]" : "bg-slate-300 cursor-not-allowed"}`} disabled={!isDirty} onClick={() => saveCompanyInline(company)}>
-                                  Salvar alterações
-                                </button>
-                                <button className="rounded-lg border px-2 py-1" onClick={() => toggleRow("companies", "id", company.id, company.active, company.active ? "Empresa inativada com sucesso." : "Empresa ativada com sucesso.")}>{company.active ? "Inativar" : "Ativar"}</button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                </>
-              )}
-            </div>
-
             <div className="rounded-lg border p-3 space-y-3 lg:col-span-2">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>

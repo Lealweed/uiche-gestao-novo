@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 import {
   Bell,
+  Building2,
   CalendarDays,
   ChevronRight,
   Grid2x2,
@@ -25,6 +26,7 @@ const primaryNavigation = [
 
 const systemNavigation = [
   { href: "/rebuild/admin#usuarios", label: "Usuários", section: "usuarios", Icon: Users },
+  { href: "/rebuild/admin#empresas", label: "Empresas", section: "empresas", Icon: Building2 },
   { href: "/rebuild/admin#configuracoes", label: "Configurações", section: "configuracoes", Icon: Settings },
 ] as const;
 
@@ -41,6 +43,7 @@ const adminSectionLabels: Record<string, string> = {
   historico: "Histórico",
   relatorios: "Relatórios",
   usuarios: "Usuários",
+  empresas: "Empresas",
   configuracoes: "Configurações",
 };
 
