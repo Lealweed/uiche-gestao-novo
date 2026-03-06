@@ -154,6 +154,7 @@ export default function RebuildOperatorPage() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeNotes, setCloseNotes] = useState("");
   const receiptInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const messagesHydratedRef = useRef(false);
 
   const filteredSubcategories = useMemo(
     () => subcategories.filter((sub) => sub.category_id === categoryId),
@@ -276,16 +277,35 @@ export default function RebuildOperatorPage() {
   useEffect(() => {
     if (!tenantId || !userId) return;
 
+    const poll = setInterval(() => {
+      void loadMessages(tenantId);
+    }, 4000);
+
+    return () => clearInterval(poll);
+  }, [tenantId, userId]);
+
+  useEffect(() => {
+    if (!userId || messages.length === 0) return;
+    if (!messagesHydratedRef.current) {
+      messagesHydratedRef.current = true;
+      return;
+    }
+
+    const last = messages[messages.length - 1];
+    if (last.sender_user_id !== userId) {
+      playNotificationTone();
+    }
+  }, [messages, userId]);
+
+  useEffect(() => {
+    if (!tenantId || !userId) return;
+
     const channel = supabase
       .channel(`operator-admin-chat-${tenantId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "operator_admin_messages", filter: `tenant_id=eq.${tenantId}` },
-        async (payload) => {
-          const msg = payload.new as OperatorAdminMessage;
-          if (msg.sender_user_id !== userId) {
-            playNotificationTone();
-          }
+        async () => {
           await loadMessages(tenantId);
         }
       )

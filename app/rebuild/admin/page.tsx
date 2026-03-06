@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 
@@ -144,6 +144,7 @@ export default function RebuildAdminPage() {
   const [messages, setMessages] = useState<OperatorAdminMessage[]>([]);
   const [newAdminMessage, setNewAdminMessage] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const messagesHydratedRef = useRef(false);
 
   const [companyName, setCompanyName] = useState("");
   const [companyCommission, setCompanyCommission] = useState("10");
@@ -213,17 +214,36 @@ export default function RebuildAdminPage() {
   useEffect(() => {
     if (!tenantId || !sessionUserId) return;
 
+    const poll = setInterval(() => {
+      void refreshMessages(tenantId);
+    }, 4000);
+
+    return () => clearInterval(poll);
+  }, [tenantId, sessionUserId]);
+
+  useEffect(() => {
+    if (!sessionUserId || messages.length === 0) return;
+    if (!messagesHydratedRef.current) {
+      messagesHydratedRef.current = true;
+      return;
+    }
+
+    const last = messages[messages.length - 1];
+    if (last.sender_user_id !== sessionUserId) {
+      playNotificationTone();
+    }
+  }, [messages, sessionUserId]);
+
+  useEffect(() => {
+    if (!tenantId || !sessionUserId) return;
+
     const channel = supabase
       .channel(`admin-operator-chat-${tenantId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "operator_admin_messages", filter: `tenant_id=eq.${tenantId}` },
-        async (payload) => {
-          const msg = payload.new as OperatorAdminMessage;
-          if (msg.sender_user_id !== sessionUserId) {
-            playNotificationTone();
-          }
-          await loadAll();
+        async () => {
+          await refreshMessages(tenantId);
         }
       )
       .subscribe();
@@ -936,6 +956,19 @@ export default function RebuildAdminPage() {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.26);
+  }
+
+  async function refreshMessages(currentTenantId: string) {
+    const res = await supabase
+      .from("operator_admin_messages")
+      .select("id,sender_user_id,sender_role,body,created_at,read_at")
+      .eq("tenant_id", currentTenantId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+
+    if (!res.error) {
+      setMessages((res.data as OperatorAdminMessage[] | null) ?? []);
+    }
   }
 
   async function sendAdminMessage() {
