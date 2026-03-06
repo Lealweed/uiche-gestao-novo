@@ -1083,6 +1083,23 @@ export default function RebuildAdminPage() {
     await loadAll();
   }
 
+  async function deleteCompany(company: Company) {
+    const confirmDelete = window.confirm(`Excluir empresa ${company.name}? Essa ação é permanente e só funciona sem histórico vinculado.`);
+    if (!confirmDelete) return;
+
+    const res = await supabase.from("companies").delete().eq("id", company.id);
+    if (res.error) {
+      const msg = res.error.message?.toLowerCase() || "";
+      if (msg.includes("foreign key") || msg.includes("23503")) {
+        return setNotice("Essa empresa possui histórico vinculado. Inative em vez de excluir.");
+      }
+      return setNotice(`Erro ao excluir empresa: ${mapDbError(res.error.message, "Falha ao excluir empresa")}`);
+    }
+
+    setNotice(`Empresa ${company.name} excluída com sucesso.`);
+    await loadAll();
+  }
+
 function downloadCsv(name: string, headers: string[], rows: Array<Array<string | number>>) {
     const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(";")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -1572,6 +1589,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                                 Salvar alterações
                               </button>
                               <button className="rounded-lg border px-2 py-1" onClick={() => toggleRow("companies", "id", company.id, company.active, company.active ? "Empresa inativada com sucesso." : "Empresa ativada com sucesso.")}>{company.active ? "Inativar" : "Ativar"}</button>
+                              <button className="rounded-lg border border-rose-300 text-rose-700 px-2 py-1" onClick={() => deleteCompany(company)}>Excluir</button>
                             </div>
                           </td>
                         </tr>
