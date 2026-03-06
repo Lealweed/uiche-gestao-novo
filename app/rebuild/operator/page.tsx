@@ -71,6 +71,13 @@ function boardingFeeLabel(city?: BoardingFeeCity | null) {
   return "Sem taxa";
 }
 
+function paymentLabelWithInstallments(method: "pix" | "credit" | "debit" | "cash" | "link", note?: string | null) {
+  const base = paymentMethodMeta(method).label;
+  if (method !== "credit") return base;
+  const match = (note || "").match(/\[Crédito\s(\d)x\]/i);
+  return match ? `${base} ${match[1]}x` : base;
+}
+
 type OperatorSection = "resumo" | "lancamentos" | "caixa-pdv" | "ponto-digital" | "conversas" | "configuracoes";
 
 type OperatorAdminMessage = {
@@ -131,6 +138,7 @@ export default function RebuildOperatorPage() {
   const [categoryId, setCategoryId] = useState("");
   const [subcategoryId, setSubcategoryId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit" | "debit" | "cash" | "link">("pix");
+  const [creditInstallments, setCreditInstallments] = useState<"1" | "2" | "3">("1");
   const [cardMachineOwner, setCardMachineOwner] = useState<"" | "empresa_onibus" | "central_viagens">("");
   const [selectedBoardingFeeCity, setSelectedBoardingFeeCity] = useState<"" | BoardingFeeCity>("");
   const [amount, setAmount] = useState("");
@@ -972,13 +980,19 @@ export default function RebuildOperatorPage() {
       return;
     }
 
+    if (paymentMethod === "credit" && !creditInstallments) {
+      setFeedbackMessage("Selecione o parcelamento do crédito (1x, 2x ou 3x).", "error");
+      return;
+    }
+
     setTxErrors({});
     setBusy("transaction");
     setFeedback(null);
 
     const selectedFee = BOARDING_FEE_OPTIONS.find((opt) => opt.city === selectedBoardingFeeCity);
     const cardMachineLabel = cardMachineOwner === "empresa_onibus" ? "Empresa do ônibus" : cardMachineOwner === "central_viagens" ? "Central Viagens" : null;
-    const finalNote = [cardMachineLabel ? `[Maquininha: ${cardMachineLabel}]` : null, note.trim() || null].filter(Boolean).join(" ");
+    const creditTag = paymentMethod === "credit" ? `[Crédito ${creditInstallments}x]` : null;
+    const finalNote = [creditTag, cardMachineLabel ? `[Maquininha: ${cardMachineLabel}]` : null, note.trim() || null].filter(Boolean).join(" ");
 
     const insertRes = await supabase.from("transactions").insert({
       shift_id: activeShift.id,
@@ -1015,6 +1029,7 @@ export default function RebuildOperatorPage() {
     setReference("");
     setNote("");
     setCardMachineOwner("");
+    setCreditInstallments("1");
     setReceiptFile(null);
     setSelectedBoardingFeeCity("");
     await loadTransactions(activeShift.id);
@@ -1682,9 +1697,26 @@ export default function RebuildOperatorPage() {
                     { id: "cash", label: "Dinheiro" },
                     { id: "link", label: "Link" },
                   ] as const).map((item) => (
-                    <button type="button" key={item.id} onClick={() => setPaymentMethod(item.id)} className={`btn-ghost text-xs ${paymentMethod === item.id ? "ring-1 ring-blue-400" : ""}`}>{item.label}</button>
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => {
+                        setPaymentMethod(item.id);
+                        if (item.id !== "credit") setCreditInstallments("1");
+                      }}
+                      className={`btn-ghost text-xs ${paymentMethod === item.id ? "ring-1 ring-blue-400" : ""}`}
+                    >
+                      {item.label}
+                    </button>
                   ))}
                 </div>
+                {paymentMethod === "credit" ? (
+                  <select className="field" value={creditInstallments} onChange={(e) => setCreditInstallments(e.target.value as "1" | "2" | "3")}>
+                    <option value="1">Crédito 1x</option>
+                    <option value="2">Crédito 2x</option>
+                    <option value="3">Crédito 3x</option>
+                  </select>
+                ) : null}
                 <input className="field" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Observações" />
                 <label className="btn-ghost cursor-pointer text-sm inline-flex items-center gap-2">
                   <Receipt size={14} /> {receiptFile?.name || "Selecionar comprovante"}
@@ -1822,7 +1854,7 @@ export default function RebuildOperatorPage() {
                   <tr key={tx.id} className="border-t">
                     <td className="py-2">{new Date(tx.sold_at).toLocaleString("pt-BR")}</td>
                     <td>{tx.company_name}</td>
-                    <td>{paymentMethodMeta(tx.payment_method).label}</td>
+                    <td>{paymentLabelWithInstallments(tx.payment_method, tx.note)}</td>
                     <td className="text-right">{brl(Number(tx.amount || 0))}</td>
                     <td>
                       {Number(tx.boarding_fee_amount || 0) > 0
