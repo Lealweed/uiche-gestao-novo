@@ -143,6 +143,7 @@ export default function RebuildAdminPage() {
   const [txReceipts, setTxReceipts] = useState<TxReceipt[]>([]);
   const [messages, setMessages] = useState<OperatorAdminMessage[]>([]);
   const [newAdminMessage, setNewAdminMessage] = useState("");
+  const [soundEnabled, setSoundEnabled] = useState(false);
 
   const [companyName, setCompanyName] = useState("");
   const [companyCommission, setCompanyCommission] = useState("10");
@@ -202,6 +203,11 @@ export default function RebuildAdminPage() {
       window.removeEventListener("hashchange", syncSectionFromHash);
       window.removeEventListener("rebuild:section-change", onSectionChange as EventListener);
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSoundEnabled(window.localStorage.getItem("cv_chat_sound_admin") === "1");
   }, []);
 
   useEffect(() => {
@@ -910,8 +916,9 @@ export default function RebuildAdminPage() {
     await loadAll();
   }
 
-  function playNotificationTone() {
+  function playNotificationTone(force = false) {
     if (typeof window === "undefined") return;
+    if (!force && !soundEnabled) return;
     const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
 
@@ -1684,6 +1691,20 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
       {activeSection === "conversas" && canManageUsers && (
         <SectionBox title="Conversas" subtitle="Canal direto entre operadores e administração com alerta sonoro para novas mensagens.">
           <div className="rounded-lg border p-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <button
+                className={`rounded-lg border px-3 py-2 text-sm ${soundEnabled ? "border-emerald-400 text-emerald-700" : ""}`}
+                onClick={() => {
+                  const next = !soundEnabled;
+                  setSoundEnabled(next);
+                  if (typeof window !== "undefined") window.localStorage.setItem("cv_chat_sound_admin", next ? "1" : "0");
+                  if (next) playNotificationTone(true);
+                }}
+              >
+                {soundEnabled ? "Som ativado" : "Ativar som"}
+              </button>
+              <button className="rounded-lg border px-3 py-2 text-sm" onClick={() => playNotificationTone(true)}>Testar som</button>
+            </div>
             <div className="max-h-[420px] overflow-auto rounded-lg border bg-slate-50 p-3 space-y-2">
               {messages.length === 0 ? (
                 <p className="text-sm text-slate-500">Sem mensagens no momento.</p>

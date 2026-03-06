@@ -111,6 +111,7 @@ export default function RebuildOperatorPage() {
   const [operatorName, setOperatorName] = useState("Operador");
   const [messages, setMessages] = useState<OperatorAdminMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
+  const [soundEnabled, setSoundEnabled] = useState(false);
   const [shift, setShift] = useState<Shift | null>(null);
   const [shiftRecoveryNotice, setShiftRecoveryNotice] = useState<string | null>(null);
   const [booths, setBooths] = useState<Array<{ booth_id: string; booth_name: string }>>([]);
@@ -268,6 +269,11 @@ export default function RebuildOperatorPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSoundEnabled(window.localStorage.getItem("cv_chat_sound_operator") === "1");
+  }, []);
+
+  useEffect(() => {
     if (!tenantId || !userId) return;
 
     const channel = supabase
@@ -386,8 +392,9 @@ export default function RebuildOperatorPage() {
     setFeedbackMessage("Mensagem enviada para o admin.", "success");
   }
 
-  function playNotificationTone() {
+  function playNotificationTone(force = false) {
     if (typeof window === "undefined") return;
+    if (!force && !soundEnabled) return;
     const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
 
@@ -1854,6 +1861,21 @@ export default function RebuildOperatorPage() {
           <CardTitle>Portal de Conversa com o Admin</CardTitle>
           <CardDescription>Envie mensagens para a gestão. Novas mensagens recebidas disparam alerta sonoro.</CardDescription>
           <div className="mt-3 space-y-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className={`btn-ghost text-sm ${soundEnabled ? "ring-1 ring-emerald-400" : ""}`}
+                onClick={() => {
+                  const next = !soundEnabled;
+                  setSoundEnabled(next);
+                  if (typeof window !== "undefined") window.localStorage.setItem("cv_chat_sound_operator", next ? "1" : "0");
+                  if (next) playNotificationTone(true);
+                }}
+              >
+                {soundEnabled ? "Som ativado" : "Ativar som"}
+              </button>
+              <button type="button" className="btn-ghost text-sm" onClick={() => playNotificationTone(true)}>Testar som</button>
+            </div>
             <div className="max-h-[340px] overflow-auto rounded-lg border bg-slate-50 p-3 space-y-2">
               {messages.length === 0 ? (
                 <p className="text-sm text-slate-500">Sem mensagens ainda. Inicie a conversa com o admin.</p>
