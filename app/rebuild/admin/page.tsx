@@ -39,6 +39,7 @@ type OperatorAdminMessage = {
   sender_role: "operator" | "tenant_admin" | "admin" | "financeiro";
   body: string;
   priority?: "normal" | "alta" | "urgente";
+  target_booth_id?: string | null;
   created_at: string;
   read_at?: string | null;
 };
@@ -145,6 +146,7 @@ export default function RebuildAdminPage() {
   const [messages, setMessages] = useState<OperatorAdminMessage[]>([]);
   const [newAdminMessage, setNewAdminMessage] = useState("");
   const [adminMessagePriority, setAdminMessagePriority] = useState<"normal" | "alta" | "urgente">("normal");
+  const [targetBoothId, setTargetBoothId] = useState("");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const lastNotifiedMessageIdRef = useRef<string | null>(null);
 
@@ -817,7 +819,7 @@ export default function RebuildAdminPage() {
         loadChunk<OperatorBooth>("Vínculos operador-guichê", supabase.from("operator_booths").select("id,operator_id,booth_id,active").order("id", { ascending: false }).limit(250)),
         loadChunk<TimePunch>("Ponto", supabase.from("time_punches").select("id,user_id,booth_id,punch_type,punched_at,note").order("punched_at", { ascending: false }).limit(300)),
         loadChunk<CashMovement>("Caixa PDV", supabase.from("cash_movements").select("id,user_id,booth_id,movement_type,amount,created_at,note").order("created_at", { ascending: false }).limit(300)),
-        loadChunk<OperatorAdminMessage>("Conversas", supabase.from("operator_admin_messages").select("id,sender_user_id,sender_role,body,created_at,read_at").order("created_at", { ascending: true }).limit(200)),
+        loadChunk<OperatorAdminMessage>("Conversas", supabase.from("operator_admin_messages").select("id,sender_user_id,sender_role,body,priority,target_booth_id,created_at,read_at").order("created_at", { ascending: true }).limit(200)),
       ]);
 
       let nextTxs = nextTxsRaw;
@@ -979,7 +981,7 @@ export default function RebuildAdminPage() {
   async function refreshMessages(currentTenantId: string) {
     const primary = await supabase
       .from("operator_admin_messages")
-      .select("id,sender_user_id,sender_role,body,priority,created_at,read_at")
+      .select("id,sender_user_id,sender_role,body,priority,target_booth_id,created_at,read_at")
       .eq("tenant_id", currentTenantId)
       .order("created_at", { ascending: true })
       .limit(200);
@@ -991,7 +993,7 @@ export default function RebuildAdminPage() {
 
     const fallback = await supabase
       .from("operator_admin_messages")
-      .select("id,sender_user_id,sender_role,body,created_at,read_at")
+      .select("id,sender_user_id,sender_role,body,target_booth_id,created_at,read_at")
       .eq("tenant_id", currentTenantId)
       .order("created_at", { ascending: true })
       .limit(200);
@@ -1012,12 +1014,14 @@ export default function RebuildAdminPage() {
       sender_user_id: sessionUserId,
       sender_role: "tenant_admin",
       priority: adminMessagePriority,
+      target_booth_id: targetBoothId || null,
       body,
     });
 
     if (res.error) return setNotice(`Erro ao enviar mensagem: ${res.error.message}`);
     setNewAdminMessage("");
     setAdminMessagePriority("normal");
+    setTargetBoothId("");
     await refreshMessages(tenantId);
     setNotice("Mensagem enviada para os operadores.");
   }
@@ -1793,6 +1797,7 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                       <p className={`text-[11px] mb-1 flex items-center gap-2 ${mine ? "text-slate-300" : "text-slate-500"}`}>
                         <span>{senderName} • {new Date(msg.created_at).toLocaleString("pt-BR")}</span>
                         <span className={`rounded-full px-2 py-0.5 ${msg.priority === "urgente" ? "bg-rose-100 text-rose-700" : msg.priority === "alta" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{msg.priority || "normal"}</span>
+                        {msg.target_booth_id ? <span className="rounded-full bg-indigo-100 text-indigo-700 px-2 py-0.5">Guichê: {boothMap.get(msg.target_booth_id) || "específico"}</span> : <span className="rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">Todos guichês</span>}
                         {!mine && !msg.read_at ? <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">nova</span> : null}
                       </p>
                       <p>{msg.body}</p>
@@ -1803,11 +1808,17 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
             </div>
 
             <div className="grid gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <select className="border rounded-lg px-3 py-2 text-sm" value={adminMessagePriority} onChange={(e) => setAdminMessagePriority(e.target.value as "normal" | "alta" | "urgente")}>
                   <option value="normal">Prioridade normal</option>
                   <option value="alta">Prioridade alta</option>
                   <option value="urgente">Prioridade urgente</option>
+                </select>
+                <select className="border rounded-lg px-3 py-2 text-sm" value={targetBoothId} onChange={(e) => setTargetBoothId(e.target.value)}>
+                  <option value="">Destino: todos os guichês</option>
+                  {booths.filter((b) => b.active).map((b) => (
+                    <option key={b.id} value={b.id}>{b.code} - {b.name}</option>
+                  ))}
                 </select>
               </div>
               <textarea className="border rounded-lg px-3 py-2" rows={3} placeholder="Mensagem para operadores" value={newAdminMessage} onChange={(e) => setNewAdminMessage(e.target.value)} />

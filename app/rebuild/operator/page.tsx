@@ -86,6 +86,7 @@ type OperatorAdminMessage = {
   sender_role: "operator" | "tenant_admin" | "admin" | "financeiro";
   body: string;
   priority?: "normal" | "alta" | "urgente";
+  target_booth_id?: string | null;
   read_at?: string | null;
   created_at: string;
 };
@@ -403,19 +404,20 @@ export default function RebuildOperatorPage() {
   async function loadMessages(currentTenantId: string) {
     const primary = await supabase
       .from("operator_admin_messages")
-      .select("id,sender_user_id,sender_role,body,priority,read_at,created_at")
+      .select("id,sender_user_id,sender_role,body,priority,target_booth_id,read_at,created_at")
       .eq("tenant_id", currentTenantId)
       .order("created_at", { ascending: true })
       .limit(200);
 
     if (!primary.error) {
-      setMessages((primary.data as OperatorAdminMessage[] | null) ?? []);
+      const scoped = ((primary.data as OperatorAdminMessage[] | null) ?? []).filter((m) => !m.target_booth_id || linkedBoothIds.has(m.target_booth_id));
+      setMessages(scoped);
       return;
     }
 
     const fallback = await supabase
       .from("operator_admin_messages")
-      .select("id,sender_user_id,sender_role,body,read_at,created_at")
+      .select("id,sender_user_id,sender_role,body,target_booth_id,read_at,created_at")
       .eq("tenant_id", currentTenantId)
       .order("created_at", { ascending: true })
       .limit(200);
@@ -426,7 +428,8 @@ export default function RebuildOperatorPage() {
     }
 
     const normalized = ((fallback.data as OperatorAdminMessage[] | null) ?? []).map((m) => ({ ...m, priority: "normal" as const }));
-    setMessages(normalized);
+    const scoped = normalized.filter((m) => !m.target_booth_id || linkedBoothIds.has(m.target_booth_id));
+    setMessages(scoped);
   }
 
   async function sendMessage() {
@@ -1329,6 +1332,7 @@ export default function RebuildOperatorPage() {
     target?.click();
   }
 
+  const boothNameMap = new Map(booths.map((b) => [b.booth_id, b.booth_name]));
   const unreadFromAdmin = messages.filter((m) => m.sender_user_id !== userId && !m.read_at).length;
   const lastAdminMessage = [...messages].reverse().find((m) => m.sender_user_id !== userId);
   const lastAdminMinutes = lastAdminMessage ? Math.floor((Date.now() - new Date(lastAdminMessage.created_at).getTime()) / 60000) : null;
@@ -1983,6 +1987,7 @@ export default function RebuildOperatorPage() {
                       <p className={`text-[11px] mb-1 flex items-center gap-2 ${mine ? "text-blue-100" : "text-slate-500"}`}>
                         <span>{mine ? operatorName : "Admin"} • {new Date(msg.created_at).toLocaleString("pt-BR")}</span>
                         <span className={`rounded-full px-2 py-0.5 ${msg.priority === "urgente" ? "bg-rose-100 text-rose-700" : msg.priority === "alta" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{msg.priority || "normal"}</span>
+                        {msg.target_booth_id ? <span className="rounded-full bg-indigo-100 text-indigo-700 px-2 py-0.5">Guichê: {boothNameMap.get(msg.target_booth_id) || "específico"}</span> : <span className="rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">Todos guichês</span>}
                         {!mine && !msg.read_at ? <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">nova</span> : null}
                       </p>
                       <p>{msg.body}</p>
