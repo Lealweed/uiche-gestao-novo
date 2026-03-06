@@ -38,6 +38,7 @@ type OperatorAdminMessage = {
   sender_user_id: string;
   sender_role: "operator" | "tenant_admin" | "admin" | "financeiro";
   body: string;
+  priority?: "normal" | "alta" | "urgente";
   created_at: string;
   read_at?: string | null;
 };
@@ -143,8 +144,9 @@ export default function RebuildAdminPage() {
   const [txReceipts, setTxReceipts] = useState<TxReceipt[]>([]);
   const [messages, setMessages] = useState<OperatorAdminMessage[]>([]);
   const [newAdminMessage, setNewAdminMessage] = useState("");
+  const [adminMessagePriority, setAdminMessagePriority] = useState<"normal" | "alta" | "urgente">("normal");
   const [soundEnabled, setSoundEnabled] = useState(false);
-  const messagesHydratedRef = useRef(false);
+  const lastNotifiedMessageIdRef = useRef<string | null>(null);
 
   const [companyName, setCompanyName] = useState("");
   const [companyCommission, setCompanyCommission] = useState("10");
@@ -223,15 +225,20 @@ export default function RebuildAdminPage() {
 
   useEffect(() => {
     if (!sessionUserId || messages.length === 0) return;
-    if (!messagesHydratedRef.current) {
-      messagesHydratedRef.current = true;
+
+    const last = messages[messages.length - 1];
+    if (!last) return;
+
+    if (!lastNotifiedMessageIdRef.current) {
+      lastNotifiedMessageIdRef.current = last.id;
       return;
     }
 
-    const last = messages[messages.length - 1];
-    if (last.sender_user_id !== sessionUserId) {
+    if (last.id !== lastNotifiedMessageIdRef.current && last.sender_user_id !== sessionUserId) {
       playNotificationTone();
     }
+
+    lastNotifiedMessageIdRef.current = last.id;
   }, [messages, sessionUserId]);
 
   useEffect(() => {
@@ -252,6 +259,17 @@ export default function RebuildAdminPage() {
       supabase.removeChannel(channel);
     };
   }, [tenantId, sessionUserId]);
+
+  useEffect(() => {
+    if (!tenantId || activeSection !== "conversas") return;
+
+    void supabase
+      .from("operator_admin_messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .is("read_at", null)
+      .eq("sender_role", "operator");
+  }, [tenantId, activeSection, messages.length]);
 
   const operatorMap = useMemo(() => new Map(profiles.map((p) => [p.user_id, p.full_name])), [profiles]);
   const boothMap = useMemo(() => new Map(booths.map((b) => [b.id, `${b.code} - ${b.name}`])), [booths]);
@@ -820,7 +838,7 @@ export default function RebuildAdminPage() {
       setLinks(nextLinks);
       setTimePunches(nextPunches);
       setCashMovements(nextCash);
-      setMessages(nextMessages);
+      setMessages(nextMessages.map((m) => ({ ...m, priority: m.priority || "normal" })));
       const txIds = nextTxs.map((tx) => tx.id);
       if (txIds.length > 0) {
         const receiptsRes = await supabase.from("transaction_receipts").select("transaction_id").in("transaction_id", txIds);
@@ -959,15 +977,28 @@ export default function RebuildAdminPage() {
   }
 
   async function refreshMessages(currentTenantId: string) {
-    const res = await supabase
+    const primary = await supabase
+      .from("operator_admin_messages")
+      .select("id,sender_user_id,sender_role,body,priority,created_at,read_at")
+      .eq("tenant_id", currentTenantId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+
+    if (!primary.error) {
+      setMessages((primary.data as OperatorAdminMessage[] | null) ?? []);
+      return;
+    }
+
+    const fallback = await supabase
       .from("operator_admin_messages")
       .select("id,sender_user_id,sender_role,body,created_at,read_at")
       .eq("tenant_id", currentTenantId)
       .order("created_at", { ascending: true })
       .limit(200);
 
-    if (!res.error) {
-      setMessages((res.data as OperatorAdminMessage[] | null) ?? []);
+    if (!fallback.error) {
+      const normalized = ((fallback.data as OperatorAdminMessage[] | null) ?? []).map((m) => ({ ...m, priority: "normal" as const }));
+      setMessages(normalized);
     }
   }
 
@@ -980,12 +1011,14 @@ export default function RebuildAdminPage() {
       tenant_id: tenantId,
       sender_user_id: sessionUserId,
       sender_role: "tenant_admin",
+      priority: adminMessagePriority,
       body,
     });
 
     if (res.error) return setNotice(`Erro ao enviar mensagem: ${res.error.message}`);
     setNewAdminMessage("");
-    await loadAll();
+    setAdminMessagePriority("normal");
+    await refreshMessages(tenantId);
     setNotice("Mensagem enviada para os operadores.");
   }
 
@@ -1257,6 +1290,10 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
     const rows = reportTotals.byBooth.map((item) => [item.name, item.qty, String(item.total.toFixed(2)).replace(".", ",")]);
     downloadCsv(`relatorio-guiche-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
   }
+
+  const unreadFromOperators = messages.filter((m) => m.sender_role === "operator" && !m.read_at).length;
+  const lastOperatorMessage = [...messages].reverse().find((m) => m.sender_role === "operator");
+  const lastOperatorMinutes = lastOperatorMessage ? Math.floor((Date.now() - new Date(lastOperatorMessage.created_at).getTime()) / 60000) : null;
 
   if (authLoading || ui.loading) return <div className="text-sm text-slate-500">Carregando dados administrativos...</div>;
   if (ui.error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">{ui.error}</div>;
@@ -1724,6 +1761,12 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
       {activeSection === "conversas" && canManageUsers && (
         <SectionBox title="Conversas" subtitle="Canal direto entre operadores e administração com alerta sonoro para novas mensagens.">
           <div className="rounded-lg border p-3 space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className={`rounded-full px-2 py-1 ${unreadFromOperators > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>
+                Não lidas dos operadores: {unreadFromOperators}
+              </span>
+              {lastOperatorMinutes !== null ? <span className="rounded-full px-2 py-1 bg-slate-100 text-slate-700">Última mensagem operador: {lastOperatorMinutes} min</span> : null}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 className={`rounded-lg border px-3 py-2 text-sm ${soundEnabled ? "border-emerald-400 text-emerald-700" : ""}`}
@@ -1747,7 +1790,11 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
                   const senderName = mine ? "Você" : operatorMap.get(msg.sender_user_id || "") || (msg.sender_role === "operator" ? "Operador" : "Admin");
                   return (
                     <div key={msg.id} className={`rounded-lg px-3 py-2 text-sm ${mine ? "bg-slate-900 text-white ml-10" : "bg-white border border-slate-200 mr-10"}`}>
-                      <p className={`text-[11px] mb-1 ${mine ? "text-slate-300" : "text-slate-500"}`}>{senderName} • {new Date(msg.created_at).toLocaleString("pt-BR")}</p>
+                      <p className={`text-[11px] mb-1 flex items-center gap-2 ${mine ? "text-slate-300" : "text-slate-500"}`}>
+                        <span>{senderName} • {new Date(msg.created_at).toLocaleString("pt-BR")}</span>
+                        <span className={`rounded-full px-2 py-0.5 ${msg.priority === "urgente" ? "bg-rose-100 text-rose-700" : msg.priority === "alta" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{msg.priority || "normal"}</span>
+                        {!mine && !msg.read_at ? <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">nova</span> : null}
+                      </p>
                       <p>{msg.body}</p>
                     </div>
                   );
@@ -1756,6 +1803,13 @@ function downloadCsv(name: string, headers: string[], rows: Array<Array<string |
             </div>
 
             <div className="grid gap-2">
+              <div className="flex items-center gap-2">
+                <select className="border rounded-lg px-3 py-2 text-sm" value={adminMessagePriority} onChange={(e) => setAdminMessagePriority(e.target.value as "normal" | "alta" | "urgente")}>
+                  <option value="normal">Prioridade normal</option>
+                  <option value="alta">Prioridade alta</option>
+                  <option value="urgente">Prioridade urgente</option>
+                </select>
+              </div>
               <textarea className="border rounded-lg px-3 py-2" rows={3} placeholder="Mensagem para operadores" value={newAdminMessage} onChange={(e) => setNewAdminMessage(e.target.value)} />
               <div className="flex justify-end">
                 <button className="rounded-lg bg-[#0da2e7] text-white px-3 py-2" onClick={sendAdminMessage}>Enviar mensagem</button>

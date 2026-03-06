@@ -78,6 +78,8 @@ type OperatorAdminMessage = {
   sender_user_id: string;
   sender_role: "operator" | "tenant_admin" | "admin" | "financeiro";
   body: string;
+  priority?: "normal" | "alta" | "urgente";
+  read_at?: string | null;
   created_at: string;
 };
 
@@ -111,6 +113,7 @@ export default function RebuildOperatorPage() {
   const [operatorName, setOperatorName] = useState("Operador");
   const [messages, setMessages] = useState<OperatorAdminMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
+  const [messagePriority, setMessagePriority] = useState<"normal" | "alta" | "urgente">("normal");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [shift, setShift] = useState<Shift | null>(null);
   const [shiftRecoveryNotice, setShiftRecoveryNotice] = useState<string | null>(null);
@@ -154,7 +157,7 @@ export default function RebuildOperatorPage() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeNotes, setCloseNotes] = useState("");
   const receiptInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const messagesHydratedRef = useRef(false);
+  const lastNotifiedMessageIdRef = useRef<string | null>(null);
 
   const filteredSubcategories = useMemo(
     () => subcategories.filter((sub) => sub.category_id === categoryId),
@@ -286,15 +289,20 @@ export default function RebuildOperatorPage() {
 
   useEffect(() => {
     if (!userId || messages.length === 0) return;
-    if (!messagesHydratedRef.current) {
-      messagesHydratedRef.current = true;
+
+    const last = messages[messages.length - 1];
+    if (!last) return;
+
+    if (!lastNotifiedMessageIdRef.current) {
+      lastNotifiedMessageIdRef.current = last.id;
       return;
     }
 
-    const last = messages[messages.length - 1];
-    if (last.sender_user_id !== userId) {
+    if (last.id !== lastNotifiedMessageIdRef.current && last.sender_user_id !== userId) {
       playNotificationTone();
     }
+
+    lastNotifiedMessageIdRef.current = last.id;
   }, [messages, userId]);
 
   useEffect(() => {
@@ -315,6 +323,17 @@ export default function RebuildOperatorPage() {
       supabase.removeChannel(channel);
     };
   }, [tenantId, userId]);
+
+  useEffect(() => {
+    if (!tenantId || activeSection !== "conversas") return;
+
+    void supabase
+      .from("operator_admin_messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("tenant_id", tenantId)
+      .is("read_at", null)
+      .neq("sender_role", "operator");
+  }, [tenantId, activeSection, messages.length]);
 
   const sideHistory = useMemo(() => {
     const txEntries = transactions.map((tx) => ({
@@ -374,19 +393,32 @@ export default function RebuildOperatorPage() {
   }
 
   async function loadMessages(currentTenantId: string) {
-    const res = await supabase
+    const primary = await supabase
       .from("operator_admin_messages")
-      .select("id,sender_user_id,sender_role,body,created_at")
+      .select("id,sender_user_id,sender_role,body,priority,read_at,created_at")
       .eq("tenant_id", currentTenantId)
       .order("created_at", { ascending: true })
       .limit(200);
 
-    if (res.error) {
-      addWarning("Conversas", res.error.message);
+    if (!primary.error) {
+      setMessages((primary.data as OperatorAdminMessage[] | null) ?? []);
       return;
     }
 
-    setMessages((res.data as OperatorAdminMessage[] | null) ?? []);
+    const fallback = await supabase
+      .from("operator_admin_messages")
+      .select("id,sender_user_id,sender_role,body,read_at,created_at")
+      .eq("tenant_id", currentTenantId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+
+    if (fallback.error) {
+      addWarning("Conversas", fallback.error.message);
+      return;
+    }
+
+    const normalized = ((fallback.data as OperatorAdminMessage[] | null) ?? []).map((m) => ({ ...m, priority: "normal" as const }));
+    setMessages(normalized);
   }
 
   async function sendMessage() {
@@ -399,6 +431,7 @@ export default function RebuildOperatorPage() {
       tenant_id: tenantId,
       sender_user_id: userId,
       sender_role: "operator",
+      priority: messagePriority,
       body,
     });
 
@@ -407,6 +440,7 @@ export default function RebuildOperatorPage() {
       return setFeedbackMessage(`Não foi possível enviar a mensagem: ${res.error.message}`, "error");
     }
     setNewMessage("");
+    setMessagePriority("normal");
     await loadMessages(tenantId);
     setBusy(null);
     setFeedbackMessage("Mensagem enviada para o admin.", "success");
@@ -1280,6 +1314,10 @@ export default function RebuildOperatorPage() {
     target?.click();
   }
 
+  const unreadFromAdmin = messages.filter((m) => m.sender_user_id !== userId && !m.read_at).length;
+  const lastAdminMessage = [...messages].reverse().find((m) => m.sender_user_id !== userId);
+  const lastAdminMinutes = lastAdminMessage ? Math.floor((Date.now() - new Date(lastAdminMessage.created_at).getTime()) / 60000) : null;
+
   if (loading) {
     return (
       <div className="rb-page">
@@ -1881,6 +1919,12 @@ export default function RebuildOperatorPage() {
           <CardTitle>Portal de Conversa com o Admin</CardTitle>
           <CardDescription>Envie mensagens para a gestão. Novas mensagens recebidas disparam alerta sonoro.</CardDescription>
           <div className="mt-3 space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className={`rounded-full px-2 py-1 ${unreadFromAdmin > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-700"}`}>
+                Não lidas do admin: {unreadFromAdmin}
+              </span>
+              {lastAdminMinutes !== null ? <span className="rounded-full px-2 py-1 bg-slate-100 text-slate-700">Última resposta admin: {lastAdminMinutes} min</span> : null}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1904,8 +1948,10 @@ export default function RebuildOperatorPage() {
                   const mine = msg.sender_user_id === userId;
                   return (
                     <div key={msg.id} className={`rounded-lg px-3 py-2 text-sm ${mine ? "bg-blue-600 text-white ml-8" : "bg-white border border-slate-200 mr-8"}`}>
-                      <p className={`text-[11px] mb-1 ${mine ? "text-blue-100" : "text-slate-500"}`}>
-                        {mine ? operatorName : "Admin"} • {new Date(msg.created_at).toLocaleString("pt-BR")}
+                      <p className={`text-[11px] mb-1 flex items-center gap-2 ${mine ? "text-blue-100" : "text-slate-500"}`}>
+                        <span>{mine ? operatorName : "Admin"} • {new Date(msg.created_at).toLocaleString("pt-BR")}</span>
+                        <span className={`rounded-full px-2 py-0.5 ${msg.priority === "urgente" ? "bg-rose-100 text-rose-700" : msg.priority === "alta" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>{msg.priority || "normal"}</span>
+                        {!mine && !msg.read_at ? <span className="rounded-full bg-sky-100 text-sky-700 px-2 py-0.5">nova</span> : null}
                       </p>
                       <p>{msg.body}</p>
                     </div>
@@ -1914,6 +1960,13 @@ export default function RebuildOperatorPage() {
               )}
             </div>
             <div className="grid gap-2">
+              <div className="flex items-center gap-2">
+                <select className="field max-w-[180px]" value={messagePriority} onChange={(e) => setMessagePriority(e.target.value as "normal" | "alta" | "urgente")}>
+                  <option value="normal">Prioridade normal</option>
+                  <option value="alta">Prioridade alta</option>
+                  <option value="urgente">Prioridade urgente</option>
+                </select>
+              </div>
               <textarea className="field" rows={3} placeholder="Digite sua mensagem para o admin" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} />
               <div className="flex justify-end">
                 <button type="button" className="btn-primary" onClick={sendMessage} disabled={!tenantId || busy === "send-message"}>Enviar mensagem</button>
