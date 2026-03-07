@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 export default function OperatorLegacyRedirect() {
   const router = useRouter();
   useEffect(() => {
-    router.replace("/rebuild/operator");
+    router.replace("/v3/operator");
   }, [router]);
   return null;
 }

@@ -5,3 +5,8 @@ node_modules
 *.log
 
 .vercel
+tsconfig.tsbuildinfo
+tmp_*.txt
+supabase/.temp/
+imports/
+tools/
