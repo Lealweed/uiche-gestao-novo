@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
+    "deploy:safe": "powershell -ExecutionPolicy Bypass -File ./scripts/deploy-safe.ps1",
     "hooks:install": "node scripts/setup-git-hooks.mjs"
   },
   "dependencies": {
