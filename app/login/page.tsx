@@ -36,8 +36,8 @@ export default function LoginPage() {
       return;
     }
 
-    if (["admin", "tenant_admin", "financeiro"].includes(profile.role)) router.push("/v2/admin");
-    else router.push("/v3/operator");
+    if (["admin", "tenant_admin", "financeiro"].includes(profile.role)) router.push("/admin");
+    else router.push("/operator");
   }
 
   return (

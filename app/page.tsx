@@ -33,7 +33,7 @@ export default function Home() {
           <Link className="btn-primary" href="/login">
             Entrar no sistema
           </Link>
-          <Link className="btn-ghost" href="/v2/admin">
+          <Link className="btn-ghost" href="/rebuild/admin">
             Ver painel administrativo
           </Link>
         </div>
