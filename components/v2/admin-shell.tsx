@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { PropsWithChildren, useEffect, useState } from "react";
+import { PropsWithChildren, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase-client";
 
 type Item = { href: string; label: string };
@@ -19,6 +19,15 @@ export function AdminShell({ children, title, subtitle }: PropsWithChildren<{ ti
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const todayLabel = useMemo(
+    () =>
+      new Intl.DateTimeFormat("pt-BR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+      }).format(new Date()),
+    [],
+  );
 
   useEffect(() => {
     (async () => {
@@ -49,21 +58,25 @@ export function AdminShell({ children, title, subtitle }: PropsWithChildren<{ ti
       <div className="cv2-container">
         <header className="cv2-header">
           <div>
-            <p className="cv2-eyebrow">CENTRAL VIAGEM • V2</p>
+            <p className="cv2-eyebrow">CENTRAL VIAGENS • ADMIN</p>
             <h1 className="cv2-title">{title}</h1>
             <p className="cv2-subtitle">{subtitle}</p>
           </div>
+          <div className="cv2-header-meta">
+            <span className="cv2-pill">Operação ativa</span>
+            <span className="cv2-pill muted">{todayLabel}</span>
+          </div>
         </header>
 
-        <div className="grid lg:grid-cols-[240px,1fr] gap-4">
-          <aside className="cv2-card h-fit lg:sticky lg:top-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-slate-500 mb-3">Menu principal</p>
+        <div className="grid lg:grid-cols-[252px,1fr] gap-4">
+          <aside className="cv2-sidebar h-fit lg:sticky lg:top-4">
+            <p className="cv2-sidebar-title">Menu principal</p>
             <nav className="space-y-1.5">
               {items.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`block rounded-xl px-3 py-2 text-sm font-medium transition ${pathname === item.href ? "bg-blue-600 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"}`}
+                  className={`cv2-nav-item ${pathname === item.href ? "active" : ""}`}
                 >
                   {item.label}
                 </Link>
