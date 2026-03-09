@@ -43,10 +43,10 @@ export default function LoginPage() {
   return (
     <main className="cv-login-shell">
       <div className="cv-login-card">
-        <div>
-          <p className="cv-login-eyebrow">Central Viagens</p>
+        <div className="space-y-1">
+          <p className="cv-login-eyebrow">Central Viagens • Plataforma Operacional</p>
           <h1 className="cv-login-title">Acesse sua conta</h1>
-          <p className="cv-login-subtitle">Entre para continuar a operação com segurança.</p>
+          <p className="cv-login-subtitle">Entre para continuar a operação com segurança e rastreabilidade.</p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
@@ -65,6 +65,8 @@ export default function LoginPage() {
           <button disabled={loading} className="w-full btn-primary disabled:opacity-60">
             {loading ? "Entrando..." : "Entrar"}
           </button>
+
+          <p className="text-xs text-slate-500 text-center">Ambiente protegido • Central Viagens</p>
         </form>
       </div>
     </main>
