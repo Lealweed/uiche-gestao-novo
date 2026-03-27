@@ -2,7 +2,9 @@
 
 import { PropsWithChildren, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase-client";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 import { tolerantData } from "@/lib/schema-tolerance";
 
 export function OperatorShellV3({ children }: PropsWithChildren) {

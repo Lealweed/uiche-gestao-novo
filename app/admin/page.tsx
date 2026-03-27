@@ -14,7 +14,9 @@ export default function AdminLegacyRedirect() {
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase-client";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 import { tolerantData } from "@/lib/schema-tolerance";
 
 type ShiftTotal = {

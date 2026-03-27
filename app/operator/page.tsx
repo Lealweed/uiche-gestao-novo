@@ -14,7 +14,9 @@ export default function OperatorLegacyRedirect() {
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase-client";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 import { HeroGeometric } from "@/components/ui/shape-landing-hero";
 import { isSchemaToleranceError, tolerantData } from "@/lib/schema-tolerance";
 

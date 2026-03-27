@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PropsWithChildren, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase-client";
+import { createClient } from "@/lib/supabase/client";
+
+const supabase = createClient();
 
 type Item = { href: string; label: string };
 
