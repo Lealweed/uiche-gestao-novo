@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { tolerantData, isSchemaToleranceError } from "@/lib/schema-tolerance";
 import { RebuildShell } from "@/components/rebuild/shell/rebuild-shell";
+import { Card, CardTitle } from "@/components/rebuild/ui/card";
+import { StatCard } from "@/components/rebuild/ui/stat-card";
+import { Select, Input } from "@/components/rebuild/ui/input";
+import { Button } from "@/components/rebuild/ui/button";
 
 const supabase = createClient();
 
@@ -244,11 +248,11 @@ export default function OperatorRebuildPage() {
       )}
 
       {/* ── KPI strip ── */}
-      <div className="rb-kpi-grid" style={{ marginBottom:"1.25rem" }}>
-        <KpiCard label="PIX"      value={`R$ ${totals.pix.toFixed(2)}`} />
-        <KpiCard label="Crédito"  value={`R$ ${totals.credit.toFixed(2)}`} />
-        <KpiCard label="Débito"   value={`R$ ${totals.debit.toFixed(2)}`} />
-        <KpiCard label="Total"    value={`R$ ${totalGeral.toFixed(2)}`} accent sub={`${txs.length} lançamentos`} />
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <StatCard label="PIX" value={`R$ ${totals.pix.toFixed(2)}`} />
+        <StatCard label="Crédito" value={`R$ ${totals.credit.toFixed(2)}`} />
+        <StatCard label="Débito" value={`R$ ${totals.debit.toFixed(2)}`} />
+        <StatCard label="Total" value={`R$ ${totalGeral.toFixed(2)}`} delta={`${txs.length} lançamentos`} />
       </div>
 
       {/* ── two-column layout ── */}
@@ -258,31 +262,53 @@ export default function OperatorRebuildPage() {
         <div style={{ display:"grid", gap:"1.25rem" }}>
 
           {/* Turno control */}
-          <div className="rb-panel">
-            <p className="rb-panel-title" style={{ marginBottom:"0.75rem" }}>Controle de turno</p>
+          <Card className="bg-white/5 border border-white/10 backdrop-blur p-6">
+            <CardTitle>Controle de turno</CardTitle>
             {!shift ? (
-              <div style={{ display:"grid", gap:"0.75rem" }}>
-                <select value={boothId} onChange={e=>setBoothId(e.target.value)} className="rb-field">
+              <div className="space-y-4">
+                <Select
+                  value={boothId}
+                  onChange={e => setBoothId(e.target.value)}
+                  className="bg-transparent border border-white/20 text-white rounded-lg p-2"
+                  disabled={operatorBlocked}
+                  label="Selecionar Guichê"
+                >
                   <option value="">Selecione o guichê</option>
-                  {booths.map(b=><option key={b.booth_id} value={b.booth_id}>{b.booth_name}</option>)}
-                </select>
-                {booths.length===0 && <p style={{ fontSize:"0.8125rem", color:"var(--ds-warning)" }}>Nenhum guichê vinculado. Contate o admin.</p>}
-                <button className="rb-btn-primary" type="button" onClick={openShift} disabled={operatorBlocked||!boothId}>Abrir turno</button>
+                  {booths.map(b => (
+                    <option key={b.booth_id} value={b.booth_id}>{b.booth_name}</option>
+                  ))}
+                </Select>
+                {booths.length === 0 && (
+                  <p className="text-amber-400 text-sm">Nenhum guichê vinculado. Contate o admin.</p>
+                )}
+                <Button
+                  variant="primary"
+                  className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-3 rounded-xl font-bold"
+                  type="button"
+                  onClick={openShift}
+                  disabled={operatorBlocked || !boothId}
+                >
+                  Abrir turno
+                </Button>
               </div>
             ) : (
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:"1rem" }}>
+              <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p style={{ fontSize:"0.8125rem", color:"var(--ds-muted)" }}>Guichê ativo</p>
-                  <p style={{ fontWeight:700, color:"var(--ds-success)" }}>Turno em andamento</p>
+                  <p className="text-xs text-white/60">Guichê ativo</p>
+                  <p className="font-bold text-emerald-400">Turno em andamento</p>
                 </div>
-                <button type="button" onClick={closeShift} disabled={operatorBlocked}
-                  className="rb-btn-ghost"
-                  style={{ borderColor:"rgba(248,113,113,0.4)", color:"var(--ds-danger)" }}>
+                <Button
+                  variant="ghost"
+                  className="border border-rose-400/40 text-rose-400"
+                  type="button"
+                  onClick={closeShift}
+                  disabled={operatorBlocked}
+                >
                   Encerrar turno
-                </button>
+                </Button>
               </div>
             )}
-          </div>
+          </Card>
 
           {/* Ponto */}
           <div className="rb-panel">
