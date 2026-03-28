@@ -3,31 +3,37 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Eye, EyeOff, Lock, Mail, Ticket } from "lucide-react";
+import { Eye, EyeOff, Loader2, Ticket } from "lucide-react";
 
 const supabase = createClient();
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [showPwd, setShowPwd]   = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
 
+  /* ── lógica de autenticação ───────────────────────────────── */
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const { data, error: signError } = await supabase.auth.signInWithPassword({ email, password });
+    // 1. autenticar
+    const { data, error: signError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     if (signError || !data.user) {
-      setError(signError?.message ?? "Falha ao autenticar. Verifique suas credenciais.");
+      setError(signError?.message ?? "Falha ao autenticar. Verifique as credenciais.");
       setLoading(false);
       return;
     }
 
+    // 2. buscar perfil e rota correta
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
@@ -35,261 +41,171 @@ export default function LoginPage() {
       .single();
 
     if (profileError || !profile) {
-      setError("Usuário sem perfil configurado. Contacte o administrador.");
+      setError("Perfil não encontrado. Contacte o administrador.");
       setLoading(false);
       return;
     }
 
     const role = (profile as { role?: string }).role ?? "";
+
+    // admin / tenant_admin / financeiro → painel admin
     if (["admin", "tenant_admin", "financeiro"].includes(role)) {
       router.push("/rebuild/admin");
     } else {
+      // operator e qualquer outro → painel operador
       router.push("/rebuild/operator");
     }
   }
 
+  /* ── UI ───────────────────────────────────────────────────── */
   return (
-    <main
-      className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden"
-      style={{ background: "var(--ds-bg)" }}
-    >
-      {/* Background — vertical scan lines (industrial) */}
+    <main className="min-h-screen flex items-center justify-center p-4 bg-[hsl(var(--background))]">
+
+      {/* glows decorativos — puramente CSS, sem dependências */}
       <div
-        className="absolute inset-0 pointer-events-none"
         aria-hidden="true"
-        style={{
-          backgroundImage: `
-            repeating-linear-gradient(
-              0deg,
-              transparent,
-              transparent 40px,
-              rgba(245,158,11,0.018) 40px,
-              rgba(245,158,11,0.018) 41px
-            )
-          `,
-        }}
-      />
+        className="pointer-events-none fixed inset-0 overflow-hidden"
+      >
+        {/* glow âmbar central */}
+        <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-amber-500/10 blur-3xl" />
+        {/* glow sutil canto inferior direito */}
+        <div className="absolute bottom-0 right-0 w-64 h-64 rounded-full bg-amber-500/5 blur-2xl" />
+      </div>
 
-      {/* Amber focal glow — top center */}
-      <div
-        className="absolute top-0 left-1/2 -translate-x-1/2 pointer-events-none"
-        aria-hidden="true"
-        style={{
-          width: "560px",
-          height: "320px",
-          background: "radial-gradient(ellipse at center top, rgba(245,158,11,0.12) 0%, transparent 70%)",
-        }}
-      />
+      {/* card */}
+      <div className="relative w-full max-w-[420px]">
 
-      {/* Corner accent — bottom right */}
-      <div
-        className="absolute bottom-0 right-0 pointer-events-none"
-        aria-hidden="true"
-        style={{
-          width: "300px",
-          height: "300px",
-          background: "radial-gradient(ellipse at bottom right, rgba(245,158,11,0.06) 0%, transparent 65%)",
-        }}
-      />
+        {/* barra de acento âmbar no topo */}
+        <div className="h-px w-full bg-gradient-to-r from-transparent via-amber-400 to-transparent" aria-hidden="true" />
 
-      {/* Card */}
-      <div className="w-full max-w-[420px] relative z-10" style={{ animation: "fadeUp 0.35s ease" }}>
-        {/* Top accent bar */}
-        <div
-          className="h-[2px] w-full mb-0 rounded-t"
-          style={{ background: "linear-gradient(90deg, transparent 0%, var(--ds-primary) 40%, var(--ds-primary-hover) 60%, transparent 100%)" }}
-          aria-hidden="true"
-        />
+        <div className="bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-b-xl shadow-2xl px-8 py-10">
 
-        <div
-          style={{
-            background: "var(--ds-surface-1)",
-            border: "1px solid var(--ds-border-strong)",
-            borderTop: "none",
-            borderRadius: "0 0 var(--ds-radius-lg) var(--ds-radius-lg)",
-            boxShadow: "var(--ds-shadow-xl), var(--ds-glow-amber)",
-            padding: "2.25rem 2rem",
-          }}
-        >
-          {/* Header */}
-          <div className="flex flex-col items-center text-center mb-7">
-            {/* Logo mark */}
-            <div
-              className="flex items-center justify-center mb-4"
-              style={{
-                width: "48px",
-                height: "48px",
-                borderRadius: "var(--ds-radius-sm)",
-                background: "linear-gradient(135deg, var(--ds-primary) 0%, var(--ds-primary-dim) 100%)",
-                boxShadow: "0 0 0 1px rgba(245,158,11,0.4), 0 4px 16px rgba(245,158,11,0.25)",
-              }}
-              aria-hidden="true"
-            >
-              <Ticket size={22} className="text-[#0A0E14]" strokeWidth={2.5} />
+          {/* header */}
+          <div className="flex flex-col items-center text-center mb-8">
+            {/* logo mark */}
+            <div className="w-12 h-12 rounded-lg bg-amber-500 flex items-center justify-center mb-4 shadow-lg shadow-amber-500/30">
+              <Ticket size={22} className="text-[hsl(var(--background))]" strokeWidth={2.5} />
             </div>
 
-            <p
-              className="mb-1"
-              style={{
-                fontSize: "9px",
-                fontWeight: 700,
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-                color: "var(--ds-primary)",
-              }}
-            >
+            <p className="text-[11px] tracking-[0.2em] uppercase text-amber-400 font-bold mb-1">
               Central Viagens
             </p>
 
-            <h1
-              style={{
-                fontSize: "1.5rem",
-                fontWeight: 800,
-                color: "var(--ds-text)",
-                letterSpacing: "-0.02em",
-                lineHeight: 1.2,
-              }}
-            >
+            <h1 className="text-2xl font-extrabold tracking-tight text-[hsl(var(--foreground))]">
               Acesse sua conta
             </h1>
 
-            <p
-              className="mt-1.5"
-              style={{ fontSize: "0.8125rem", color: "var(--ds-muted)" }}
-            >
+            <p className="text-sm text-[hsl(var(--muted))] mt-1.5">
               Entre para continuar a operação com segurança.
             </p>
           </div>
 
-          {/* Divider */}
-          <div
-            className="mb-6"
-            style={{ borderTop: "1px solid var(--ds-border)" }}
-            aria-hidden="true"
-          />
+          <div className="border-t border-[hsl(var(--border))] mb-6" />
 
-          {/* Form */}
-          <form onSubmit={onSubmit} noValidate className="space-y-4">
-            {/* Email */}
-            <div>
+          {/* form */}
+          <form onSubmit={onSubmit} noValidate className="space-y-5">
+
+            {/* email */}
+            <div className="space-y-1.5">
               <label
                 htmlFor="login-email"
-                style={{
-                  display: "block",
-                  fontSize: "0.6875rem",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--ds-muted)",
-                  marginBottom: "0.375rem",
-                }}
+                className="block text-[11px] font-bold uppercase tracking-widest text-[hsl(var(--muted))]"
               >
                 E-mail
               </label>
-              <div className="relative">
-                <Mail
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ color: "var(--ds-dim)" }}
-                  aria-hidden="true"
-                />
-                <input
-                  id="login-email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  aria-required="true"
-                  className="rb-field"
-                  style={{ paddingLeft: "2.25rem" }}
-                />
-              </div>
+              <input
+                id="login-email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="seu@email.com"
+                disabled={loading}
+                className="
+                  w-full h-11 px-3 rounded-md text-sm
+                  bg-[hsl(var(--input))] border border-[hsl(var(--border))]
+                  text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))]
+                  outline-none ring-0
+                  focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  transition-colors duration-150
+                "
+              />
             </div>
 
-            {/* Password */}
-            <div>
+            {/* senha */}
+            <div className="space-y-1.5">
               <label
                 htmlFor="login-password"
-                style={{
-                  display: "block",
-                  fontSize: "0.6875rem",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "var(--ds-muted)",
-                  marginBottom: "0.375rem",
-                }}
+                className="block text-[11px] font-bold uppercase tracking-widest text-[hsl(var(--muted))]"
               >
                 Senha
               </label>
               <div className="relative">
-                <Lock
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ color: "var(--ds-dim)" }}
-                  aria-hidden="true"
-                />
                 <input
                   id="login-password"
-                  type={showPassword ? "text" : "password"}
+                  type={showPwd ? "text" : "password"}
                   autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  aria-required="true"
-                  className="rb-field"
-                  style={{ paddingLeft: "2.25rem", paddingRight: "2.5rem" }}
+                  disabled={loading}
+                  className="
+                    w-full h-11 px-3 pr-10 rounded-md text-sm
+                    bg-[hsl(var(--input))] border border-[hsl(var(--border))]
+                    text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))]
+                    outline-none ring-0
+                    focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    transition-colors duration-150
+                  "
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
-                  style={{ color: "var(--ds-dim)" }}
+                  tabIndex={-1}
+                  onClick={() => setShowPwd((v) => !v)}
+                  aria-label={showPwd ? "Ocultar senha" : "Mostrar senha"}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors"
                 >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
             </div>
 
-            {/* Error */}
+            {/* erro */}
             {error && (
               <div
-                className="flex items-start gap-2 rounded text-sm"
-                style={{
-                  background: "var(--ds-danger-soft)",
-                  border: "1px solid rgba(248,113,113,0.22)",
-                  color: "var(--ds-danger)",
-                  padding: "0.6rem 0.75rem",
-                  borderRadius: "var(--ds-radius-sm)",
-                }}
                 role="alert"
                 aria-live="polite"
+                className="flex items-start gap-2 rounded-md px-3 py-2.5 text-sm bg-red-500/10 border border-red-500/25 text-red-400"
               >
                 <span className="mt-0.5 shrink-0" aria-hidden="true">⚠</span>
-                <span style={{ fontSize: "0.8125rem" }}>{error}</span>
+                <span>{error}</span>
               </div>
             )}
 
-            {/* Submit */}
+            {/* submit */}
             <button
               id="login-submit"
               type="submit"
               disabled={loading}
               aria-busy={loading}
-              className="rb-btn-primary w-full mt-1"
-              style={{ fontSize: "0.875rem", letterSpacing: "0.02em" }}
+              className="
+                w-full h-11 rounded-md text-sm font-bold tracking-wide
+                bg-amber-500 text-[hsl(var(--background))]
+                hover:bg-amber-400
+                active:scale-[0.98]
+                disabled:opacity-50 disabled:cursor-not-allowed
+                transition-all duration-150
+                flex items-center justify-center gap-2
+                shadow-lg shadow-amber-500/20
+              "
             >
               {loading ? (
                 <>
-                  <span
-                    className="rb-spin inline-block border-2 border-current border-t-transparent rounded-full"
-                    style={{ width: "14px", height: "14px" }}
-                    aria-hidden="true"
-                  />
+                  <Loader2 size={16} className="animate-spin" aria-hidden="true" />
                   Entrando...
                 </>
               ) : (
@@ -298,11 +214,8 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Footer */}
-          <p
-            className="text-center mt-6"
-            style={{ fontSize: "0.6875rem", color: "var(--ds-dim)", letterSpacing: "0.02em" }}
-          >
+          {/* footer */}
+          <p className="text-center text-[11px] text-[hsl(var(--muted-foreground))] mt-8 tracking-wide">
             Plataforma de gestão operacional · Central Viagens
           </p>
         </div>

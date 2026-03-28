@@ -11,7 +11,7 @@ type Column<T> = {
   className?: string;
 };
 
-type DataTableProps<T extends { id?: string }> = {
+type DataTableProps<T> = {
   columns: Column<T>[];
   rows: T[];
   keyExtractor?: (row: T, idx: number) => string;
@@ -21,7 +21,7 @@ type DataTableProps<T extends { id?: string }> = {
   className?: string;
 };
 
-export function DataTable<T extends { id?: string }>({
+export function DataTable<T>({
   columns,
   rows,
   keyExtractor,
@@ -65,7 +65,7 @@ export function DataTable<T extends { id?: string }>({
             </tr>
           ) : (
             rows.map((row, idx) => (
-              <tr key={keyExtractor ? keyExtractor(row, idx) : row.id ?? String(idx)} role="row">
+              <tr key={keyExtractor ? keyExtractor(row, idx) : String(idx)} role="row">
                 {columns.map((col) => (
                   <td key={col.key} className={col.className} role="cell">
                     {col.render(row)}

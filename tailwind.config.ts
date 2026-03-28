@@ -22,6 +22,22 @@ const config: Config = {
           danger: "#EF4444",
           warning: "#FBBF24",
         },
+        sapphire: {
+          100: "#eaf1ff",
+          200: "#a9c3f7",
+          300: "#4f7acb",
+          400: "#3161b7",
+          600: "#183168",
+          700: "#142a5a",
+        },
+        yellow: {
+          400: "#ffd700",
+          600: "#bfa100",
+        },
+        emerald: {
+          400: "#34d399",
+          600: "#059669",
+        },
       },
       fontFamily: {
         sans: ["Manrope", "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
