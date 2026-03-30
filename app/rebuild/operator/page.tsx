@@ -11,6 +11,7 @@ import { Button } from "@/components/rebuild/ui/button";
 import { DataTable } from "@/components/rebuild/ui/table";
 import { Badge, PaymentBadge } from "@/components/rebuild/ui/badge";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
+import { Toast } from "@/components/rebuild/ui/toast";
 
 const supabase = createClient();
 
@@ -69,6 +70,13 @@ export default function OperatorRebuildPage() {
   const [cashAmount, setCashAmount]     = useState("");
   const [cashNote, setCashNote]         = useState("");
   const [uploadingTxId, setUploadingTxId] = useState<string|null>(null);
+
+  // Modal Fechamento state
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [closeDeclared, setCloseDeclared] = useState("");
+  const [closeObs, setCloseObs] = useState("");
+  const [expectedCashVal, setExpectedCashVal] = useState(0);
+  const [isClosing, setIsClosing] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -154,7 +162,7 @@ export default function OperatorRebuildPage() {
     await loadTxs((data as Shift).id); await loadCashMovements((data as Shift).id);
   }
 
-  async function closeShift() {
+  async function openCloseShiftModal() {
     if (!shift||!userId) return;
     const pending = txs.filter(t=>(t.payment_method==="credit"||t.payment_method==="debit")&&t.receipt_count===0).length;
     if (pending>0) return setMessage(`${pending} lançamento(s) sem comprovante.`);
@@ -162,19 +170,30 @@ export default function OperatorRebuildPage() {
     const sup=cashMovements.filter(m=>m.movement_type==="suprimento").reduce((a,m)=>a+Number(m.amount||0),0);
     const sang=cashMovements.filter(m=>m.movement_type==="sangria").reduce((a,m)=>a+Number(m.amount||0),0);
     const ajust=cashMovements.filter(m=>m.movement_type==="ajuste").reduce((a,m)=>a+Number(m.amount||0),0);
-    const expectedCash = cashSales+sup-sang+ajust;
-    const declaredRaw = window.prompt(`Valor esperado: R$ ${expectedCash.toFixed(2)}\nInforme o valor contado:`);
-    if (declaredRaw===null) return;
-    const declaredCash = Number(declaredRaw.replace(",","."));
-    if (Number.isNaN(declaredCash)) return setMessage("Valor inválido.");
-    const obs = window.prompt("Observação (opcional):") || null;
-    const difference = Number((declaredCash-expectedCash).toFixed(2));
-    await supabase.from("shift_cash_closings").upsert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, expected_cash:Number(expectedCash.toFixed(2)), declared_cash:Number(declaredCash.toFixed(2)), difference, note:obs });
-    const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_ip:null,p_notes:obs});
-    if (error) return setMessage(`Erro: ${error.message}`);
-    await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCash,declared_cash:declaredCash,difference});
-    setShift(null); setTxs([]); setCashMovements([]); setMessage(`Turno encerrado. Diferença: R$ ${difference.toFixed(2)}.`);
+    setExpectedCashVal(cashSales+sup-sang+ajust);
+    setCloseDeclared("");
+    setCloseObs("");
+    setShowCloseModal(true);
   }
+
+  async function confirmCloseShift() {
+    if (!shift||!userId) return;
+    setIsClosing(true);
+    try {
+      const declaredCash = Number(closeDeclared.replace(",","."));
+      if (Number.isNaN(declaredCash)) { setMessage("Valor inválido."); return; }
+      const difference = Number((declaredCash-expectedCashVal).toFixed(2));
+      const obs = closeObs.trim() || null;
+      await supabase.from("shift_cash_closings").upsert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, expected_cash:Number(expectedCashVal.toFixed(2)), declared_cash:Number(declaredCash.toFixed(2)), difference, note:obs });
+      const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_ip:null,p_notes:obs});
+      if (error) { setMessage(`Erro: ${error.message}`); return; }
+      await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCashVal,declared_cash:declaredCash,difference});
+      setShift(null); setTxs([]); setCashMovements([]); setShowCloseModal(false); setMessage(`Turno encerrado. Diferença: R$ ${difference.toFixed(2)}.`);
+    } finally {
+      setIsClosing(false);
+    }
+  }
+
 
   async function registerPunch(type: Punch["punch_type"]) {
     if (!userId) return;
@@ -229,6 +248,7 @@ export default function OperatorRebuildPage() {
 
   return (
     <RebuildShell>
+      <Toast message={message} onClose={() => setMessage(null)} type="info" />
       {/* ── topbar ── */}
           <Card className="p-0">
             <SectionHeader title="Ponto digital" />
@@ -302,7 +322,7 @@ export default function OperatorRebuildPage() {
                   variant="ghost"
                   className="border border-rose-400/40 text-rose-400"
                   type="button"
-                  onClick={closeShift}
+                  onClick={openCloseShiftModal}
                   disabled={operatorBlocked}
                 >
                   Encerrar turno
@@ -510,6 +530,43 @@ export default function OperatorRebuildPage() {
           </Card>
         </div>
       </div>
+
+      {/* Modal Fechamento */}
+      {showCloseModal && shift && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#18181b] border border-[#27272a] rounded-xl w-full max-w-md shadow-2xl flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-[#27272a]">
+              <h2 className="text-lg font-bold text-[#f4f4f5]">Fechamento de Caixa</h2>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="bg-[#27272a]/50 p-4 rounded-lg flex justify-between items-center border border-[#3f3f46]/50">
+                <span className="text-[#a1a1aa] text-sm">Valor Esperado Gaveta</span>
+                <span className="text-[#10b981] font-bold">R$ {expectedCashVal.toFixed(2)}</span>
+              </div>
+              <Input
+                label="Valor Contado (Gaveta)"
+                value={closeDeclared}
+                onChange={e => setCloseDeclared(e.target.value)}
+                autoFocus
+                type="number"
+                min="0"
+                step="0.01"
+              />
+              <Input
+                label="Observações do Fechamento (Opcional)"
+                value={closeObs}
+                onChange={e => setCloseObs(e.target.value)}
+              />
+            </div>
+            <div className="p-5 border-t border-[#27272a] bg-[#18181b] flex gap-3 justify-end">
+              <Button type="button" variant="ghost" onClick={() => setShowCloseModal(false)}>Cancelar</Button>
+              <Button type="button" variant="primary" onClick={confirmCloseShift} disabled={isClosing || !closeDeclared}>
+                {isClosing ? "Encerrando..." : "Confirmar Encerramento"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </RebuildShell>
   );
 }

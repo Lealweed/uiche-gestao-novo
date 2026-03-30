@@ -11,6 +11,9 @@ import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { Input, Select } from "@/components/rebuild/ui/input";
 import { StatCard } from "@/components/rebuild/ui/stat-card";
 import { Card } from "@/components/rebuild/ui/card";
+import { Toast, type ToastType } from "@/components/rebuild/ui/toast";
+import { exportToCSV } from "@/lib/csv-export";
+
 
 const supabase = createClient();
 
@@ -85,6 +88,7 @@ export default function AdminRebuildPage() {
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [loading, setLoading]     = useState(true);
   const [message, setMessage]     = useState<string|null>(null);
+  const [toastType, setToastType] = useState<ToastType>("info");
   const [menu, setMenu]           = useState<MenuSection>("dashboard");
   const [dateFrom, setDateFrom]   = useState("");
   const [dateTo, setDateTo]       = useState("");
@@ -345,6 +349,15 @@ export default function AdminRebuildPage() {
 
   const show = (k: MenuSection) => menu === k;
 
+  function handleExportCSV() {
+    exportToCSV("repasses-viacao", repassesComputed.viacoes, [
+      { key: "name", label: "Empresa / Viação" },
+      { key: "amount", label: "Faturamento Bruto" },
+      { key: "central", label: "Taxa Retida (Central)" },
+      { key: "repasse", label: "Repasse Líquido" },
+    ]);
+  }
+
   return (
     <RebuildShell>
       {/* ── topbar ── */}
@@ -372,12 +385,7 @@ export default function AdminRebuildPage() {
         <div style={{ display:"grid", gap:"1.25rem" }}>
 
           {/* global message */}
-          {message && (
-            <div className="rb-panel" style={{ border:"1px solid rgba(245,158,11,0.3)", background:"rgba(245,158,11,0.06)", fontSize:"0.875rem", color:"var(--ds-text)" }}>
-              <span style={{ color:"var(--ds-primary)", fontWeight:700 }}>⚡ </span>{message}
-              <button type="button" onClick={() => setMessage(null)} style={{ marginLeft:"auto", float:"right", color:"var(--ds-muted)", fontSize:"0.75rem" }}>✕</button>
-            </div>
-          )}
+          <Toast message={message} type={toastType} onClose={() => setMessage(null)} />
 
           {/* ═══ DASHBOARD ═══ */}
           {show("dashboard") && (
@@ -408,7 +416,10 @@ export default function AdminRebuildPage() {
                     <StatCard label="Valor a Repassar" value={`R$ ${repassesComputed.repasse.toFixed(2)}`} delta="Para viações" />
                   </div>
 
-                  <Card className="p-0 mb-6">
+                  <Card className="p-0 mb-6 relative">
+                    <div className="absolute top-4 right-4 z-10">
+                      <Button variant="ghost" size="sm" type="button" onClick={handleExportCSV}>Exportar CSV</Button>
+                    </div>
                     <SectionHeader title="Consolidado por Viação" />
                     <DataTable
                       columns={[
