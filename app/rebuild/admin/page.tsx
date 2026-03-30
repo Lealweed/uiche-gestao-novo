@@ -4,6 +4,13 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 import { RebuildShell } from "@/components/rebuild/shell/rebuild-shell";
+import { DataTable } from "@/components/rebuild/ui/table";
+import { Badge } from "@/components/rebuild/ui/badge";
+import { Button } from "@/components/rebuild/ui/button";
+import { SectionHeader } from "@/components/rebuild/ui/section-header";
+import { Input, Select } from "@/components/rebuild/ui/input";
+import { StatCard } from "@/components/rebuild/ui/stat-card";
+import { Card } from "@/components/rebuild/ui/card";
 
 const supabase = createClient();
 
@@ -32,15 +39,7 @@ function nameOf(x: { full_name: string }|{ full_name: string }[]|null) { return 
 function boothOf(x: { name: string; code: string }|{ name: string; code: string }[]|null) { return Array.isArray(x) ? x[0] : x; }
 
 // ── small helper components ───────────────────────────────────
-function KpiCard({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: boolean }) {
-  return (
-    <div className="rb-kpi-card" style={accent ? { borderColor: "rgba(245,158,11,0.3)", boxShadow: "var(--ds-glow-amber)" } : {}}>
-      <p className="rb-kpi-label">{label}</p>
-      <p className="rb-kpi-value" style={accent ? { color: "var(--ds-primary)" } : {}}>{value}</p>
-      {hint && <p className="rb-kpi-hint">{hint}</p>}
-    </div>
-  );
-}
+// KpiCard substituído por StatCard do kit
 
 function SectionCard({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -54,19 +53,9 @@ function SectionCard({ title, children, action }: { title: string; children: Rea
   );
 }
 
-function DataTable({ heads, children, empty }: { heads: string[]; children: React.ReactNode; empty?: boolean }) {
-  return (
-    <div className="rb-table-wrap">
-      <table className="rb-table">
-        <thead><tr>{heads.map(h => <th key={h}>{h}</th>)}</tr></thead>
-        <tbody>{empty ? <tr><td colSpan={heads.length} className="rb-table-empty">Nenhum registro encontrado.</td></tr> : children}</tbody>
-      </table>
-    </div>
-  );
-}
 
 function StatusBadge({ active }: { active: boolean }) {
-  return <span className={active ? "rb-badge rb-badge-success" : "rb-badge rb-badge-neutral"}>{active ? "ATIVO" : "INATIVO"}</span>;
+  return <Badge variant={active ? "success" : "neutral"}>{active ? "ATIVO" : "INATIVO"}</Badge>;
 }
 
 function NavBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
@@ -198,6 +187,47 @@ export default function AdminRebuildPage() {
   }
 
   // computed summaries
+  const repassesComputed = useMemo(() => {
+    let faturamento = 0;
+    let central = 0;
+    let repasse = 0;
+    const comps = new Map<string, { id: string, name: string, amount: number, central: number, repasse: number }>();
+    
+    // pctMap to quickly get the commission percentage of each company
+    const pctMap = new Map(companies.map(c => [c.id, getCompanyPct(c)]));
+
+    // reportTxs is already filtered by date and status = 'posted'
+    for (const tx of reportTxs) {
+      const v = Number(tx.amount || 0);
+      const cId = tx.company_id;
+      const pct = cId ? (pctMap.get(cId) ?? 0) : 0;
+      const taxa = v * (pct / 100);
+      const liq = v - taxa;
+
+      faturamento += v;
+      central += taxa;
+      repasse += liq;
+
+      if (cId) {
+        if (!comps.has(cId)) {
+          const cName = tx.companies && !Array.isArray(tx.companies) ? tx.companies.name : "Desconhecida";
+          comps.set(cId, { id: cId, name: cName, amount: 0, central: 0, repasse: 0 });
+        }
+        const st = comps.get(cId)!;
+        st.amount += v;
+        st.central += taxa;
+        st.repasse += liq;
+      }
+    }
+    
+    return {
+      faturamento,
+      central,
+      repasse,
+      viacoes: Array.from(comps.values()).sort((a,b) => b.amount - a.amount),
+    };
+  }, [reportTxs, companies]);
+
   const summary = useMemo(() => ({
     totalDia:       rows.reduce((a,r) => a + Number(r.gross_amount||0), 0),
     totalComissao:  rows.reduce((a,r) => a + Number(r.commission_amount||0), 0),
@@ -356,47 +386,88 @@ export default function AdminRebuildPage() {
                 <div className="rb-panel rb-table-empty">Carregando indicadores...</div>
               ) : (
                 <>
-                  <div className="rb-kpi-grid">
-                    <KpiCard label="Receita do período" value={`R$ ${summary.totalDia.toFixed(2)}`} hint={`${reportTxs.length} transações`} />
-                    <KpiCard label="Comissão estimada"  value={`R$ ${summary.totalComissao.toFixed(2)}`} hint="Base por empresa" />
-                    <KpiCard label="Turnos abertos"     value={String(summary.abertos)} accent={summary.abertos>0} hint={`${summary.pendencias} pendência(s)`} />
-                    <KpiCard label="Ajustes pendentes"  value={String(adjustments.length)} accent={adjustments.length>0} hint="Aguardando revisão" />
+                  <div className="rb-panel mb-6">
+                    <form style={{ display:"flex", flexWrap:"wrap", gap:"0.75rem", alignItems:"flex-end" }} onSubmit={e => { e.preventDefault(); refreshData(); }}>
+                      <div>
+                        <label className="rb-form-label">Data inicial</label>
+                        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className="rb-field" />
+                      </div>
+                      <div>
+                        <label className="rb-form-label">Data final</label>
+                        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className="rb-field" />
+                      </div>
+                      <button className="rb-btn-primary" type="submit">Filtrar período</button>
+                      <button className="rb-btn-ghost" type="button" onClick={() => { setDateFrom(""); setDateTo(""); refreshData("",""); }}>Limpar</button>
+                    </form>
+                  </div>
+
+                  <SectionHeader title="Auditoria e Repasses (Consolidado do período)" />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 mt-2">
+                    <StatCard label="Faturamento Total" value={`R$ ${repassesComputed.faturamento.toFixed(2)}`} delta={`${reportTxs.length} transações`} />
+                    <StatCard label="Caixa na Central" value={`R$ ${repassesComputed.central.toFixed(2)}`} delta="Lucro (taxas)" />
+                    <StatCard label="Valor a Repassar" value={`R$ ${repassesComputed.repasse.toFixed(2)}`} delta="Para viações" />
+                  </div>
+
+                  <Card className="p-0 mb-6">
+                    <SectionHeader title="Consolidado por Viação" />
+                    <DataTable
+                      columns={[
+                        { key: "empresa", header: "Empresa / Viação", render: (v) => <span className="font-semibold">{v.name}</span> },
+                        { key: "faturamento", header: "Faturamento Bruto", render: (v) => `R$ ${v.amount.toFixed(2)}` },
+                        { key: "central", header: "Taxa Retida (Central)", render: (v) => <span className="text-emerald-400 font-bold">R$ {v.central.toFixed(2)}</span> },
+                        { key: "repasse", header: "Repasse Líquido", render: (v) => <span className="text-amber-500 font-bold">R$ {v.repasse.toFixed(2)}</span> },
+                      ]}
+                      rows={repassesComputed.viacoes}
+                      emptyMessage="Nenhum faturamento registrado no período."
+                    />
+                  </Card>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 mt-8">
+                    <StatCard label="Turnos abertos" value={String(summary.abertos)} delta={`${summary.pendencias} pendência(s)`} />
+                    <StatCard label="Ajustes pendentes" value={String(adjustments.length)} delta="Aguardando revisão" />
+                    <StatCard label="Logs recentes" value={String(auditLogs.length)} delta="Registros de auditoria" />
                   </div>
 
                   {/* Shifts table */}
-                  <SectionCard title="Controle de turnos">
-                    <DataTable heads={["Guichê","Operador","Status","Receita","Pendências","⚙"]} empty={rows.length===0}>
-                      {rows.slice(0,50).map(r => (
-                        <tr key={r.shift_id}>
-                          <td>{r.booth_name}</td>
-                          <td>{r.operator_name}</td>
-                          <td><span className={r.status==="open" ? "rb-badge rb-badge-success" : "rb-badge rb-badge-neutral"}>{r.status==="open"?"ABERTO":"FECHADO"}</span></td>
-                          <td style={{ fontWeight:700 }}>R$ {Number(r.gross_amount||0).toFixed(2)}</td>
-                          <td>{Number(r.missing_card_receipts||0)>0 ? <span className="rb-badge rb-badge-warning">{r.missing_card_receipts}</span> : "—"}</td>
-                          <td>{r.status==="open" && <button type="button" className="rb-btn-ghost" style={{ minHeight:"auto", padding:"0.25rem 0.6rem", fontSize:"0.75rem" }} onClick={() => forceCloseShift(r.shift_id)}>Encerrar</button>}</td>
-                        </tr>
-                      ))}
-                    </DataTable>
-                  </SectionCard>
+                  <Card className="p-0">
+                    <SectionHeader title="Controle de turnos" />
+                    <DataTable
+                      columns={[
+                        { key: "booth", header: "Guichê", render: (r) => r.booth_name },
+                        { key: "operator", header: "Operador", render: (r) => r.operator_name },
+                        { key: "status", header: "Status", render: (r) => <Badge variant={r.status==="open"?"success":"neutral"}>{r.status==="open"?"ABERTO":"FECHADO"}</Badge> },
+                        { key: "receita", header: "Receita", render: (r) => <span className="font-bold">R$ {Number(r.gross_amount||0).toFixed(2)}</span> },
+                        { key: "pendencias", header: "Pendências", render: (r) => Number(r.missing_card_receipts||0)>0 ? <Badge variant="warning">{r.missing_card_receipts}</Badge> : "—" },
+                        { key: "acao", header: "⚙", render: (r) => r.status==="open" ? <Button variant="ghost" size="sm" onClick={()=>forceCloseShift(r.shift_id)}>Encerrar</Button> : null },
+                      ]}
+                      rows={rows.slice(0,50)}
+                      emptyMessage="Nenhum turno encontrado."
+                      className="mt-2"
+                    />
+                  </Card>
 
                   {/* Adjustments */}
                   {adjustments.length > 0 && (
-                    <SectionCard title={`Ajustes pendentes (${adjustments.length})`}>
-                      <DataTable heads={["Operador","Motivo","Valor","Empresa","Ação"]} empty={adjustments.length===0}>
-                        {adjustments.map(a => (
-                          <tr key={a.id}>
-                            <td>{nameOf(a.profiles) ?? "—"}</td>
-                            <td style={{ maxWidth:"200px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.reason}</td>
-                            <td>{a.transactions ? `R$ ${Number(a.transactions.amount).toFixed(2)}` : "—"}</td>
-                            <td>{a.transactions ? nameOf(a.transactions.companies as any) ?? "—" : "—"}</td>
-                            <td style={{ display:"flex", gap:"0.4rem" }}>
-                              <button type="button" className="rb-btn-primary" style={{ minHeight:"auto", padding:"0.25rem 0.6rem", fontSize:"0.75rem" }} onClick={() => approveAdjustment(a.id, a.transaction_id)}>Aprovar</button>
-                              <button type="button" className="rb-btn-ghost" style={{ minHeight:"auto", padding:"0.25rem 0.6rem", fontSize:"0.75rem" }} onClick={() => rejectAdjustment(a.id)}>Rejeitar</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </DataTable>
-                    </SectionCard>
+                    <Card className="p-0">
+                      <SectionHeader title={`Ajustes pendentes (${adjustments.length})`} />
+                      <DataTable
+                        columns={[
+                          { key: "operador", header: "Operador", render: (a) => nameOf(a.profiles) ?? "—" },
+                          { key: "motivo", header: "Motivo", render: (a) => <span className="truncate max-w-[200px]">{a.reason}</span> },
+                          { key: "valor", header: "Valor", render: (a) => a.transactions ? `R$ ${Number(a.transactions.amount).toFixed(2)}` : "—" },
+                          { key: "empresa", header: "Empresa", render: (a) => a.transactions ? nameOf(a.transactions.companies as any) ?? "—" : "—" },
+                          { key: "acao", header: "Ação", render: (a) => (
+                            <div className="flex gap-2">
+                              <Button variant="primary" size="sm" onClick={()=>approveAdjustment(a.id, a.transaction_id)}>Aprovar</Button>
+                              <Button variant="ghost" size="sm" onClick={()=>rejectAdjustment(a.id)}>Rejeitar</Button>
+                            </div>
+                          ) },
+                        ]}
+                        rows={adjustments}
+                        emptyMessage="Nenhum ajuste pendente."
+                        className="mt-2"
+                      />
+                    </Card>
                   )}
                 </>
               )}
@@ -405,22 +476,21 @@ export default function AdminRebuildPage() {
 
           {/* ═══ OPERADORES ═══ */}
           {show("operadores") && (
-            <SectionCard title="Registro de ponto">
-              <DataTable heads={["Data/Hora","Operador","Guichê","Tipo","Obs"]} empty={timePunchRows.length===0}>
-                {timePunchRows.slice(0,100).map(p => {
-                  const b = boothOf(p.booths);
-                  return (
-                    <tr key={p.id}>
-                      <td>{new Date(p.punched_at).toLocaleString("pt-BR")}</td>
-                      <td>{nameOf(p.profiles) ?? "—"}</td>
-                      <td>{b ? `${b.code} - ${b.name}` : "—"}</td>
-                      <td><span className="rb-badge rb-badge-neutral">{p.punch_type}</span></td>
-                      <td>{p.note ?? "—"}</td>
-                    </tr>
-                  );
-                })}
-              </DataTable>
-            </SectionCard>
+            <Card className="p-0">
+              <SectionHeader title="Registro de ponto" />
+              <DataTable
+                columns={[
+                  { key: "data", header: "Data/Hora", render: (p) => new Date(p.punched_at).toLocaleString("pt-BR") },
+                  { key: "operador", header: "Operador", render: (p) => nameOf(p.profiles) ?? "—" },
+                  { key: "guiche", header: "Guichê", render: (p) => { const b = boothOf(p.booths); return b ? `${b.code} - ${b.name}` : "—"; } },
+                  { key: "tipo", header: "Tipo", render: (p) => <Badge variant="neutral">{p.punch_type}</Badge> },
+                  { key: "obs", header: "Obs", render: (p) => p.note ?? "—" },
+                ]}
+                rows={timePunchRows.slice(0,100)}
+                emptyMessage="Nenhum registro de ponto."
+                className="mt-2"
+              />
+            </Card>
           )}
 
           {/* ═══ FINANCEIRO ═══ */}
@@ -442,73 +512,72 @@ export default function AdminRebuildPage() {
                 </form>
               </div>
 
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"1rem" }}>
-                <KpiCard label="Suprimento" value={`R$ ${cashMovementTotals.suprimento.toFixed(2)}`} />
-                <KpiCard label="Sangria"    value={`R$ ${cashMovementTotals.sangria.toFixed(2)}`} />
-                <KpiCard label="Ajuste"     value={`R$ ${cashMovementTotals.ajuste.toFixed(2)}`} />
-                <KpiCard label="Saldo caixa" value={`R$ ${cashMovementTotals.saldo.toFixed(2)}`} accent />
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <StatCard label="Suprimento" value={`R$ ${cashMovementTotals.suprimento.toFixed(2)}`} />
+                <StatCard label="Sangria" value={`R$ ${cashMovementTotals.sangria.toFixed(2)}`} />
+                <StatCard label="Ajuste" value={`R$ ${cashMovementTotals.ajuste.toFixed(2)}`} />
+                <StatCard label="Saldo caixa" value={`R$ ${cashMovementTotals.saldo.toFixed(2)}`} />
               </div>
 
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"0.75rem" }}>
-                <KpiCard label="Esperado (caixa)" value={`R$ ${cashClosingTotals.expected.toFixed(2)}`} />
-                <KpiCard label="Declarado"          value={`R$ ${cashClosingTotals.declared.toFixed(2)}`} />
-                <KpiCard label="Diferença"           value={`R$ ${cashClosingTotals.difference.toFixed(2)}`} accent={cashClosingTotals.difference !== 0} />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <StatCard label="Esperado (caixa)" value={`R$ ${cashClosingTotals.expected.toFixed(2)}`} />
+                <StatCard label="Declarado" value={`R$ ${cashClosingTotals.declared.toFixed(2)}`} />
+                <StatCard label="Diferença" value={`R$ ${cashClosingTotals.difference.toFixed(2)}`} />
               </div>
 
-              <SectionCard title="Movimentos de caixa">
-                <DataTable heads={["Data","Operador","Guichê","Tipo","Valor","Obs"]} empty={cashMovementRows.length===0}>
-                  {cashMovementRows.slice(0,100).map(m => {
-                    const b = boothOf(m.booths);
-                    return (
-                      <tr key={m.id}>
-                        <td>{new Date(m.created_at).toLocaleString("pt-BR")}</td>
-                        <td>{nameOf(m.profiles) ?? "—"}</td>
-                        <td>{b ? `${b.code} - ${b.name}` : "—"}</td>
-                        <td><span className="rb-badge rb-badge-neutral">{m.movement_type}</span></td>
-                        <td style={{ fontWeight:700 }}>R$ {Number(m.amount).toFixed(2)}</td>
-                        <td>{m.note ?? "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </DataTable>
-              </SectionCard>
+              <Card className="p-0">
+                <SectionHeader title="Movimentos de caixa" />
+                <DataTable
+                  columns={[
+                    { key: "data", header: "Data", render: (m) => new Date(m.created_at).toLocaleString("pt-BR") },
+                    { key: "operador", header: "Operador", render: (m) => nameOf(m.profiles) ?? "—" },
+                    { key: "guiche", header: "Guichê", render: (m) => { const b = boothOf(m.booths); return b ? `${b.code} - ${b.name}` : "—"; } },
+                    { key: "tipo", header: "Tipo", render: (m) => <Badge variant="neutral">{m.movement_type}</Badge> },
+                    { key: "valor", header: "Valor", render: (m) => <span className="font-bold">R$ {Number(m.amount).toFixed(2)}</span> },
+                    { key: "obs", header: "Obs", render: (m) => m.note ?? "—" },
+                  ]}
+                  rows={cashMovementRows.slice(0,100)}
+                  emptyMessage="Nenhum movimento de caixa."
+                  className="mt-2"
+                />
+              </Card>
 
-              <SectionCard title="Fechamento de caixa por turno">
-                <DataTable heads={["Data","Operador","Guichê","Esperado","Declarado","Diferença","Obs"]} empty={shiftCashClosingRows.length===0}>
-                  {shiftCashClosingRows.slice(0,100).map(r => {
-                    const b = boothOf(r.booths);
-                    const diff = Number(r.difference);
-                    return (
-                      <tr key={r.id}>
-                        <td>{new Date(r.created_at).toLocaleString("pt-BR")}</td>
-                        <td>{nameOf(r.profiles) ?? "—"}</td>
-                        <td>{b ? `${b.code} - ${b.name}` : "—"}</td>
-                        <td>R$ {Number(r.expected_cash).toFixed(2)}</td>
-                        <td>R$ {Number(r.declared_cash).toFixed(2)}</td>
-                        <td style={{ color: diff===0 ? "var(--ds-success)" : "var(--ds-warning)", fontWeight:700 }}>R$ {diff.toFixed(2)}</td>
-                        <td>{r.note ?? "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </DataTable>
-              </SectionCard>
+              <Card className="p-0">
+                <SectionHeader title="Fechamento de caixa por turno" />
+                <DataTable
+                  columns={[
+                    { key: "data", header: "Data", render: (r) => new Date(r.created_at).toLocaleString("pt-BR") },
+                    { key: "operador", header: "Operador", render: (r) => nameOf(r.profiles) ?? "—" },
+                    { key: "guiche", header: "Guichê", render: (r) => { const b = boothOf(r.booths); return b ? `${b.code} - ${b.name}` : "—"; } },
+                    { key: "esperado", header: "Esperado", render: (r) => `R$ ${Number(r.expected_cash).toFixed(2)}` },
+                    { key: "declarado", header: "Declarado", render: (r) => `R$ ${Number(r.declared_cash).toFixed(2)}` },
+                    { key: "diferenca", header: "Diferença", render: (r) => { const diff = Number(r.difference); return <span className={diff===0?"text-emerald-400":"text-amber-400 font-bold"}>{`R$ ${diff.toFixed(2)}`}</span>; } },
+                    { key: "obs", header: "Obs", render: (r) => r.note ?? "—" },
+                  ]}
+                  rows={shiftCashClosingRows.slice(0,100)}
+                  emptyMessage="Nenhum fechamento de caixa."
+                  className="mt-2"
+                />
+              </Card>
             </>
           )}
 
           {/* ═══ RELATÓRIOS ═══ */}
           {show("relatorios") && (
-            <SectionCard title="Log de auditoria">
-              <DataTable heads={["Data","Usuário","Ação","Entidade"]} empty={auditLogs.length===0}>
-                {auditLogs.map(a => (
-                  <tr key={a.id}>
-                    <td>{new Date(a.created_at).toLocaleString("pt-BR")}</td>
-                    <td>{nameOf(a.profiles) ?? "—"}</td>
-                    <td><span className="rb-badge rb-badge-info">{a.action}</span></td>
-                    <td>{a.entity ?? "—"}</td>
-                  </tr>
-                ))}
-              </DataTable>
-            </SectionCard>
+            <Card className="p-0">
+              <SectionHeader title="Log de auditoria" />
+              <DataTable
+                columns={[
+                  { key: "data", header: "Data", render: (a) => new Date(a.created_at).toLocaleString("pt-BR") },
+                  { key: "usuario", header: "Usuário", render: (a) => nameOf(a.profiles) ?? "—" },
+                  { key: "acao", header: "Ação", render: (a) => <Badge variant="info">{a.action}</Badge> },
+                  { key: "entidade", header: "Entidade", render: (a) => a.entity ?? "—" },
+                ]}
+                rows={auditLogs}
+                emptyMessage="Nenhum log de auditoria."
+                className="mt-2"
+              />
+            </Card>
           )}
 
           {/* ═══ GESTÃO ═══ */}
@@ -527,24 +596,21 @@ export default function AdminRebuildPage() {
                   <button className="rb-btn-primary" type="submit">Vincular</button>
                 </form>
               }>
-                <DataTable heads={["Operador","Guichê","Status","Ação"]} empty={operatorBoothLinks.length===0}>
-                  {operatorBoothLinks.map(l => {
-                    const b = boothOf(l.booths);
-                    return (
-                      <tr key={l.id}>
-                        <td>{nameOf(l.profiles) ?? "—"}</td>
-                        <td>{b ? `${b.code} - ${b.name}` : "—"}</td>
-                        <td><StatusBadge active={l.active} /></td>
-                        <td>
-                          <button type="button" className="rb-btn-ghost" style={{ minHeight:"auto", padding:"0.2rem 0.5rem", fontSize:"0.75rem" }}
-                            onClick={async()=>{ await supabase.from("operator_booths").update({active:!l.active}).eq("id",l.id); await refreshData(); }}>
-                            {l.active ? "Desvincular" : "Reativar"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </DataTable>
+                <DataTable
+                  columns={[
+                    { key: "operador", header: "Operador", render: (l) => nameOf(l.profiles) ?? "—" },
+                    { key: "guiche", header: "Guichê", render: (l) => { const b = boothOf(l.booths); return b ? `${b.code} - ${b.name}` : "—"; } },
+                    { key: "status", header: "Status", render: (l) => <StatusBadge active={l.active} /> },
+                    { key: "acao", header: "Ação", render: (l) => (
+                      <Button variant="ghost" size="sm" onClick={async()=>{ await supabase.from("operator_booths").update({active:!l.active}).eq("id",l.id); await refreshData(); }}>
+                        {l.active ? "Desvincular" : "Reativar"}
+                      </Button>
+                    ) },
+                  ]}
+                  rows={operatorBoothLinks}
+                  emptyMessage="Nenhum vínculo encontrado."
+                  className="mt-2"
+                />
               </SectionCard>
 
               <div style={{ display:"grid", gap:"1.25rem" }}>
@@ -553,15 +619,18 @@ export default function AdminRebuildPage() {
                     <input value={categoryName} onChange={e=>setCategoryName(e.target.value)} required placeholder="Nome da categoria" className="rb-field" />
                     <button className="rb-btn-primary" type="submit">+</button>
                   </form>
-                  <DataTable heads={["Nome","Status","Ação"]} empty={categories.length===0}>
-                    {categories.map(c=>(
-                      <tr key={c.id}>
-                        <td>{c.name}</td>
-                        <td><StatusBadge active={c.active} /></td>
-                        <td><button type="button" className="rb-btn-ghost" style={{ minHeight:"auto", padding:"0.2rem 0.5rem", fontSize:"0.75rem" }} onClick={()=>toggleCategoryActive(c)}>{c.active?"Inativar":"Ativar"}</button></td>
-                      </tr>
-                    ))}
-                  </DataTable>
+                  <DataTable
+                    columns={[
+                      { key: "nome", header: "Nome", render: (c) => c.name },
+                      { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
+                      { key: "acao", header: "Ação", render: (c) => (
+                        <Button variant="ghost" size="sm" onClick={()=>toggleCategoryActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
+                      ) },
+                    ]}
+                    rows={categories}
+                    emptyMessage="Nenhuma categoria encontrada."
+                    className="mt-2"
+                  />
                 </SectionCard>
 
                 <SectionCard title="Subcategorias">
@@ -573,19 +642,19 @@ export default function AdminRebuildPage() {
                     <input value={subcategoryName} onChange={e=>setSubcategoryName(e.target.value)} required placeholder="Subcategoria" className="rb-field" />
                     <button className="rb-btn-primary" type="submit">+</button>
                   </form>
-                  <DataTable heads={["Nome","Categoria","Status","Ação"]} empty={subcategories.length===0}>
-                    {subcategories.slice(0,20).map(s=>{
-                      const cName = Array.isArray(s.transaction_categories) ? s.transaction_categories[0]?.name : s.transaction_categories?.name;
-                      return (
-                        <tr key={s.id}>
-                          <td>{s.name}</td>
-                          <td>{cName ?? "—"}</td>
-                          <td><StatusBadge active={s.active} /></td>
-                          <td><button type="button" className="rb-btn-ghost" style={{ minHeight:"auto", padding:"0.2rem 0.5rem", fontSize:"0.75rem" }} onClick={()=>toggleSubcategoryActive(s)}>{s.active?"Inativar":"Ativar"}</button></td>
-                        </tr>
-                      );
-                    })}
-                  </DataTable>
+                  <DataTable
+                    columns={[
+                      { key: "nome", header: "Nome", render: (s) => s.name },
+                      { key: "categoria", header: "Categoria", render: (s) => { const cName = Array.isArray(s.transaction_categories) ? s.transaction_categories[0]?.name : s.transaction_categories?.name; return cName ?? "—"; } },
+                      { key: "status", header: "Status", render: (s) => <StatusBadge active={s.active} /> },
+                      { key: "acao", header: "Ação", render: (s) => (
+                        <Button variant="ghost" size="sm" onClick={()=>toggleSubcategoryActive(s)}>{s.active?"Inativar":"Ativar"}</Button>
+                      ) },
+                    ]}
+                    rows={subcategories.slice(0,20)}
+                    emptyMessage="Nenhuma subcategoria encontrada."
+                    className="mt-2"
+                  />
                 </SectionCard>
               </div>
             </div>
@@ -647,48 +716,57 @@ export default function AdminRebuildPage() {
               <div style={{ gridColumn:"1/-1" }}>
                 <SectionCard title="Usuários cadastrados">
                   <input value={profileSearch} onChange={e=>setProfileSearch(e.target.value)} placeholder="Buscar por nome, CPF ou perfil..." className="rb-field" style={{ marginBottom:"0.75rem" }} />
-                  <DataTable heads={["Nome","CPF","Telefone","Perfil","Status","Ação"]} empty={filteredProfiles.length===0}>
-                    {filteredProfiles.map(p=>(
-                      <tr key={p.user_id}>
-                        <td style={{ fontWeight:600 }}>{p.full_name}</td>
-                        <td>{p.cpf ?? "—"}</td>
-                        <td>{p.phone ?? "—"}</td>
-                        <td><span className="rb-badge rb-badge-info">{p.role}</span></td>
-                        <td><StatusBadge active={p.active} /></td>
-                        <td><button type="button" className="rb-btn-ghost" style={{ minHeight:"auto", padding:"0.2rem 0.5rem", fontSize:"0.75rem" }} onClick={()=>toggleProfileActive(p)}>{p.active?"Inativar":"Ativar"}</button></td>
-                      </tr>
-                    ))}
-                  </DataTable>
+                  <DataTable
+                    columns={[
+                      { key: "nome", header: "Nome", render: (p) => <span className="font-semibold">{p.full_name}</span> },
+                      { key: "cpf", header: "CPF", render: (p) => p.cpf ?? "—" },
+                      { key: "telefone", header: "Telefone", render: (p) => p.phone ?? "—" },
+                      { key: "perfil", header: "Perfil", render: (p) => <Badge variant="info">{p.role}</Badge> },
+                      { key: "status", header: "Status", render: (p) => <StatusBadge active={p.active} /> },
+                      { key: "acao", header: "Ação", render: (p) => (
+                        <Button variant="ghost" size="sm" onClick={()=>toggleProfileActive(p)}>{p.active?"Inativar":"Ativar"}</Button>
+                      ) },
+                    ]}
+                    rows={filteredProfiles}
+                    emptyMessage="Nenhum usuário encontrado."
+                    className="mt-2"
+                  />
                 </SectionCard>
               </div>
 
               {/* Lista empresas */}
               <SectionCard title="Empresas">
-                <DataTable heads={["Nome","Comissão","Status","Ação"]} empty={companies.length===0}>
-                  {companies.map(c=>(
-                    <tr key={c.id}>
-                      <td style={{ fontWeight:600 }}>{c.name}</td>
-                      <td>{getCompanyPct(c).toFixed(3)}%</td>
-                      <td><StatusBadge active={c.active} /></td>
-                      <td><button type="button" className="rb-btn-ghost" style={{ minHeight:"auto", padding:"0.2rem 0.5rem", fontSize:"0.75rem" }} onClick={()=>toggleCompanyActive(c)}>{c.active?"Inativar":"Ativar"}</button></td>
-                    </tr>
-                  ))}
-                </DataTable>
+                <DataTable
+                  columns={[
+                    { key: "nome", header: "Nome", render: (c) => <span className="font-semibold">{c.name}</span> },
+                    { key: "comissao", header: "Comissão", render: (c) => `${getCompanyPct(c).toFixed(3)}%` },
+                    { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
+                    { key: "acao", header: "Ação", render: (c) => (
+                      <Button variant="ghost" size="sm" onClick={()=>toggleCompanyActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
+                    ) },
+                  ]}
+                  rows={companies}
+                  emptyMessage="Nenhuma empresa encontrada."
+                  className="mt-2"
+                />
               </SectionCard>
 
               {/* Lista guichês */}
               <SectionCard title="Guichês">
                 <input value={boothSearch} onChange={e=>setBoothSearch(e.target.value)} placeholder="Buscar guichê..." className="rb-field" style={{ marginBottom:"0.75rem" }} />
-                <DataTable heads={["Código","Nome","Status","Ação"]} empty={filteredBooths.length===0}>
-                  {filteredBooths.map(b=>(
-                    <tr key={b.id}>
-                      <td style={{ fontWeight:700 }}>{b.code}</td>
-                      <td>{b.name}</td>
-                      <td><StatusBadge active={b.active} /></td>
-                      <td><button type="button" className="rb-btn-ghost" style={{ minHeight:"auto", padding:"0.2rem 0.5rem", fontSize:"0.75rem" }} onClick={()=>toggleBoothActive(b)}>{b.active?"Inativar":"Ativar"}</button></td>
-                    </tr>
-                  ))}
-                </DataTable>
+                <DataTable
+                  columns={[
+                    { key: "codigo", header: "Código", render: (b) => <span className="font-bold">{b.code}</span> },
+                    { key: "nome", header: "Nome", render: (b) => b.name },
+                    { key: "status", header: "Status", render: (b) => <StatusBadge active={b.active} /> },
+                    { key: "acao", header: "Ação", render: (b) => (
+                      <Button variant="ghost" size="sm" onClick={()=>toggleBoothActive(b)}>{b.active?"Inativar":"Ativar"}</Button>
+                    ) },
+                  ]}
+                  rows={filteredBooths}
+                  emptyMessage="Nenhum guichê encontrado."
+                  className="mt-2"
+                />
               </SectionCard>
             </div>
           )}

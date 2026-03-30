@@ -8,6 +8,9 @@ import { Card, CardTitle } from "@/components/rebuild/ui/card";
 import { StatCard } from "@/components/rebuild/ui/stat-card";
 import { Select, Input } from "@/components/rebuild/ui/input";
 import { Button } from "@/components/rebuild/ui/button";
+import { DataTable } from "@/components/rebuild/ui/table";
+import { Badge, PaymentBadge } from "@/components/rebuild/ui/badge";
+import { SectionHeader } from "@/components/rebuild/ui/section-header";
 
 const supabase = createClient();
 
@@ -227,35 +230,33 @@ export default function OperatorRebuildPage() {
   return (
     <RebuildShell>
       {/* ── topbar ── */}
-      <div className="rb-topbar mb-5">
-        <div>
-          <p className="rb-topbar-overline">Central Viagem</p>
-          <p className="rb-topbar-title">Painel do Operador</p>
-        </div>
-        <div className="rb-topbar-actions">
-          {operatorBlocked && <span className="rb-badge rb-badge-danger">INATIVO</span>}
-          {!operatorBlocked && shift && <span className="rb-badge rb-badge-success">TURNO ABERTO</span>}
-          {!operatorBlocked && !shift && <span className="rb-badge rb-badge-neutral">SEM TURNO</span>}
-        </div>
-      </div>
-
-      {/* message */}
-      {message && (
-        <div className="rb-panel" style={{ marginBottom:"1rem", border:"1px solid rgba(245,158,11,0.3)", background:"rgba(245,158,11,0.06)", fontSize:"0.875rem" }}>
-          <span style={{ color:"var(--ds-primary)", fontWeight:700 }}>⚡ </span>{message}
-          <button type="button" onClick={()=>setMessage(null)} style={{ float:"right", color:"var(--ds-muted)" }}>✕</button>
-        </div>
-      )}
-
-      {/* ── KPI strip ── */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="PIX" value={`R$ ${totals.pix.toFixed(2)}`} />
-        <StatCard label="Crédito" value={`R$ ${totals.credit.toFixed(2)}`} />
-        <StatCard label="Débito" value={`R$ ${totals.debit.toFixed(2)}`} />
-        <StatCard label="Total" value={`R$ ${totalGeral.toFixed(2)}`} delta={`${txs.length} lançamentos`} />
-      </div>
-
-      {/* ── two-column layout ── */}
+          <Card className="p-0">
+            <SectionHeader title="Ponto digital" />
+            <div className="flex flex-wrap gap-2 mb-3">
+              {(["entrada","pausa_inicio","pausa_fim","saida"] as const).map(t=>(
+                <Button
+                  key={t}
+                  variant={t==="entrada"?"primary":"ghost"}
+                  size="sm"
+                  disabled={operatorBlocked}
+                  onClick={()=>registerPunch(t)}
+                  className="flex-1 min-w-[120px]"
+                >
+                  {t==="entrada"?"Entrada":t==="pausa_inicio"?"Início pausa":t==="pausa_fim"?"Fim pausa":"Saída"}
+                </Button>
+              ))}
+            </div>
+            {punches.length > 0 && (
+              <DataTable
+                columns={[
+                  { key: "ponto", header: "Ponto", render: (p) => p.note ?? p.punch_type },
+                  { key: "hora", header: "Hora", render: (p) => <span className="text-muted-foreground">{new Date(p.punched_at).toLocaleString("pt-BR")}</span> },
+                ]}
+                rows={punches.slice(0,10)}
+                className="mt-2"
+              />
+            )}
+          </Card>
       <div className="rb-operator-layout">
 
         {/* LEFT — main actions */}
@@ -365,113 +366,148 @@ export default function OperatorRebuildPage() {
           )}
 
           {/* Histórico de lançamentos */}
-          <div className="rb-panel">
-            <p className="rb-panel-title" style={{ marginBottom:"0.75rem" }}>Lançamentos do turno</p>
-            {txs.length === 0 ? (
-              <p className="rb-table-empty">Sem lançamentos neste turno.</p>
-            ) : (
-              <div className="rb-table-wrap">
-                <table className="rb-table">
-                  <thead><tr><th>Hora</th><th>Empresa</th><th>Método</th><th>Valor</th><th>Comprovante</th></tr></thead>
-                  <tbody>
-                    {txs.map(tx=>(
-                      <tr key={tx.id}>
-                        <td style={{ color:"var(--ds-muted)", fontSize:"0.75rem" }}>{new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</td>
-                        <td style={{ fontWeight:600 }}>{tx.company_name}</td>
-                        <td>
-                          <span className={`rb-payment-badge rb-payment-${tx.payment_method}`}>{tx.payment_method.toUpperCase()}</span>
-                        </td>
-                        <td style={{ fontWeight:700 }}>R$ {Number(tx.amount).toFixed(2)}</td>
-                        <td>{tx.receipt_count>0 ? <span className="rb-badge rb-badge-success">✓</span> : (tx.payment_method==="credit"||tx.payment_method==="debit") ? <span className="rb-badge rb-badge-warning">PENDENTE</span> : "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <Card className="p-0">
+            <SectionHeader title="Lançamentos do turno" />
+            <DataTable
+              columns={[
+                { key: "hora", header: "Hora", render: (tx) => <span className="text-muted-foreground text-xs">{new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span> },
+                { key: "empresa", header: "Empresa", render: (tx) => <span className="font-semibold">{tx.company_name}</span> },
+                { key: "metodo", header: "Método", render: (tx) => <PaymentBadge method={tx.payment_method} /> },
+                { key: "valor", header: "Valor", render: (tx) => <span className="font-bold">R$ {Number(tx.amount).toFixed(2)}</span> },
+                { key: "comprovante", header: "Comprovante", render: (tx) => tx.receipt_count>0 ? <Badge variant="success">✓</Badge> : (tx.payment_method==="credit"||tx.payment_method==="debit") ? <Badge variant="warning">PENDENTE</Badge> : "—" },
+              ]}
+              rows={txs}
+              emptyMessage="Sem lançamentos neste turno."
+              className="mt-2"
+            />
+          </Card>
         </div>
 
         {/* RIGHT — forms */}
         <div style={{ display:"grid", gap:"1.25rem" }}>
 
           {/* Novo lançamento */}
-          <form onSubmit={submitTx} className="rb-panel" style={{ display:"grid", gap:"0.75rem" }}>
-            <p className="rb-panel-title">Novo lançamento</p>
-
-            <div>
-              <label className="rb-form-label">Empresa</label>
-              <select value={companyId} onChange={e=>setCompanyId(e.target.value)} className="rb-field" required disabled={!shift||operatorBlocked}>
+          <Card className="p-0">
+            <SectionHeader title="Novo lançamento" />
+            <form onSubmit={submitTx} className="grid gap-3 p-4">
+              <Select
+                label="Empresa"
+                value={companyId}
+                onChange={e=>setCompanyId(e.target.value)}
+                required
+                disabled={!shift||operatorBlocked}
+              >
                 <option value="">Selecione a empresa</option>
                 {companies.map(c=><option key={c.id} value={c.id}>{c.name} ({getCompanyPct(c)}%)</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="rb-form-label">Categoria</label>
-              <select value={categoryId} onChange={e=>{ setCategoryId(e.target.value); const first=subcategories.find(s=>s.category_id===e.target.value); setSubcategoryId(first?.id??""); }} className="rb-field" required disabled={!shift||operatorBlocked}>
+              </Select>
+              <Select
+                label="Categoria"
+                value={categoryId}
+                onChange={e=>{ setCategoryId(e.target.value); const first=subcategories.find(s=>s.category_id===e.target.value); setSubcategoryId(first?.id??""); }}
+                required
+                disabled={!shift||operatorBlocked}
+              >
                 <option value="">Selecione a categoria</option>
                 {categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="rb-form-label">Subcategoria</label>
-              <select value={subcategoryId} onChange={e=>setSubcategoryId(e.target.value)} className="rb-field" required disabled={!shift||operatorBlocked}>
+              </Select>
+              <Select
+                label="Subcategoria"
+                value={subcategoryId}
+                onChange={e=>setSubcategoryId(e.target.value)}
+                required
+                disabled={!shift||operatorBlocked}
+              >
                 <option value="">Selecione</option>
                 {filteredSubs.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="rb-form-label">Forma de pagamento</label>
-              <div className="rb-pay-methods">
-                {(["pix","credit","debit","cash"] as const).map(m=>(
-                  <PayBtn key={m} label={m==="pix"?"PIX":m==="credit"?"Crédito":m==="debit"?"Débito":"Dinheiro"} active={paymentMethod===m} onClick={()=>setPaymentMethod(m)} />
-                ))}
+              </Select>
+              <div>
+                <label className="rb-form-label">Forma de pagamento</label>
+                <div className="flex gap-2">
+                  {(["pix","credit","debit","cash"] as const).map(m=>(
+                    <Button
+                      key={m}
+                      type="button"
+                      variant={paymentMethod===m?"primary":"ghost"}
+                      size="sm"
+                      className="flex-1"
+                      onClick={()=>setPaymentMethod(m)}
+                    >
+                      {m==="pix"?"PIX":m==="credit"?"Crédito":m==="debit"?"Débito":"Dinheiro"}
+                    </Button>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            <div>
-              <label className="rb-form-label">Valor (R$)</label>
-              <input value={amount} onChange={e=>setAmount(e.target.value)} required type="number" min="0.01" step="0.01" placeholder="0,00" className="rb-field" disabled={!shift||operatorBlocked} />
-            </div>
-
-            <div>
-              <label className="rb-form-label">Referência / Bilhete</label>
-              <input value={ticketReference} onChange={e=>setTicketReference(e.target.value)} placeholder="Ex: 12345" className="rb-field" disabled={!shift||operatorBlocked} />
-            </div>
-
-            <div>
-              <label className="rb-form-label">Observação</label>
-              <input value={note} onChange={e=>setNote(e.target.value)} placeholder="Opcional" className="rb-field" disabled={!shift||operatorBlocked} />
-            </div>
-
-            <button className="rb-btn-primary" type="submit" disabled={!shift||operatorBlocked}>Registrar lançamento</button>
-          </form>
+              <Input
+                label="Valor (R$)"
+                value={amount}
+                onChange={e=>setAmount(e.target.value)}
+                required
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="0,00"
+                disabled={!shift||operatorBlocked}
+              />
+              <Input
+                label="Referência / Bilhete"
+                value={ticketReference}
+                onChange={e=>setTicketReference(e.target.value)}
+                placeholder="Ex: 12345"
+                disabled={!shift||operatorBlocked}
+              />
+              <Input
+                label="Observação"
+                value={note}
+                onChange={e=>setNote(e.target.value)}
+                placeholder="Opcional"
+                disabled={!shift||operatorBlocked}
+              />
+              <Button type="submit" variant="primary" disabled={!shift||operatorBlocked}>Registrar lançamento</Button>
+            </form>
+          </Card>
 
           {/* Caixa / Movimentos */}
-          <div className="rb-panel" style={{ display:"grid", gap:"0.75rem" }}>
-            <p className="rb-panel-title">Caixa PDV</p>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.5rem" }}>
+          <Card className="p-0">
+            <SectionHeader title="Caixa PDV" />
+            <div className="grid grid-cols-2 gap-2 p-4">
               <KpiCard label="Suprimento" value={`R$ ${cashTotals.suprimento.toFixed(2)}`} />
               <KpiCard label="Sangria"    value={`R$ ${cashTotals.sangria.toFixed(2)}`} />
               <KpiCard label="Ajuste"     value={`R$ ${cashTotals.ajuste.toFixed(2)}`} />
               <KpiCard label="Saldo"      value={`R$ ${cashTotals.saldo.toFixed(2)}`} accent />
             </div>
-            <form onSubmit={submitCashMovement} style={{ display:"grid", gap:"0.5rem" }}>
-              <select value={cashType} onChange={e=>setCashType(e.target.value as typeof cashType)} className="rb-field" disabled={!shift||operatorBlocked}>
+            <form onSubmit={submitCashMovement} className="grid gap-2 p-4 pt-0">
+              <Select
+                value={cashType}
+                onChange={e=>setCashType(e.target.value as typeof cashType)}
+                disabled={!shift||operatorBlocked}
+                label="Tipo de movimento"
+              >
                 <option value="suprimento">Suprimento</option>
                 <option value="sangria">Sangria</option>
                 <option value="ajuste">Ajuste</option>
-              </select>
-              <div style={{ display:"flex", gap:"0.5rem" }}>
-                <input value={cashAmount} onChange={e=>setCashAmount(e.target.value)} type="number" min="0" step="0.01" placeholder="Valor" className="rb-field" disabled={!shift||operatorBlocked} />
-                <input value={cashNote} onChange={e=>setCashNote(e.target.value)} placeholder="Obs (opcional)" className="rb-field" disabled={!shift||operatorBlocked} />
+              </Select>
+              <div className="flex gap-2">
+                <Input
+                  value={cashAmount}
+                  onChange={e=>setCashAmount(e.target.value)}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Valor"
+                  disabled={!shift||operatorBlocked}
+                  label="Valor"
+                />
+                <Input
+                  value={cashNote}
+                  onChange={e=>setCashNote(e.target.value)}
+                  placeholder="Obs (opcional)"
+                  disabled={!shift||operatorBlocked}
+                  label="Observação"
+                />
               </div>
-              <button className="rb-btn-primary" type="submit" disabled={!shift||operatorBlocked}>Registrar</button>
+              <Button type="submit" variant="primary" disabled={!shift||operatorBlocked}>Registrar</Button>
             </form>
-          </div>
+          </Card>
         </div>
       </div>
     </RebuildShell>
