@@ -13,29 +13,52 @@ function cn(...inputs: ClassValue[]) {
 export default function HistoricoVendasPage() {
     const supabase = createClient()
     const [loading, setLoading] = useState(true)
-    const [vendas, setVendas] = useState<any[]>([])
+    const [transactions, setTransactions] = useState<any[]>([])
     const [searchTerm, setSearchTerm] = useState('')
 
     useEffect(() => {
-        const loadVendas = async () => {
+        const loadTransactions = async () => {
             setLoading(true)
             const { data, error } = await supabase
-                .from('vendas')
-                .select('*')
-                .order('created_at', { ascending: false })
+                .from('transactions')
+                .select('id, amount, payment_method, sold_at, note, companies(name)')
+                .order('sold_at', { ascending: false })
             
-            if (error) console.error(error)
-            else setVendas(data || [])
+            if (error) {
+                console.error('Erro ao listar transações:', error)
+            } else {
+                // Parse das notas JSON
+                const parsedData = (data || []).map(t => {
+                    let parsedNote: any = {}
+                    try {
+                        if (typeof t.note === 'string') {
+                            parsedNote = JSON.parse(t.note)
+                        } else if (typeof t.note === 'object') {
+                            parsedNote = t.note
+                        }
+                    } catch (e) {
+                        console.error('Erro ao converter JSON de note', e)
+                    }
+                    return {
+                        ...t,
+                        passageiro: parsedNote?.passageiro || 'NÃO INFORMADO',
+                        destino: parsedNote?.destino || 'NÃO INFORMADO'
+                    }
+                })
+                setTransactions(parsedData)
+            }
             setLoading(false)
         }
-        loadVendas()
-    }, [])
+        loadTransactions()
+    }, [supabase])
 
-    const filteredVendas = vendas.filter(v => 
-        v.passageiro?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        v.destino?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        v.empresa_parceira?.toLowerCase().includes(searchTerm.toLowerCase())
+    const filteredTransactions = transactions.filter(t => 
+        t.passageiro?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        t.destino?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        t.companies?.name?.toLowerCase().includes(searchTerm.toLowerCase())
     )
+
+    const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -75,7 +98,7 @@ export default function HistoricoVendasPage() {
                                 <th className="px-8 py-4">Passageiro & Status</th>
                                 <th className="px-8 py-4">Empresa / Destino</th>
                                 <th className="px-8 py-4">Emissão</th>
-                                <th className="px-8 py-4 text-right">Valor Líquido</th>
+                                <th className="px-8 py-4 text-right">Valor Total</th>
                                 <th className="px-8 py-4 text-center">Forma</th>
                                 <th className="px-8 py-4">Status</th>
                                 <th className="px-8 py-4"></th>
@@ -88,21 +111,21 @@ export default function HistoricoVendasPage() {
                                         <td colSpan={8} className="h-20 bg-black/10"></td>
                                     </tr>
                                 ))
-                            ) : filteredVendas.length === 0 ? (
+                            ) : filteredTransactions.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="px-8 py-24 text-center text-slate-600 italic font-sans font-bold uppercase tracking-widest text-[10px]">
                                         Nenhum registro encontrado no banco de dados.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredVendas.map((v) => (
+                                filteredTransactions.map((v) => (
                                     <tr key={v.id} className="hover:bg-[#1A1F2E]/30 transition-colors group">
                                         <td className="px-8 py-6 text-slate-500 group-hover:text-slate-300 font-mono text-xs font-bold leading-none">
                                             #{String(v.id).slice(-8).toUpperCase()}
                                         </td>
                                         <td className="px-8 py-6">
                                             <div className="flex flex-col">
-                                                <span className="text-white font-bold font-sans tracking-tight">{v.passageiro}</span>
+                                                <span className="text-white font-bold font-sans tracking-tight truncate max-w-[200px]">{v.passageiro}</span>
                                                 <span className="text-[10px] text-slate-600 uppercase font-black tracking-widest mt-1">Check-in Válido</span>
                                             </div>
                                         </td>
@@ -111,18 +134,18 @@ export default function HistoricoVendasPage() {
                                                 <div className="p-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/10">
                                                     <Ticket className="w-3.5 h-3.5" />
                                                 </div>
-                                                {v.empresa_parceira}
+                                                {v.companies?.name || 'Viação Desconhecida'}
                                             </div>
-                                            <div className="text-[11px] text-slate-600 mt-2 font-bold uppercase tracking-wider">{v.destino}</div>
+                                            <div className="text-[11px] text-slate-600 mt-2 font-bold uppercase tracking-wider truncate max-w-[150px]">{v.destino}</div>
                                         </td>
-                                        <td className="px-8 py-6 text-slate-500 group-hover:text-slate-400 font-medium">{new Date(v.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                                        <td className="px-8 py-6 text-slate-500 group-hover:text-slate-400 font-medium">{new Date(v.sold_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td>
                                         <td className="px-8 py-6 text-right font-bold text-white tracking-tighter">
-                                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v.valor)}
+                                            {formatCurrency(Number(v.amount) || 0)}
                                         </td>
                                         <td className="px-8 py-6">
                                             <div className="flex justify-center">
                                                 <span className="px-3 py-1.5 bg-[#0B0E14] border border-[#222834] rounded-lg text-[9px] text-slate-400 uppercase font-black tracking-widest shadow-inner group-hover:text-white transition-colors">
-                                                    {v.forma_pagamento}
+                                                    {v.payment_method}
                                                 </span>
                                             </div>
                                         </td>
@@ -146,7 +169,7 @@ export default function HistoricoVendasPage() {
             </div>
 
             <div className="flex items-center justify-between text-slate-600 px-6 font-bold uppercase tracking-widest text-[10px]">
-                <span>Log: {filteredVendas.length} Entradas localizadas</span>
+                <span>Log: {filteredTransactions.length} Entradas localizadas</span>
                 <div className="flex gap-3">
                     <button className="px-6 py-2 bg-[#0B0E14] border border-[#222834] rounded-xl text-[10px] hover:bg-[#1A2333] hover:text-white disabled:opacity-20 transition-all active:scale-95">Anterior</button>
                     <button className="px-6 py-2 bg-[#0B0E14] border border-[#222834] rounded-xl text-[10px] hover:bg-[#1A2333] hover:text-white disabled:opacity-20 transition-all active:scale-95">Próxima</button>

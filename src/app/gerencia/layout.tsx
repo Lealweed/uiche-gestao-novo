@@ -12,7 +12,9 @@ import {
   ClipboardList,
   LayoutDashboard,
   Wallet,
-  Building2
+  Building2,
+  Monitor,
+  UserCheck
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +31,12 @@ const sidebarItems: SidebarItem[] = [
   { icon: Wallet, label: 'Financeiro', href: '/gerencia/financeiro' },
   { icon: ClipboardList, label: 'Auditoria', href: '/gerencia/auditoria' },
   { icon: Settings, label: 'Configurações', href: '/gerencia/configuracoes' },
+]
+
+const cadastroItems: SidebarItem[] = [
+  { icon: Building2, label: 'Viações', href: '/gerencia/viacoes' },
+  { icon: Monitor, label: 'Guichês', href: '/gerencia/guiches' },
+  { icon: UserCheck, label: 'Equipe', href: '/gerencia/equipe' },
 ]
 
 export default function GerenciaLayout({
@@ -79,10 +87,48 @@ export default function GerenciaLayout({
               )
             })}
           </nav>
+
+          <div className="mt-6">
+            <p className="px-3 mb-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Cadastros Base</p>
+            <nav className="space-y-1">
+              {cadastroItems.map((item) => {
+                const isActive = pathname === item.href
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative",
+                      isActive 
+                        ? "bg-violet-600/10 text-violet-400" 
+                        : "text-slate-400 hover:text-slate-100 hover:bg-white/5"
+                    )}
+                  >
+                    <item.icon className={cn(
+                      "w-4 h-4 transition-colors",
+                      isActive ? "text-violet-400" : "group-hover:text-violet-400"
+                    )} />
+                    <span className="text-sm font-medium">{item.label}</span>
+                    {isActive && (
+                      <div className="absolute left-0 w-1 h-6 bg-violet-500 rounded-r-full shadow-[0_0_8px_rgba(139,92,246,0.6)]" />
+                    )}
+                  </Link>
+                )
+              })}
+            </nav>
+          </div>
         </div>
 
         <div className="mt-auto p-4 border-t border-[#1A2333]">
-          <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-400/5 transition-all duration-200 group">
+          <button 
+            onClick={async () => {
+              const { createClient } = await import('@/lib/supabase/client');
+              const supabase = createClient();
+              await supabase.auth.signOut();
+              window.location.href = '/login';
+            }}
+            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-400/5 transition-all duration-200 group"
+          >
             <LogOut className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
             <span className="text-sm font-medium">Sair do Painel</span>
           </button>

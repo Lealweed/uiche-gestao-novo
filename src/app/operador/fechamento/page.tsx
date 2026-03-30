@@ -22,13 +22,18 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Tipagem básica
-interface Venda {
+interface Transaction {
     id: string
-    valor: number
-    forma_pagamento: string
-    empresa_parceira: string
-    created_at: string
+    amount: number
+    payment_method: string
+    companies?: { name: string }
+}
+
+interface Shift {
+    id: string
+    operator_id: string
+    booth_id: string
+    status: string
 }
 
 export default function FechamentoCaixaPage() {
@@ -38,92 +43,136 @@ export default function FechamentoCaixaPage() {
     const [loading, setLoading] = useState(true)
     const [isClosing, setIsClosing] = useState(false)
     const [gavetaInput, setGavetaInput] = useState('')
+    const [errorMsg, setErrorMsg] = useState('')
     
-    // Totais agrupados
-    const [totais, setTotais] = useState({ pix: 0, dinheiro: 0, cartao: 0 })
+    const [openShift, setOpenShift] = useState<Shift | null>(null)
+    const [totais, setTotais] = useState({ pix: 0, cash: 0, credit: 0, debit: 0 })
     const [empresas, setEmpresas] = useState<{ nome: string; qtd: number; total: number }[]>([])
 
-    // Data de Hoje formatada
     const dataHojeFormatada = new Intl.DateTimeFormat('pt-BR', { 
         weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' 
     }).format(new Date())
 
     useEffect(() => {
-        async function fetchFechamento() {
+        async function loadFechamento() {
             setLoading(true)
-            try {
-                const hoje = new Date()
-                hoje.setHours(0, 0, 0, 0)
-                
-                const { data, error } = await supabase
-                    .from('vendas')
-                    .select('*')
-                    .gte('created_at', hoje.toISOString())
+            const { data: userData } = await supabase.auth.getUser()
+            if (!userData.user) {
+                router.push('/login')
+                return
+            }
 
-                if (error) throw error
+            // Busca turno aberto do operador
+            const { data: shift } = await supabase
+                .from('shifts')
+                .select('*')
+                .eq('operator_id', userData.user.id)
+                .eq('status', 'open')
+                .maybeSingle()
 
-                if (data) {
-                    // Reduce Methods
-                    let tPix = 0, tDinh = 0, tCart = 0
+            setOpenShift(shift as Shift | null)
+
+            if (shift) {
+                // Busca as transações do turno
+                const { data: txs } = await supabase
+                    .from('transactions')
+                    .select('id, amount, payment_method, companies(name)')
+                    .eq('shift_id', shift.id)
+
+                if (txs) {
+                    let pix = 0, cash = 0, credit = 0, debit = 0
                     const empMap = new Map<string, { qtd: number; total: number }>()
 
-                    data.forEach((v: Venda) => {
-                        const val = Number(v.valor) || 0
+                    txs.forEach((t: any) => {
+                        const val = Number(t.amount) || 0
+                        const method = t.payment_method || ''
                         
-                        // Pagamentos
-                        const pgto = v.forma_pagamento?.toLowerCase() || ''
-                        if (pgto.includes('pix')) tPix += val
-                        else if (pgto.includes('dinheiro')) tDinh += val
-                        else if (pgto.includes('cartão') || pgto.includes('cartao')) tCart += val
+                        if (method === 'pix') pix += val
+                        else if (method === 'cash') cash += val
+                        else if (method === 'credit') credit += val
+                        else if (method === 'debit') debit += val
+
+                        const empInfo = t.companies || { name: 'Outros' }
+                        const empName = empInfo.name
                         
-                        // Empresas
-                        const emp = v.empresa_parceira || 'Outros'
-                        if (!empMap.has(emp)) empMap.set(emp, { qtd: 0, total: 0 })
-                        const atual = empMap.get(emp)!
-                        empMap.set(emp, { qtd: atual.qtd + 1, total: atual.total + val })
+                        if (!empMap.has(empName)) empMap.set(empName, { qtd: 0, total: 0 })
+                        const atual = empMap.get(empName)!
+                        empMap.set(empName, { qtd: atual.qtd + 1, total: atual.total + val })
                     })
 
-                    setTotais({ pix: tPix, dinheiro: tDinh, cartao: tCart })
-                    
+                    setTotais({ pix, cash, credit, debit })
+
                     const empList = Array.from(empMap.entries()).map(([nome, stats]) => ({
                         nome,
                         qtd: stats.qtd,
                         total: stats.total
                     }))
-                    
-                    // Ordenar as empresas que mais venderam por valor ($)
                     setEmpresas(empList.sort((a, b) => b.total - a.total))
                 }
-            } catch (err) {
-                console.error("Erro ao buscar dados do fechamento:", err)
-            } finally {
-                setLoading(false)
             }
+            setLoading(false)
         }
 
-        fetchFechamento()
-    }, [])
+        loadFechamento()
+    }, [router, supabase])
 
-    const handleSairEFechar = async () => {
+    const handleConfirmarFechamento = async () => {
+        if (!openShift) return
+        setErrorMsg('')
         setIsClosing(true)
-        // Aqui poderia haver lógica de inserir um log de fechamento na tabela de caixa
-        // Simularemos o travamento e log out diretamente
-        await supabase.auth.signOut()
-        router.push('/login')
+
+        // Atualizar shift para closed
+        const { error } = await supabase
+            .from('shifts')
+            .update({ 
+                status: 'closed', 
+                closed_at: new Date().toISOString() 
+            })
+            .eq('id', openShift.id)
+
+        if (error) {
+            setErrorMsg('Erro ao fechar turno: ' + error.message)
+            setIsClosing(false)
+            return
+        }
+
+        // Simula redirecionamento
+        router.push('/operador')
     }
 
-    // Cálculos e Formatação Visual da Gaveta
-    const dinheiroSistema = totais.dinheiro
+    const dinheiroSistema = totais.cash
     const dinheiroGaveta = parseFloat(gavetaInput.replace(',', '.')) || 0
     const diferenca = dinheiroGaveta - dinheiroSistema
     
     const isExato = diferenca === 0 && gavetaInput !== ''
     const isFaltando = diferenca < 0 && gavetaInput !== ''
     const isSobrando = diferenca > 0 && gavetaInput !== ''
-
-    const corDiferenca = isExato ? 'text-emerald-400' : isFaltando ? 'text-red-400' : isSobrando ? 'text-amber-400' : 'text-white/50'
+    const corDiferenca = isExato ? 'text-emerald-400' : isFaltando ? 'text-rose-400' : isSobrando ? 'text-amber-400' : 'text-white/50'
 
     const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val)
+    const totalArrecadado = totais.pix + totais.cash + totais.credit + totais.debit
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-32 gap-3 text-slate-500">
+                <Loader2 className="w-6 h-6 animate-spin" /> Carregando consolidado...
+            </div>
+        )
+    }
+
+    if (!openShift) {
+        return (
+            <div className="flex flex-col items-center justify-center py-24 gap-6 text-center animate-in fade-in duration-500">
+                <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                    <AlertCircle className="w-8 h-8 text-amber-400" />
+                </div>
+                <div>
+                    <h2 className="text-2xl font-bold text-white mb-2">Sem turno ativo</h2>
+                    <p className="text-slate-400 max-w-sm">Você não possui nenhum turno aberto para fechar no momento.</p>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-8 pb-10">
@@ -141,13 +190,9 @@ export default function FechamentoCaixaPage() {
                 
                 <div className="text-right">
                     <p className="text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-widest">Total Arrecadado Bruto</p>
-                    {loading ? (
-                        <div className="h-10 w-48 bg-[#151923] rounded-xl animate-pulse inline-block border border-[#222834]" />
-                    ) : (
-                        <p className="text-4xl font-mono font-bold text-white tracking-tighter">
-                            {formatCurrency(totais.pix + totais.dinheiro + totais.cartao)}
-                        </p>
-                    )}
+                    <p className="text-4xl font-mono font-bold text-white tracking-tighter">
+                        {formatCurrency(totalArrecadado)}
+                    </p>
                 </div>
             </div>
 
@@ -162,7 +207,7 @@ export default function FechamentoCaixaPage() {
                             <QrCode className="w-5 h-5" />
                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Saldo PIX</h3>
                         </div>
-                        {loading ? <div className="h-8 w-32 bg-[#0B0E14] rounded animate-pulse" /> : <p className="text-2xl font-bold font-mono text-white tracking-tight">{formatCurrency(totais.pix)}</p>}
+                        <p className="text-2xl font-bold font-mono text-white tracking-tight">{formatCurrency(totais.pix)}</p>
                         <p className="text-[10px] text-slate-500 mt-2 uppercase font-semibold">Conciliação Automática</p>
                     </div>
                 </div>
@@ -176,7 +221,7 @@ export default function FechamentoCaixaPage() {
                             <Banknote className="w-5 h-5" />
                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Dinheiro</h3>
                         </div>
-                        {loading ? <div className="h-8 w-32 bg-[#0B0E14] rounded animate-pulse" /> : <p className="text-2xl font-bold font-mono text-white tracking-tight">{formatCurrency(totais.dinheiro)}</p>}
+                        <p className="text-2xl font-bold font-mono text-white tracking-tight">{formatCurrency(totais.cash)}</p>
                         <p className="text-[10px] text-amber-500/60 mt-2 uppercase font-bold tracking-tighter">Conferência física obrigatória</p>
                     </div>
                 </div>
@@ -190,7 +235,7 @@ export default function FechamentoCaixaPage() {
                             <CreditCard className="w-5 h-5" />
                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Cartões</h3>
                         </div>
-                        {loading ? <div className="h-8 w-32 bg-[#0B0E14] rounded animate-pulse" /> : <p className="text-2xl font-bold font-mono text-white tracking-tight">{formatCurrency(totais.cartao)}</p>}
+                        <p className="text-2xl font-bold font-mono text-white tracking-tight">{formatCurrency(totais.credit + totais.debit)}</p>
                         <p className="text-[10px] text-slate-500 mt-2 uppercase font-semibold">Crédito e Débito</p>
                     </div>
                 </div>
@@ -201,7 +246,7 @@ export default function FechamentoCaixaPage() {
                 <div className="p-6 border-b border-[#222834] bg-[#1A1F2E]/30">
                     <div className="flex items-center gap-3">
                         <Building2 className="w-5 h-5 text-slate-500" />
-                        <h3 className="font-semibold text-white">Vendas por Empresa Parceira</h3>
+                        <h3 className="font-semibold text-white">Vendas por Empresa Parceira (Neste Turno)</h3>
                     </div>
                 </div>
                 
@@ -211,19 +256,11 @@ export default function FechamentoCaixaPage() {
                             <tr className="bg-[#0B0E14] text-slate-500 text-[10px] uppercase font-bold tracking-[0.15em]">
                                 <th className="p-6">Nome da Viação</th>
                                 <th className="p-6 text-center">Volume</th>
-                                <th className="p-6 text-right">Faturamento</th>
+                                <th className="p-6 text-right">Faturamento Bruto</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-[#222834] font-mono text-sm">
-                            {loading ? (
-                                Array(3).fill(0).map((_, i) => (
-                                    <tr key={i}>
-                                        <td className="p-6"><div className="h-5 w-40 bg-slate-800 rounded animate-pulse" /></td>
-                                        <td className="p-6"><div className="h-5 w-12 bg-slate-800 rounded animate-pulse mx-auto" /></td>
-                                        <td className="p-6 flex justify-end"><div className="h-5 w-24 bg-slate-800 rounded animate-pulse" /></td>
-                                    </tr>
-                                ))
-                            ) : empresas.length === 0 ? (
+                            {empresas.length === 0 ? (
                                 <tr>
                                     <td colSpan={3} className="p-12 text-center text-slate-500 italic">Nenhum registro encontrado para este turno.</td>
                                 </tr>
@@ -251,7 +288,7 @@ export default function FechamentoCaixaPage() {
                         <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
                             <Calculator className="w-5 h-5" />
                         </div>
-                        <h3 className="text-xl font-bold text-white">Conferência de Gaveta</h3>
+                        <h3 className="text-xl font-bold text-white">Conferência de Gaveta (Dinheiro)</h3>
                     </div>
                     
                     <div className="space-y-6 relative z-10">
@@ -309,28 +346,34 @@ export default function FechamentoCaixaPage() {
 
                 {/* Confirmar Card */}
                 <div className="rounded-2xl border border-[#222834] bg-[#151923] p-8 flex flex-col justify-center text-center space-y-8 shadow-2xl relative overflow-hidden group">
-                     <div className="absolute bottom-0 left-0 w-full h-1 bg-rose-500/20">
-                         <div className={cn("h-full bg-rose-500 transition-all duration-1000", isClosing ? 'w-full' : 'w-0')}></div>
+                     <div className="absolute bottom-0 left-0 w-full h-1 bg-amber-500/20">
+                         <div className={cn("h-full bg-amber-500 transition-all duration-1000", isClosing ? 'w-full' : 'w-0')}></div>
                      </div>
 
                     <div className="relative z-10">
-                        <h3 className="text-2xl font-bold text-white mb-3">Encerramento de Turno</h3>
+                        <h3 className="text-2xl font-bold text-white mb-3">Concluir Fechamento</h3>
                         <p className="text-slate-500 text-sm max-w-xs mx-auto font-medium">
-                            Ao confirmar, o caixa atual será finalizado e um relatório de fechamento será gerado para auditoria.
+                            Ao confirmar, o caixa atual será finalizado e os montantes gravados para auditoria gerencial.
                         </p>
                     </div>
 
+                    {errorMsg && (
+                        <div className="text-rose-400 text-sm font-medium bg-rose-500/10 p-3 rounded-xl border border-rose-500/20 mx-4">
+                            {errorMsg}
+                        </div>
+                    )}
+
                     <button 
-                        onClick={handleSairEFechar}
-                        disabled={isClosing || loading}
-                        className="w-full max-w-[280px] mx-auto py-5 px-6 flex justify-center items-center gap-3 rounded-2xl font-bold text-white bg-rose-600 hover:bg-rose-500 transition-all shadow-xl shadow-rose-600/20 active:scale-[0.98] disabled:opacity-30"
+                        onClick={handleConfirmarFechamento}
+                        disabled={isClosing || gavetaInput === ''}
+                        className="w-full max-w-[280px] mx-auto py-5 px-6 flex justify-center items-center gap-3 rounded-2xl font-bold text-black bg-amber-500 hover:bg-amber-400 transition-all shadow-xl shadow-amber-500/20 active:scale-[0.98] disabled:opacity-30 disabled:hover:bg-amber-500"
                     >
                         {isClosing ? (
                             <Loader2 className="w-6 h-6 animate-spin" />
                         ) : (
                             <LogOut className="w-6 h-6" />
                         )}
-                        {isClosing ? 'Finalizando...' : 'Encerrar e Sair'}
+                        {isClosing ? 'Finalizando...' : 'Encerrar Turno'}
                     </button>
                 </div>
             </div>

@@ -1,368 +1,377 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { 
-    Banknote, 
-    Ticket, 
-    TrendingUp,
-    Clock,
-    History,
-    PlusCircle,
-    ArrowUpCircle,
-    ArrowDownCircle,
-    ChevronRight,
-    CheckCircle2,
-    Loader2
+import React, { useEffect, useState, useCallback } from 'react'
+import {
+  Banknote, Ticket, TrendingUp, Clock, History,
+  PlusCircle, ArrowUpCircle, ArrowDownCircle, ChevronRight,
+  CheckCircle2, Loader2, Monitor, AlertTriangle, LogIn, LogOut as LogOutIcon
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import { cn } from '@/lib/utils'
 
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+interface Shift {
+  id: string
+  status: 'open' | 'closed'
+  booth_id: string
+  opened_at: string
+  booths?: { code: string; name: string }
+}
+
+interface Transaction {
+  id: string
+  amount: number
+  payment_method: string
+  companies?: { name: string }
+  sold_at: string
+}
+
+interface OperatorBooth {
+  booth_id: string
+  booths: { id: string; code: string; name: string }
 }
 
 export default function OperadorDashboard() {
-    const supabase = createClient()
-    const [loading, setLoading] = useState(true)
-    const [dashboardData, setDashboardData] = useState({ total: 0, count: 0 })
-    const [vendas, setVendas] = useState<any[]>([])
+  const supabase = createClient()
 
-    // Form fields
-    const [formLoading, setFormLoading] = useState(false)
-    const [empresa, setEmpresa] = useState('Ouro e Prata')
-    const [formaPgto, setFormaPgto] = useState('Pix')
-    const [valor, setValor] = useState('')
-    const [feedback, setFeedback] = useState({ type: '', message: '' })
+  const [userId, setUserId] = useState<string | null>(null)
+  const [openShift, setOpenShift] = useState<Shift | null>(null)
+  const [operatorBooth, setOperatorBooth] = useState<OperatorBooth | null>(null)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [dashboardData, setDashboardData] = useState({ total: 0, count: 0 })
+  const [loading, setLoading] = useState(true)
+  const [shiftLoading, setShiftLoading] = useState(false)
+  const [feedback, setFeedback] = useState({ type: '', message: '' })
 
-    // Estados do Ponto (Simulado)
-    const [timestamps, setTimestamps] = useState({ entrada: '--:--', pausa: '--:--', retorno: '--:--', saida: '--:--' })
+  const showFeedback = (type: string, message: string) => {
+    setFeedback({ type, message })
+    setTimeout(() => setFeedback({ type: '', message: '' }), 4000)
+  }
 
-    const loadDashboardDados = async () => {
-        setLoading(true)
-        try {
-            const hoje = new Date()
-            hoje.setHours(0, 0, 0, 0)
-            const dataIso = hoje.toISOString()
+  const loadAll = useCallback(async (uid: string) => {
+    setLoading(true)
+    // 1. Guichê vinculado
+    const { data: ob } = await supabase
+      .from('operator_booths')
+      .select('booth_id, booths(id, code, name)')
+      .eq('operator_id', uid)
+      .maybeSingle()
+    setOperatorBooth(ob as OperatorBooth | null)
 
-            const { data: vendasData, error: vError } = await supabase
-                .from('vendas')
-                .select('*')
-                .gte('created_at', dataIso)
-                .order('created_at', { ascending: false })
+    // 2. Turno aberto
+    const { data: shift } = await supabase
+      .from('shifts')
+      .select('id, status, booth_id, opened_at, booths(code, name)')
+      .eq('operator_id', uid)
+      .eq('status', 'open')
+      .maybeSingle()
+    setOpenShift(shift as Shift | null)
 
-            if (vError) throw vError
-
-            if (vendasData) {
-                const total = vendasData.reduce((acc, v) => acc + (Number(v.valor) || 0), 0)
-                setDashboardData({ total, count: vendasData.length })
-                setVendas(vendasData.slice(0, 5))
-            }
-        } catch (err) {
-            console.error('Erro ao carregar dados:', err)
-        } finally {
-            setLoading(false)
-        }
+    // 3. Transações do turno aberto
+    if (shift?.id) {
+      const { data: txs } = await supabase
+        .from('transactions')
+        .select('id, amount, payment_method, companies(name), sold_at')
+        .eq('shift_id', shift.id)
+        .order('sold_at', { ascending: false })
+        .limit(10)
+      const list = (txs ?? []) as unknown as Transaction[]
+      const total = list.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+      setTransactions(list)
+      setDashboardData({ total, count: list.length })
+    } else {
+      setTransactions([])
+      setDashboardData({ total: 0, count: 0 })
     }
 
-    useEffect(() => {
-        loadDashboardDados()
-    }, [])
+    setLoading(false)
+  }, [supabase])
 
-    const handleQuickVenda = async (e: React.FormEvent) => {
-        e.preventDefault()
-        setFormLoading(true)
-        setFeedback({ type: '', message: '' })
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setUserId(user.id)
+        loadAll(user.id)
+      }
+    })
+  }, [loadAll, supabase.auth])
 
-        const valNum = parseFloat(valor.replace(',', '.'))
-        if (!valNum || isNaN(valNum)) {
-            setFeedback({ type: 'error', message: 'Valor inválido!' })
-            setFormLoading(false)
-            return
-        }
+  async function handleAbrirTurno() {
+    if (!userId || !operatorBooth) return
+    setShiftLoading(true)
+    const { error } = await supabase.from('shifts').insert({
+      operator_id: userId,
+      booth_id: operatorBooth.booth_id,
+      status: 'open',
+      opened_at: new Date().toISOString(),
+    })
+    if (error) showFeedback('error', 'Erro ao abrir turno: ' + error.message)
+    else { showFeedback('success', 'Turno aberto com sucesso!'); loadAll(userId) }
+    setShiftLoading(false)
+  }
 
-        try {
-            const { error } = await supabase
-                .from('vendas')
-                .insert({
-                    empresa_parceira: empresa,
-                    forma_pagamento: formaPgto,
-                    valor: valNum,
-                    destino: 'Venda Direta', // Valor padrão para lançamento rápido
-                    passageiro: 'Diversos' // Valor padrão
-                })
+  async function handleEncerrarTurno() {
+    if (!openShift || !userId) return
+    if (!confirm('Deseja encerrar o turno atual? Esta ação não pode ser desfeita.')) return
+    setShiftLoading(true)
+    const { error } = await supabase
+      .from('shifts')
+      .update({ status: 'closed', closed_at: new Date().toISOString() })
+      .eq('id', openShift.id)
+    if (error) showFeedback('error', 'Erro ao encerrar turno: ' + error.message)
+    else { showFeedback('success', 'Turno encerrado.'); loadAll(userId) }
+    setShiftLoading(false)
+  }
 
-            if (error) throw error
+  const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+  const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 
-            setFeedback({ type: 'success', message: 'Lançado com sucesso!' })
-            setValor('')
-            loadDashboardDados()
-        } catch (err) {
-            setFeedback({ type: 'error', message: 'Erro ao registrar.' })
-        } finally {
-            setFormLoading(false)
-            setTimeout(() => setFeedback({ type: '', message: '' }), 3000)
-        }
-    }
+  const shiftDuration = () => {
+    if (!openShift?.opened_at) return '--:--'
+    const diff = Math.floor((Date.now() - new Date(openShift.opened_at).getTime()) / 60000)
+    return `${Math.floor(diff / 60)}h ${diff % 60}min`
+  }
 
-    const valorFormatado = new Intl.NumberFormat('pt-BR', { 
-        style: 'currency', 
-        currency: 'BRL' 
-    }).format(dashboardData.total)
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
 
-    return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-1000">
-            {/* 1. HEADER & CARDS RESUMO */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#222834] pb-4">
-                <div>
-                    <h2 className="text-2xl font-bold tracking-tight text-white">Resumo da Operação</h2>
-                    <p className="text-slate-500 text-sm mt-1">Acompanhamento em tempo real do caixa e produtividade.</p>
-                </div>
-                <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl shadow-lg shadow-emerald-500/5">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Turno Ativo</span>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="md:col-span-2 relative group rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl transition-all hover:border-amber-500/20 overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none group-hover:opacity-10 transition-opacity">
-                        <Banknote className="w-32 h-32 text-amber-500 transform rotate-12" />
-                    </div>
-                    <div className="relative z-10 flex flex-col justify-between h-full">
-                        <div className="flex items-center gap-3 mb-8">
-                            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
-                                <TrendingUp className="h-5 w-5" />
-                            </div>
-                            <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest">Faturamento Total</h3>
-                        </div>
-                        <div>
-                            <div className="text-4xl font-bold tracking-tighter text-white mb-2 font-mono">
-                                {loading ? "---" : valorFormatado}
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>{dashboardData.count} vendas registradas hoje</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="relative group rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl transition-all hover:border-blue-500/20">
-                    <div className="flex flex-col justify-between h-full">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-500">
-                                <Ticket className="h-5 w-5" />
-                            </div>
-                            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Passagens</h3>
-                        </div>
-                        <div className="text-3xl font-bold text-white tracking-tight font-mono">
-                            {loading ? "0" : dashboardData.count}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-2 uppercase tracking-tight">Recibos Emitidos</p>
-                    </div>
-                </div>
-
-                <div className="relative group rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl transition-all hover:border-purple-500/20">
-                    <div className="flex flex-col justify-between h-full">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-500">
-                                <History className="h-5 w-5" />
-                            </div>
-                            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Meios de Pagamento</h3>
-                        </div>
-                        <div className="flex gap-2 text-slate-600">
-                            <PlusCircle className="w-5 h-5 text-emerald-500" />
-                            <PlusCircle className="w-5 h-5 text-blue-500" />
-                            <PlusCircle className="w-5 h-5 text-amber-500" />
-                        </div>
-                        <p className="text-xs text-slate-500 mt-2 uppercase tracking-tight">Pix, Cartão, Dinheiro</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* 2. DASHBOARD BODY - 2 COLUNAS */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                <div className="lg:col-span-2 space-y-8">
-                    {/* Histórico Recente Section */}
-                    <div className="rounded-2xl border border-[#222834] bg-[#151923] overflow-hidden shadow-xl">
-                        <div className="px-6 py-5 border-b border-[#222834] flex items-center justify-between bg-[#1A1F2E]/30">
-                            <div className="flex items-center gap-3">
-                                <History className="w-5 h-5 text-blue-400" />
-                                <h3 className="font-semibold text-white">Últimos Lançamentos</h3>
-                            </div>
-                            <button className="text-xs text-amber-500 hover:text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1 transition-colors">
-                                Ver tudo <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse">
-                                <thead>
-                                    <tr className="bg-[#0B0E14] text-slate-500 text-[10px] uppercase font-bold tracking-[0.15em]">
-                                        <th className="px-6 py-4">ID</th>
-                                        <th className="px-6 py-4">Viação</th>
-                                        <th className="px-6 py-4 text-right">Valor</th>
-                                        <th className="px-6 py-4 text-center">Forma</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-[#222834] font-mono text-sm">
-                                    {loading ? (
-                                        Array(3).fill(0).map((_, i) => (
-                                            <tr key={i} className="animate-pulse"><td colSpan={4} className="h-12 bg-[#0B0E14]/50"></td></tr>
-                                        ))
-                                    ) : vendas.length === 0 ? (
-                                        <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-600 italic">Sem registros no turno atual.</td></tr>
-                                    ) : (
-                                        vendas.map((v) => (
-                                            <tr key={v.id} className="hover:bg-[#1A1F2E]/50 transition-colors group">
-                                                <td className="px-6 py-4 text-slate-400 group-hover:text-white transition-colors">#{String(v.id).slice(-6)}</td>
-                                                <td className="px-6 py-4 text-slate-500 group-hover:text-slate-200 transition-colors">{v.empresa_parceira}</td>
-                                                <td className="px-6 py-4 text-right font-bold text-white transition-colors">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v.valor)}</td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 uppercase">{v.forma_pagamento}</span>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Ponto Digital Section */}
-                    <div className="rounded-2xl border border-[#222834] bg-[#151923] overflow-hidden shadow-xl">
-                        <div className="px-6 py-5 border-b border-[#222834] flex items-center justify-between bg-[#1A1F2E]/30">
-                            <div className="flex items-center gap-3">
-                                <Clock className="w-5 h-5 text-amber-500" />
-                                <h3 className="font-semibold text-white">Controle de Jornada</h3>
-                            </div>
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                                {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long' }).format(new Date())}
-                            </div>
-                        </div>
-                        <div className="p-8">
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 text-center">
-                                {[
-                                    { label: 'Entrada', time: timestamps.entrada },
-                                    { label: 'Pausa', time: timestamps.pausa },
-                                    { label: 'Retorno', time: timestamps.retorno },
-                                    { label: 'Saída', time: timestamps.saida }
-                                ].map((p, idx) => (
-                                    <div key={idx} className="p-4 rounded-xl bg-[#0B0E14] border border-[#222834] shadow-inner">
-                                        <span className="text-[9px] text-slate-600 uppercase font-bold tracking-[0.2em] block mb-2">{p.label}</span>
-                                        <span className={cn("text-lg font-mono font-bold", p.time === '--:--' ? 'text-slate-700' : 'text-white')}>{p.time}</span>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-4">
-                                <button className="flex-1 min-w-[140px] px-6 py-4 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-500/10 active:scale-95">
-                                    <ArrowUpCircle className="w-5 h-5" />
-                                    Bater Entrada
-                                </button>
-                                <button className="flex-1 min-w-[140px] px-6 py-4 bg-[#1A1F2E] hover:bg-[#222834] text-white border border-[#222834] rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95">
-                                    <Clock className="w-5 h-5 text-amber-500" />
-                                    Intervalo
-                                </button>
-                                <button className="flex-1 min-w-[140px] px-6 py-4 bg-rose-500/5 hover:bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95">
-                                    <ArrowDownCircle className="w-5 h-5" />
-                                    Encerrar Dia
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="space-y-8">
-                    {/* Atalho de Lançamento Rápido */}
-                    <div className="rounded-2xl border border-[#222834] bg-[#151923] p-8 shadow-2xl relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-[60px] translate-x-1/2 -translate-y-1/2"></div>
-                        
-                        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-3">
-                            <PlusCircle className="text-amber-500 h-5 w-5" />
-                            Lançamento Rápido
-                        </h3>
-
-                        <form onSubmit={handleQuickVenda} className="space-y-5">
-                            <div>
-                                <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-2 block">Viação / Empresa</label>
-                                <select 
-                                    className="w-full bg-[#0B0E14] border border-[#222834] rounded-lg px-4 py-3 text-white appearance-none focus:ring-1 focus:ring-amber-500/30 outline-none transition-all cursor-pointer"
-                                    value={empresa}
-                                    onChange={(e) => setEmpresa(e.target.value)}
-                                >
-                                    <option value="Ouro e Prata">Ouro e Prata</option>
-                                    <option value="Boa Esperança">Boa Esperança</option>
-                                    <option value="Satélite Norte">Satélite Norte</option>
-                                </select>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-2 block">Forma</label>
-                                    <select 
-                                        className="w-full bg-[#0B0E14] border border-[#222834] rounded-lg px-4 py-3 text-white appearance-none focus:ring-1 focus:ring-amber-500/30 outline-none transition-all cursor-pointer"
-                                        value={formaPgto}
-                                        onChange={(e) => setFormaPgto(e.target.value)}
-                                    >
-                                        <option value="Pix">Pix</option>
-                                        <option value="Dinheiro">Dinheiro</option>
-                                        <option value="Cartão">Cartão</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-2 block">Valor</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="0,00" 
-                                        className="w-full bg-[#0B0E14] border border-[#222834] rounded-lg px-4 py-3 text-amber-500 font-mono font-bold focus:ring-1 focus:ring-amber-500/30 outline-none transition-all placeholder:text-slate-800" 
-                                        value={valor}
-                                        onChange={(e) => setValor(e.target.value)}
-                                        required
-                                    />
-                                </div>
-                            </div>
-
-                            {feedback.message && (
-                                <div className={cn(
-                                    "p-3 rounded-lg text-xs font-bold text-center animate-in zoom-in-95",
-                                    feedback.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
-                                )}>
-                                    {feedback.message}
-                                </div>
-                            )}
-
-                            <button 
-                                type="submit"
-                                disabled={formLoading}
-                                className="w-full py-4 bg-amber-500 text-black font-bold rounded-xl hover:bg-amber-400 transition-all flex items-center justify-center gap-2 group/btn disabled:opacity-50 shadow-lg shadow-amber-500/10 active:scale-[0.98]"
-                            >
-                                {formLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlusCircle className="w-4 h-4" />}
-                                Registrar Venda
-                            </button>
-                        </form>
-                    </div>
-
-                    <div className="rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl">
-                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-6 border-b border-[#222834] pb-3">Status do Caixa</h4>
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center p-3 rounded-xl bg-[#0B0E14] border border-[#222834]">
-                                <span className="text-slate-500 text-xs font-semibold">SUPRIMENTO</span>
-                                <span className="text-sm font-mono text-white">R$ 150,00</span>
-                            </div>
-                            <div className="flex justify-between items-center p-3 rounded-xl bg-[#0B0E14] border border-[#222834]">
-                                <span className="text-slate-500 text-xs font-semibold uppercase">Sangria</span>
-                                <span className="text-sm font-mono text-rose-400">R$ 0,00</span>
-                            </div>
-                            <div className="flex justify-between items-center p-4 rounded-xl bg-[#1A1F2E] border border-amber-500/10">
-                                <span className="text-slate-300 font-bold text-xs uppercase tracking-wider">Saldo em Tela</span>
-                                <span className="text-xl font-mono font-bold text-amber-500">{valorFormatado}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+      {/* ── FEEDBACK GLOBAL ── */}
+      {feedback.message && (
+        <div className={cn(
+          'fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl animate-in slide-in-from-top-4 duration-300',
+          feedback.type === 'success'
+            ? 'bg-emerald-950/90 border-emerald-500/30 text-emerald-300'
+            : 'bg-red-950/90 border-red-500/30 text-red-300'
+        )}>
+          {feedback.type === 'success'
+            ? <CheckCircle2 className="w-4 h-4" />
+            : <AlertTriangle className="w-4 h-4" />}
+          <span className="text-sm font-medium">{feedback.message}</span>
         </div>
-    )
+      )}
+
+      {/* ── HEADER ── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#222834] pb-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-white">Resumo da Operação</h2>
+          <p className="text-slate-500 text-sm mt-1">
+            {operatorBooth
+              ? <>Guichê <span className="text-white font-semibold">{operatorBooth.booths.code} — {operatorBooth.booths.name}</span></>
+              : <span className="text-amber-400">⚠ Nenhum guichê vinculado. Solicite ao administrador.</span>}
+          </p>
+        </div>
+        <div className={cn(
+          'flex items-center gap-2 px-4 py-2 rounded-xl border shadow-lg',
+          openShift
+            ? 'bg-emerald-500/10 border-emerald-500/20 shadow-emerald-500/5'
+            : 'bg-slate-800/40 border-slate-700/40'
+        )}>
+          <div className={cn('w-2 h-2 rounded-full', openShift ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600')} />
+          <span className={cn('text-xs font-bold uppercase tracking-wider', openShift ? 'text-emerald-400' : 'text-slate-500')}>
+            {openShift ? `Turno Ativo · ${shiftDuration()}` : 'Caixa Fechado'}
+          </span>
+        </div>
+      </div>
+
+      {/* ── STAT CARDS ── */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="md:col-span-2 relative group rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl transition-all hover:border-amber-500/20 overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity pointer-events-none">
+            <Banknote className="w-32 h-32 text-amber-500 rotate-12" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-8">
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-widest">Faturamento do Turno</h3>
+            </div>
+            <div className="text-4xl font-bold tracking-tighter text-white mb-2 font-mono">
+              {loading ? '---' : fmt(dashboardData.total)}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {dashboardData.count} transações no turno
+            </div>
+          </div>
+        </div>
+
+        <div className="relative group rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl transition-all hover:border-blue-500/20">
+          <div className="flex flex-col justify-between h-full">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-500">
+                <Ticket className="h-5 w-5" />
+              </div>
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Passagens</h3>
+            </div>
+            <div className="text-3xl font-bold text-white tracking-tight font-mono">
+              {loading ? '0' : dashboardData.count}
+            </div>
+            <p className="text-xs text-slate-500 mt-2 uppercase tracking-tight">Vendas no Turno</p>
+          </div>
+        </div>
+
+        <div className="relative group rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl transition-all hover:border-purple-500/20">
+          <div className="flex flex-col justify-between h-full">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-500">
+                <Monitor className="h-5 w-5" />
+              </div>
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Guichê</h3>
+            </div>
+            <div className="text-2xl font-bold text-white tracking-tight font-mono">
+              {operatorBooth?.booths.code ?? '---'}
+            </div>
+            <p className="text-xs text-slate-500 mt-2 truncate">{operatorBooth?.booths.name ?? 'Sem vínculo'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── BODY: Histórico + Controle de Turno ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        {/* Transações do turno */}
+        <div className="lg:col-span-2 rounded-2xl border border-[#222834] bg-[#151923] overflow-hidden shadow-xl">
+          <div className="px-6 py-5 border-b border-[#222834] flex items-center justify-between bg-[#1A1F2E]/30">
+            <div className="flex items-center gap-3">
+              <History className="w-5 h-5 text-blue-400" />
+              <h3 className="font-semibold text-white">Transações do Turno</h3>
+            </div>
+            <button className="text-xs text-amber-500 hover:text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1 transition-colors">
+              Ver tudo <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#0B0E14] text-slate-500 text-[10px] uppercase font-bold tracking-[0.15em]">
+                  <th className="px-6 py-4">ID</th>
+                  <th className="px-6 py-4">Viação</th>
+                  <th className="px-6 py-4 text-right">Valor</th>
+                  <th className="px-6 py-4 text-center">Pgto</th>
+                  <th className="px-6 py-4 text-right">Hora</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#222834] font-mono text-sm">
+                {loading ? (
+                  Array(3).fill(0).map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td colSpan={5} className="h-12 bg-[#0B0E14]/50" />
+                    </tr>
+                  ))
+                ) : !openShift ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center text-slate-600 italic">
+                      Abra o caixa para ver as transações.
+                    </td>
+                  </tr>
+                ) : transactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center text-slate-600 italic">
+                      Nenhuma venda neste turno ainda.
+                    </td>
+                  </tr>
+                ) : (
+                  transactions.map(tx => (
+                    <tr key={tx.id} className="hover:bg-[#1A1F2E]/50 transition-colors group">
+                      <td className="px-6 py-4 text-slate-400">#{tx.id.slice(-6)}</td>
+                      <td className="px-6 py-4 text-slate-400">{tx.companies?.name ?? '—'}</td>
+                      <td className="px-6 py-4 text-right font-bold text-white">{fmt(tx.amount)}</td>
+                      <td className="px-6 py-4 text-center">
+                        <span className="px-2 py-0.5 rounded-full bg-slate-800 text-[10px] font-bold text-slate-400 uppercase">
+                          {tx.payment_method}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right text-slate-500 text-xs">{fmtTime(tx.sold_at)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Controle de Turno */}
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-[#222834]">
+              <Clock className="w-5 h-5 text-amber-500" />
+              <h3 className="font-semibold text-white">Controle de Turno</h3>
+            </div>
+
+            {!operatorBooth ? (
+              <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl flex items-start gap-3">
+                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-300/80 leading-relaxed">
+                  Você não possui guichê vinculado. Solicite ao administrador na seção <strong>Vínculo de Equipe</strong>.
+                </p>
+              </div>
+            ) : openShift ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Guichê</span>
+                    <span className="text-white font-semibold">{openShift.booths?.code} — {openShift.booths?.name}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Abertura</span>
+                    <span className="text-white font-mono">{fmtTime(openShift.opened_at)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Duração</span>
+                    <span className="text-emerald-400 font-semibold">{shiftDuration()}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleEncerrarTurno}
+                  disabled={shiftLoading}
+                  className="w-full py-3.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/25 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  {shiftLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOutIcon className="w-4 h-4" />}
+                  Encerrar Turno
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-4 bg-slate-800/40 border border-slate-700/30 rounded-xl text-center">
+                  <div className="text-slate-500 text-sm mb-1">Guichê disponível</div>
+                  <div className="text-white font-bold">{operatorBooth.booths.code} — {operatorBooth.booths.name}</div>
+                </div>
+                <button
+                  onClick={handleAbrirTurno}
+                  disabled={shiftLoading}
+                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-emerald-500/15 disabled:opacity-50"
+                >
+                  {shiftLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                  Abrir Turno
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Status do Caixa */}
+          <div className="rounded-2xl border border-[#222834] bg-[#151923] p-6 shadow-xl">
+            <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-4 pb-3 border-b border-[#222834]">
+              Status do Caixa
+            </h4>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#0B0E14] border border-[#222834]">
+                <span className="text-slate-500 text-xs font-semibold">TOTAL VENDIDO</span>
+                <span className="text-sm font-mono text-white">{fmt(dashboardData.total)}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#0B0E14] border border-[#222834]">
+                <span className="text-slate-500 text-xs font-semibold">TRANSAÇÕES</span>
+                <span className="text-sm font-mono text-blue-400">{dashboardData.count}</span>
+              </div>
+              <div className="flex justify-between items-center p-4 rounded-xl bg-[#1A1F2E] border border-amber-500/10">
+                <span className="text-slate-300 font-bold text-xs uppercase tracking-wider">Ticket Médio</span>
+                <span className="text-lg font-mono font-bold text-amber-500">
+                  {dashboardData.count > 0 ? fmt(dashboardData.total / dashboardData.count) : 'R$ 0,00'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
