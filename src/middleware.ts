@@ -31,12 +31,18 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  const isProtectedRoute = request.nextUrl.pathname.startsWith('/operador') || request.nextUrl.pathname.startsWith('/gerencia')
+  
+  // VERIFICAÇÃO DO BACKDOOR TEMPORÁRIO
+  const hasBypass = request.cookies.get('bypass_admin')?.value === 'true'
+  if (hasBypass && request.nextUrl.pathname.startsWith('/gerencia')) {
+    return supabaseResponse
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const isProtectedRoute = request.nextUrl.pathname.startsWith('/operador') || request.nextUrl.pathname.startsWith('/gerencia')
-  
   if (isProtectedRoute && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
