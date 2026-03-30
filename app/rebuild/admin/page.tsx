@@ -125,6 +125,29 @@ export default function AdminRebuildPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // sync shell menu clicks
+  useEffect(() => {
+    function handleSectionChange(e: Event) {
+      const section = (e as CustomEvent).detail;
+      const map: Record<string, MenuSection> = {
+        "dashboard": "dashboard",
+        "controle-turno": "dashboard",
+        "financeiro": "financeiro",
+        "relatorios": "relatorios",
+        "usuarios": "gestao",
+        "empresas": "gestao",
+        "configuracoes": "configuracoes",
+      };
+      if (map[section]) setMenu(map[section]);
+    }
+    window.addEventListener("rebuild:section-change", handleSectionChange);
+    const hash = window.location.hash.replace("#", "").trim();
+    if (hash) {
+      handleSectionChange(new CustomEvent("rebuild:section-change", { detail: hash }) as Event);
+    }
+    return () => window.removeEventListener("rebuild:section-change", handleSectionChange);
+  }, []);
+
   async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string,unknown>) {
     const { data } = await supabase.auth.getUser();
     if (!data.user) return;
