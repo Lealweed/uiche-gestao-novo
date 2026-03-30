@@ -18,19 +18,28 @@ export default function LoginPage() {
         setLoading(true)
         setError('')
 
-        const { error: authError } = await supabase.auth.signInWithPassword({
+        const { error: authError, data: authData } = await supabase.auth.signInWithPassword({
             email,
             password,
         })
 
-        if (authError) {
+        if (authError || !authData.user) {
             setError('E-mail ou senha incorretos. Tente novamente.')
             setLoading(false)
             return
         }
 
-        // O middleware vai automaticamente redirecionar a pessoa para a tela certa
-        router.push('/operador')
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('user_id', authData.user.id)
+            .maybeSingle()
+
+        if (profile?.role === 'admin' || profile?.role === 'manager' || authData.user.email === 'admin@centralviagens.com.br') {
+            router.push('/gerencia')
+        } else {
+            router.push('/operador')
+        }
         router.refresh()
     }
     return (
