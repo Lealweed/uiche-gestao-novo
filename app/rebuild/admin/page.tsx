@@ -13,6 +13,7 @@ import { StatCard } from "@/components/rebuild/ui/stat-card";
 import { Card } from "@/components/rebuild/ui/card";
 import { Toast, type ToastType } from "@/components/rebuild/ui/toast";
 import { exportToCSV } from "@/lib/csv-export";
+import { DollarSign, TrendingUp, AlertCircle, Users, Wallet, BarChart3 } from "lucide-react";
 
 
 const supabase = createClient();
@@ -41,21 +42,17 @@ function getCompanyPct(c: Company) { return Number(c.commission_percent ?? c.com
 function nameOf(x: { full_name: string }|{ full_name: string }[]|null) { return Array.isArray(x) ? x[0]?.full_name : x?.full_name; }
 function boothOf(x: { name: string; code: string }|{ name: string; code: string }[]|null) { return Array.isArray(x) ? x[0] : x; }
 
-// ── small helper components ───────────────────────────────────
-// KpiCard substituído por StatCard do kit
-
 function SectionCard({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="rb-panel">
-      <div className="rb-panel-head">
-        <p className="rb-panel-title">{title}</p>
+    <Card>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
         {action}
       </div>
       {children}
-    </div>
+    </Card>
   );
 }
-
 
 function StatusBadge({ active }: { active: boolean }) {
   return <Badge variant={active ? "success" : "neutral"}>{active ? "ATIVO" : "INATIVO"}</Badge>;
@@ -63,14 +60,20 @@ function StatusBadge({ active }: { active: boolean }) {
 
 function NavBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick}
-      className={`rb-nav-item${active ? " active" : ""}`}>
+    <button 
+      type="button" 
+      onClick={onClick}
+      className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+        active 
+          ? "bg-primary/10 text-primary" 
+          : "text-muted hover:text-foreground hover:bg-slate-100"
+      }`}
+    >
       {label}
     </button>
   );
 }
 
-// ── main component ────────────────────────────────────────────
 export default function AdminRebuildPage() {
   const router = useRouter();
   const [rows, setRows]           = useState<ShiftTotal[]>([]);
@@ -113,7 +116,6 @@ export default function AdminRebuildPage() {
   const [newProfileActive, setNewProfileActive]       = useState(true);
   const [resetEmail, setResetEmail]                   = useState("");
 
-  // auth guard
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -125,7 +127,6 @@ export default function AdminRebuildPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // sync shell menu clicks
   useEffect(() => {
     function handleSectionChange(e: Event) {
       const section = (e as CustomEvent).detail;
@@ -213,17 +214,13 @@ export default function AdminRebuildPage() {
     } finally { setLoading(false); }
   }
 
-  // computed summaries
   const repassesComputed = useMemo(() => {
     let faturamento = 0;
     let central = 0;
     let repasse = 0;
     const comps = new Map<string, { id: string, name: string, amount: number, central: number, repasse: number }>();
-    
-    // pctMap to quickly get the commission percentage of each company
     const pctMap = new Map(companies.map(c => [c.id, getCompanyPct(c)]));
 
-    // reportTxs is already filtered by date and status = 'posted'
     for (const tx of reportTxs) {
       const v = Number(tx.amount || 0);
       const cId = tx.company_id;
@@ -278,7 +275,6 @@ export default function AdminRebuildPage() {
   const filteredProfiles = useMemo(() => { const t = profileSearch.trim().toLowerCase(); return t ? profiles.filter(p => [p.full_name, p.cpf??"", p.phone??"", p.role].join(" ").toLowerCase().includes(t)) : profiles; }, [profiles, profileSearch]);
   const filteredBooths   = useMemo(() => { const t = boothSearch.trim().toLowerCase(); return t ? booths.filter(b => `${b.code} ${b.name}`.toLowerCase().includes(t)) : booths; }, [booths, boothSearch]);
 
-  // mutations
   async function createCompany(e: FormEvent) {
     e.preventDefault();
     let { error } = await supabase.from("companies").insert({ name: companyName.trim(), commission_percent: Number(companyPct), active: true });
@@ -295,7 +291,7 @@ export default function AdminRebuildPage() {
     e.preventDefault();
     const { error } = await supabase.from("booths").insert({ code: boothCode.trim().toUpperCase(), name: boothName.trim(), active: true });
     if (error) return setMessage(`Erro: ${error.message}`);
-    setBoothCode(""); setBoothName(""); setMessage("Guichê cadastrado."); await refreshData();
+    setBoothCode(""); setBoothName(""); setMessage("Guiche cadastrado."); await refreshData();
   }
 
   async function createCategory(e: FormEvent) {
@@ -366,131 +362,157 @@ export default function AdminRebuildPage() {
 
   const navSections: { key: MenuSection; label: string }[] = [
     { key:"dashboard", label:"Dashboard" }, { key:"operadores", label:"Operadores" },
-    { key:"financeiro", label:"Financeiro" }, { key:"gestao", label:"Gestão" },
-    { key:"relatorios", label:"Relatórios" }, { key:"configuracoes", label:"Configurações" },
+    { key:"financeiro", label:"Financeiro" }, { key:"gestao", label:"Gestao" },
+    { key:"relatorios", label:"Relatorios" }, { key:"configuracoes", label:"Configuracoes" },
   ];
 
   const show = (k: MenuSection) => menu === k;
 
   function handleExportCSV() {
     exportToCSV("repasses-viacao", repassesComputed.viacoes, [
-      { key: "name", label: "Empresa / Viação" },
+      { key: "name", label: "Empresa / Viacao" },
       { key: "amount", label: "Faturamento Bruto" },
       { key: "central", label: "Taxa Retida (Central)" },
-      { key: "repasse", label: "Repasse Líquido" },
+      { key: "repasse", label: "Repasse Liquido" },
     ]);
   }
 
   return (
     <RebuildShell>
-      {/* ── topbar ── */}
-      <div className="rb-topbar mb-5">
+      {/* Topbar */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <p className="rb-topbar-overline">Central Viagem</p>
-          <p className="rb-topbar-title">Painel Administrativo</p>
+          <p className="text-xs font-semibold text-primary uppercase tracking-wider">Central Viagem</p>
+          <h1 className="text-2xl font-bold text-foreground">Painel Administrativo</h1>
         </div>
-        <div className="rb-topbar-actions">
-          <button className="rb-btn-ghost" type="button" onClick={() => refreshData()} disabled={loading}>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={() => refreshData()} disabled={loading}>
             {loading ? "Atualizando..." : "Atualizar"}
-          </button>
-          <button className="rb-btn-ghost" type="button" onClick={() => window.print()}>Imprimir</button>
+          </Button>
+          <Button variant="ghost" onClick={() => window.print()}>Imprimir</Button>
         </div>
       </div>
 
-      {/* ── layout: sidebar nav + content ── */}
-      <div style={{ display:"grid", gap:"1.25rem", gridTemplateColumns:"200px 1fr", alignItems:"start" }}>
-        {/* nav sidebar */}
-        <nav className="rb-panel" style={{ padding:"0.5rem" }}>
-          {navSections.map(s => <NavBtn key={s.key} label={s.label} active={menu===s.key} onClick={()=>setMenu(s.key)} />)}
-        </nav>
+      {/* Layout: sidebar nav + content */}
+      <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
+        {/* Nav sidebar */}
+        <Card className="p-2 h-fit">
+          <nav className="space-y-1">
+            {navSections.map(s => <NavBtn key={s.key} label={s.label} active={menu===s.key} onClick={()=>setMenu(s.key)} />)}
+          </nav>
+        </Card>
 
-        {/* main content */}
-        <div style={{ display:"grid", gap:"1.25rem" }}>
-
-          {/* global message */}
+        {/* Main content */}
+        <div className="space-y-6">
+          {/* Global message */}
           <Toast message={message} type={toastType} onClose={() => setMessage(null)} />
 
-          {/* ═══ DASHBOARD ═══ */}
+          {/* DASHBOARD */}
           {show("dashboard") && (
             <>
               {loading ? (
-                <div className="rb-panel rb-table-empty">Carregando indicadores...</div>
+                <Card className="text-center py-8 text-muted">Carregando indicadores...</Card>
               ) : (
                 <>
-                  <div className="rb-panel mb-6">
-                    <form style={{ display:"flex", flexWrap:"wrap", gap:"0.75rem", alignItems:"flex-end" }} onSubmit={e => { e.preventDefault(); refreshData(); }}>
-                      <div>
-                        <label className="rb-form-label">Data inicial</label>
-                        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className="rb-field" />
-                      </div>
-                      <div>
-                        <label className="rb-form-label">Data final</label>
-                        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className="rb-field" />
-                      </div>
-                      <button className="rb-btn-primary" type="submit">Filtrar período</button>
-                      <button className="rb-btn-ghost" type="button" onClick={() => { setDateFrom(""); setDateTo(""); refreshData("",""); }}>Limpar</button>
+                  {/* Date filter */}
+                  <Card>
+                    <form className="flex flex-wrap items-end gap-4" onSubmit={e => { e.preventDefault(); refreshData(); }}>
+                      <Input type="date" label="Data inicial" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
+                      <Input type="date" label="Data final" value={dateTo} onChange={e=>setDateTo(e.target.value)} />
+                      <Button type="submit">Filtrar periodo</Button>
+                      <Button variant="ghost" type="button" onClick={() => { setDateFrom(""); setDateTo(""); refreshData("",""); }}>Limpar</Button>
                     </form>
+                  </Card>
+
+                  <SectionHeader title="Auditoria e Repasses (Consolidado do periodo)" />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <StatCard 
+                      label="Faturamento Total" 
+                      value={`R$ ${repassesComputed.faturamento.toFixed(2)}`} 
+                      delta={`${reportTxs.length} transacoes`}
+                      icon={<DollarSign size={20} />}
+                    />
+                    <StatCard 
+                      label="Caixa na Central" 
+                      value={`R$ ${repassesComputed.central.toFixed(2)}`} 
+                      delta="Lucro (taxas)"
+                      deltaType="positive"
+                      icon={<TrendingUp size={20} />}
+                    />
+                    <StatCard 
+                      label="Valor a Repassar" 
+                      value={`R$ ${repassesComputed.repasse.toFixed(2)}`} 
+                      delta="Para viacoes"
+                      icon={<Wallet size={20} />}
+                    />
                   </div>
 
-                  <SectionHeader title="Auditoria e Repasses (Consolidado do período)" />
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 mt-2">
-                    <StatCard label="Faturamento Total" value={`R$ ${repassesComputed.faturamento.toFixed(2)}`} delta={`${reportTxs.length} transações`} />
-                    <StatCard label="Caixa na Central" value={`R$ ${repassesComputed.central.toFixed(2)}`} delta="Lucro (taxas)" />
-                    <StatCard label="Valor a Repassar" value={`R$ ${repassesComputed.repasse.toFixed(2)}`} delta="Para viações" />
-                  </div>
-
-                  <Card className="p-0 mb-6 relative">
-                    <div className="absolute top-4 right-4 z-10">
-                      <Button variant="ghost" size="sm" type="button" onClick={handleExportCSV}>Exportar CSV</Button>
+                  <Card>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-foreground">Consolidado por Viacao</h3>
+                      <Button variant="ghost" size="sm" onClick={handleExportCSV}>Exportar CSV</Button>
                     </div>
-                    <SectionHeader title="Consolidado por Viação" />
                     <DataTable
                       columns={[
-                        { key: "empresa", header: "Empresa / Viação", render: (v) => <span className="font-semibold">{v.name}</span> },
+                        { key: "empresa", header: "Empresa / Viacao", render: (v) => <span className="font-semibold text-foreground">{v.name}</span> },
                         { key: "faturamento", header: "Faturamento Bruto", render: (v) => `R$ ${v.amount.toFixed(2)}` },
-                        { key: "central", header: "Taxa Retida (Central)", render: (v) => <span className="text-emerald-400 font-bold">R$ {v.central.toFixed(2)}</span> },
-                        { key: "repasse", header: "Repasse Líquido", render: (v) => <span className="text-amber-500 font-bold">R$ {v.repasse.toFixed(2)}</span> },
+                        { key: "central", header: "Taxa Retida (Central)", render: (v) => <span className="text-emerald-600 font-bold">R$ {v.central.toFixed(2)}</span> },
+                        { key: "repasse", header: "Repasse Liquido", render: (v) => <span className="text-amber-600 font-bold">R$ {v.repasse.toFixed(2)}</span> },
                       ]}
                       rows={repassesComputed.viacoes}
-                      emptyMessage="Nenhum faturamento registrado no período."
+                      emptyMessage="Nenhum faturamento registrado no periodo."
                     />
                   </Card>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 mt-8">
-                    <StatCard label="Turnos abertos" value={String(summary.abertos)} delta={`${summary.pendencias} pendência(s)`} />
-                    <StatCard label="Ajustes pendentes" value={String(adjustments.length)} delta="Aguardando revisão" />
-                    <StatCard label="Logs recentes" value={String(auditLogs.length)} delta="Registros de auditoria" />
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <StatCard 
+                      label="Turnos abertos" 
+                      value={String(summary.abertos)} 
+                      delta={`${summary.pendencias} pendencia(s)`}
+                      icon={<Users size={20} />}
+                    />
+                    <StatCard 
+                      label="Ajustes pendentes" 
+                      value={String(adjustments.length)} 
+                      delta="Aguardando revisao"
+                      icon={<AlertCircle size={20} />}
+                    />
+                    <StatCard 
+                      label="Logs recentes" 
+                      value={String(auditLogs.length)} 
+                      delta="Registros de auditoria"
+                      icon={<BarChart3 size={20} />}
+                    />
                   </div>
 
                   {/* Shifts table */}
-                  <Card className="p-0">
-                    <SectionHeader title="Controle de turnos" />
+                  <Card>
+                    <SectionHeader title="Controle de turnos" className="mb-4" />
                     <DataTable
                       columns={[
-                        { key: "booth", header: "Guichê", render: (r) => r.booth_name },
+                        { key: "booth", header: "Guiche", render: (r) => r.booth_name },
                         { key: "operator", header: "Operador", render: (r) => r.operator_name },
                         { key: "status", header: "Status", render: (r) => <Badge variant={r.status==="open"?"success":"neutral"}>{r.status==="open"?"ABERTO":"FECHADO"}</Badge> },
                         { key: "receita", header: "Receita", render: (r) => <span className="font-bold">R$ {Number(r.gross_amount||0).toFixed(2)}</span> },
-                        { key: "pendencias", header: "Pendências", render: (r) => Number(r.missing_card_receipts||0)>0 ? <Badge variant="warning">{r.missing_card_receipts}</Badge> : "—" },
-                        { key: "acao", header: "⚙", render: (r) => r.status==="open" ? <Button variant="ghost" size="sm" onClick={()=>forceCloseShift(r.shift_id)}>Encerrar</Button> : null },
+                        { key: "pendencias", header: "Pendencias", render: (r) => Number(r.missing_card_receipts||0)>0 ? <Badge variant="warning">{r.missing_card_receipts}</Badge> : "-" },
+                        { key: "acao", header: "Acao", render: (r) => r.status==="open" ? <Button variant="ghost" size="sm" onClick={()=>forceCloseShift(r.shift_id)}>Encerrar</Button> : null },
                       ]}
                       rows={rows.slice(0,50)}
                       emptyMessage="Nenhum turno encontrado."
-                      className="mt-2"
                     />
                   </Card>
 
                   {/* Adjustments */}
                   {adjustments.length > 0 && (
-                    <Card className="p-0">
-                      <SectionHeader title={`Ajustes pendentes (${adjustments.length})`} />
+                    <Card>
+                      <SectionHeader title={`Ajustes pendentes (${adjustments.length})`} className="mb-4" />
                       <DataTable
                         columns={[
-                          { key: "operador", header: "Operador", render: (a) => nameOf(a.profiles) ?? "—" },
-                          { key: "motivo", header: "Motivo", render: (a) => <span className="truncate max-w-[200px]">{a.reason}</span> },
-                          { key: "valor", header: "Valor", render: (a) => a.transactions ? `R$ ${Number(a.transactions.amount).toFixed(2)}` : "—" },
-                          { key: "empresa", header: "Empresa", render: (a) => a.transactions ? nameOf(a.transactions.companies as any) ?? "—" : "—" },
-                          { key: "acao", header: "Ação", render: (a) => (
+                          { key: "operador", header: "Operador", render: (a) => nameOf(a.profiles) ?? "-" },
+                          { key: "motivo", header: "Motivo", render: (a) => <span className="truncate max-w-[200px] block">{a.reason}</span> },
+                          { key: "valor", header: "Valor", render: (a) => a.transactions ? `R$ ${Number(a.transactions.amount).toFixed(2)}` : "-" },
+                          { key: "empresa", header: "Empresa", render: (a) => a.transactions ? nameOf(a.transactions.companies as any) ?? "-" : "-" },
+                          { key: "acao", header: "Acao", render: (a) => (
                             <div className="flex gap-2">
                               <Button variant="primary" size="sm" onClick={()=>approveAdjustment(a.id, a.transaction_id)}>Aprovar</Button>
                               <Button variant="ghost" size="sm" onClick={()=>rejectAdjustment(a.id)}>Rejeitar</Button>
@@ -499,7 +521,6 @@ export default function AdminRebuildPage() {
                         ]}
                         rows={adjustments}
                         emptyMessage="Nenhum ajuste pendente."
-                        className="mt-2"
                       />
                     </Card>
                   )}
@@ -508,262 +529,247 @@ export default function AdminRebuildPage() {
             </>
           )}
 
-          {/* ═══ OPERADORES ═══ */}
+          {/* OPERADORES */}
           {show("operadores") && (
-            <Card className="p-0">
-              <SectionHeader title="Registro de ponto" />
+            <Card>
+              <SectionHeader title="Registro de ponto" className="mb-4" />
               <DataTable
                 columns={[
                   { key: "data", header: "Data/Hora", render: (p) => new Date(p.punched_at).toLocaleString("pt-BR") },
-                  { key: "operador", header: "Operador", render: (p) => nameOf(p.profiles) ?? "—" },
-                  { key: "guiche", header: "Guichê", render: (p) => { const b = boothOf(p.booths); return b ? `${b.code} - ${b.name}` : "—"; } },
+                  { key: "operador", header: "Operador", render: (p) => nameOf(p.profiles) ?? "-" },
+                  { key: "guiche", header: "Guiche", render: (p) => { const b = boothOf(p.booths); return b ? `${b.code} - ${b.name}` : "-"; } },
                   { key: "tipo", header: "Tipo", render: (p) => <Badge variant="neutral">{p.punch_type}</Badge> },
-                  { key: "obs", header: "Obs", render: (p) => p.note ?? "—" },
+                  { key: "obs", header: "Obs", render: (p) => p.note ?? "-" },
                 ]}
                 rows={timePunchRows.slice(0,100)}
                 emptyMessage="Nenhum registro de ponto."
-                className="mt-2"
               />
             </Card>
           )}
 
-          {/* ═══ FINANCEIRO ═══ */}
+          {/* FINANCEIRO */}
           {show("financeiro") && (
             <>
-              {/* date filter */}
-              <div className="rb-panel">
-                <form style={{ display:"flex", flexWrap:"wrap", gap:"0.75rem", alignItems:"flex-end" }} onSubmit={e => { e.preventDefault(); refreshData(); }}>
-                  <div>
-                    <label className="rb-form-label">Data inicial</label>
-                    <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className="rb-field" />
-                  </div>
-                  <div>
-                    <label className="rb-form-label">Data final</label>
-                    <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className="rb-field" />
-                  </div>
-                  <button className="rb-btn-primary" type="submit">Filtrar</button>
-                  <button className="rb-btn-ghost" type="button" onClick={() => { setDateFrom(""); setDateTo(""); refreshData("",""); }}>Limpar</button>
+              <Card>
+                <form className="flex flex-wrap items-end gap-4" onSubmit={e => { e.preventDefault(); refreshData(); }}>
+                  <Input type="date" label="Data inicial" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
+                  <Input type="date" label="Data final" value={dateTo} onChange={e=>setDateTo(e.target.value)} />
+                  <Button type="submit">Filtrar</Button>
+                  <Button variant="ghost" type="button" onClick={() => { setDateFrom(""); setDateTo(""); refreshData("",""); }}>Limpar</Button>
                 </form>
-              </div>
+              </Card>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <StatCard label="Suprimento" value={`R$ ${cashMovementTotals.suprimento.toFixed(2)}`} />
                 <StatCard label="Sangria" value={`R$ ${cashMovementTotals.sangria.toFixed(2)}`} />
                 <StatCard label="Ajuste" value={`R$ ${cashMovementTotals.ajuste.toFixed(2)}`} />
                 <StatCard label="Saldo caixa" value={`R$ ${cashMovementTotals.saldo.toFixed(2)}`} />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <StatCard label="Esperado (caixa)" value={`R$ ${cashClosingTotals.expected.toFixed(2)}`} />
                 <StatCard label="Declarado" value={`R$ ${cashClosingTotals.declared.toFixed(2)}`} />
-                <StatCard label="Diferença" value={`R$ ${cashClosingTotals.difference.toFixed(2)}`} />
+                <StatCard label="Diferenca" value={`R$ ${cashClosingTotals.difference.toFixed(2)}`} />
               </div>
 
-              <Card className="p-0">
-                <SectionHeader title="Movimentos de caixa" />
+              <Card>
+                <SectionHeader title="Movimentos de caixa" className="mb-4" />
                 <DataTable
                   columns={[
                     { key: "data", header: "Data", render: (m) => new Date(m.created_at).toLocaleString("pt-BR") },
-                    { key: "operador", header: "Operador", render: (m) => nameOf(m.profiles) ?? "—" },
-                    { key: "guiche", header: "Guichê", render: (m) => { const b = boothOf(m.booths); return b ? `${b.code} - ${b.name}` : "—"; } },
+                    { key: "operador", header: "Operador", render: (m) => nameOf(m.profiles) ?? "-" },
+                    { key: "guiche", header: "Guiche", render: (m) => { const b = boothOf(m.booths); return b ? `${b.code} - ${b.name}` : "-"; } },
                     { key: "tipo", header: "Tipo", render: (m) => <Badge variant="neutral">{m.movement_type}</Badge> },
                     { key: "valor", header: "Valor", render: (m) => <span className="font-bold">R$ {Number(m.amount).toFixed(2)}</span> },
-                    { key: "obs", header: "Obs", render: (m) => m.note ?? "—" },
+                    { key: "obs", header: "Obs", render: (m) => m.note ?? "-" },
                   ]}
                   rows={cashMovementRows.slice(0,100)}
                   emptyMessage="Nenhum movimento de caixa."
-                  className="mt-2"
                 />
               </Card>
 
-              <Card className="p-0">
-                <SectionHeader title="Fechamento de caixa por turno" />
+              <Card>
+                <SectionHeader title="Fechamento de caixa por turno" className="mb-4" />
                 <DataTable
                   columns={[
                     { key: "data", header: "Data", render: (r) => new Date(r.created_at).toLocaleString("pt-BR") },
-                    { key: "operador", header: "Operador", render: (r) => nameOf(r.profiles) ?? "—" },
-                    { key: "guiche", header: "Guichê", render: (r) => { const b = boothOf(r.booths); return b ? `${b.code} - ${b.name}` : "—"; } },
+                    { key: "operador", header: "Operador", render: (r) => nameOf(r.profiles) ?? "-" },
+                    { key: "guiche", header: "Guiche", render: (r) => { const b = boothOf(r.booths); return b ? `${b.code} - ${b.name}` : "-"; } },
                     { key: "esperado", header: "Esperado", render: (r) => `R$ ${Number(r.expected_cash).toFixed(2)}` },
                     { key: "declarado", header: "Declarado", render: (r) => `R$ ${Number(r.declared_cash).toFixed(2)}` },
-                    { key: "diferenca", header: "Diferença", render: (r) => { const diff = Number(r.difference); return <span className={diff===0?"text-emerald-400":"text-amber-400 font-bold"}>{`R$ ${diff.toFixed(2)}`}</span>; } },
-                    { key: "obs", header: "Obs", render: (r) => r.note ?? "—" },
+                    { key: "diferenca", header: "Diferenca", render: (r) => { const diff = Number(r.difference); return <span className={diff===0?"text-emerald-600":"text-amber-600 font-bold"}>{`R$ ${diff.toFixed(2)}`}</span>; } },
+                    { key: "obs", header: "Obs", render: (r) => r.note ?? "-" },
                   ]}
                   rows={shiftCashClosingRows.slice(0,100)}
                   emptyMessage="Nenhum fechamento de caixa."
-                  className="mt-2"
                 />
               </Card>
             </>
           )}
 
-          {/* ═══ RELATÓRIOS ═══ */}
+          {/* RELATORIOS */}
           {show("relatorios") && (
-            <Card className="p-0">
-              <SectionHeader title="Log de auditoria" />
+            <Card>
+              <SectionHeader title="Log de auditoria" className="mb-4" />
               <DataTable
                 columns={[
                   { key: "data", header: "Data", render: (a) => new Date(a.created_at).toLocaleString("pt-BR") },
-                  { key: "usuario", header: "Usuário", render: (a) => nameOf(a.profiles) ?? "—" },
-                  { key: "acao", header: "Ação", render: (a) => <Badge variant="info">{a.action}</Badge> },
-                  { key: "entidade", header: "Entidade", render: (a) => a.entity ?? "—" },
+                  { key: "usuario", header: "Usuario", render: (a) => nameOf(a.profiles) ?? "-" },
+                  { key: "acao", header: "Acao", render: (a) => <Badge variant="info">{a.action}</Badge> },
+                  { key: "entidade", header: "Entidade", render: (a) => a.entity ?? "-" },
                 ]}
                 rows={auditLogs}
                 emptyMessage="Nenhum log de auditoria."
-                className="mt-2"
               />
             </Card>
           )}
 
-          {/* ═══ GESTÃO ═══ */}
+          {/* GESTAO */}
           {show("gestao") && (
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.25rem" }}>
-              <SectionCard title="Vínculos operador ↔ guichê" action={
-                <form onSubmit={linkOperatorToBooth} style={{ display:"flex", gap:"0.5rem" }}>
-                  <select className="rb-field" value={selectedOperatorId} onChange={e=>setSelectedOperatorId(e.target.value)} required style={{ minWidth:"140px" }}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <SectionCard title="Vinculos operador - guiche" action={
+                <form onSubmit={linkOperatorToBooth} className="flex gap-2">
+                  <select className="px-3 py-2 text-sm bg-input border border-border rounded-lg" value={selectedOperatorId} onChange={e=>setSelectedOperatorId(e.target.value)} required>
                     <option value="">Operador</option>
                     {profiles.filter(p=>p.role==="operator").map(p=><option key={p.user_id} value={p.user_id}>{p.full_name}</option>)}
                   </select>
-                  <select className="rb-field" value={selectedBoothId} onChange={e=>setSelectedBoothId(e.target.value)} required style={{ minWidth:"120px" }}>
-                    <option value="">Guichê</option>
+                  <select className="px-3 py-2 text-sm bg-input border border-border rounded-lg" value={selectedBoothId} onChange={e=>setSelectedBoothId(e.target.value)} required>
+                    <option value="">Guiche</option>
                     {booths.filter(b=>b.active).map(b=><option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
                   </select>
-                  <button className="rb-btn-primary" type="submit">Vincular</button>
+                  <Button type="submit">Vincular</Button>
                 </form>
               }>
                 <DataTable
                   columns={[
-                    { key: "operador", header: "Operador", render: (l) => nameOf(l.profiles) ?? "—" },
-                    { key: "guiche", header: "Guichê", render: (l) => { const b = boothOf(l.booths); return b ? `${b.code} - ${b.name}` : "—"; } },
+                    { key: "operador", header: "Operador", render: (l) => nameOf(l.profiles) ?? "-" },
+                    { key: "guiche", header: "Guiche", render: (l) => { const b = boothOf(l.booths); return b ? `${b.code} - ${b.name}` : "-"; } },
                     { key: "status", header: "Status", render: (l) => <StatusBadge active={l.active} /> },
-                    { key: "acao", header: "Ação", render: (l) => (
+                    { key: "acao", header: "Acao", render: (l) => (
                       <Button variant="ghost" size="sm" onClick={async()=>{ await supabase.from("operator_booths").update({active:!l.active}).eq("id",l.id); await refreshData(); }}>
                         {l.active ? "Desvincular" : "Reativar"}
                       </Button>
                     ) },
                   ]}
                   rows={operatorBoothLinks}
-                  emptyMessage="Nenhum vínculo encontrado."
-                  className="mt-2"
+                  emptyMessage="Nenhum vinculo encontrado."
                 />
               </SectionCard>
 
-              <div style={{ display:"grid", gap:"1.25rem" }}>
+              <div className="space-y-6">
                 <SectionCard title="Categorias">
-                  <form onSubmit={createCategory} style={{ display:"flex", gap:"0.5rem", marginBottom:"0.75rem" }}>
-                    <input value={categoryName} onChange={e=>setCategoryName(e.target.value)} required placeholder="Nome da categoria" className="rb-field" />
-                    <button className="rb-btn-primary" type="submit">+</button>
+                  <form onSubmit={createCategory} className="flex gap-2 mb-4">
+                    <input value={categoryName} onChange={e=>setCategoryName(e.target.value)} required placeholder="Nome da categoria" className="flex-1 px-3 py-2 text-sm bg-input border border-border rounded-lg" />
+                    <Button type="submit">+</Button>
                   </form>
                   <DataTable
                     columns={[
                       { key: "nome", header: "Nome", render: (c) => c.name },
                       { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
-                      { key: "acao", header: "Ação", render: (c) => (
+                      { key: "acao", header: "Acao", render: (c) => (
                         <Button variant="ghost" size="sm" onClick={()=>toggleCategoryActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
                       ) },
                     ]}
                     rows={categories}
                     emptyMessage="Nenhuma categoria encontrada."
-                    className="mt-2"
                   />
                 </SectionCard>
 
                 <SectionCard title="Subcategorias">
-                  <form onSubmit={createSubcategory} style={{ display:"flex", gap:"0.5rem", marginBottom:"0.75rem" }}>
-                    <select className="rb-field" value={subcategoryCategoryId} onChange={e=>setSubcategoryCategoryId(e.target.value)} required>
+                  <form onSubmit={createSubcategory} className="flex gap-2 mb-4">
+                    <select className="px-3 py-2 text-sm bg-input border border-border rounded-lg" value={subcategoryCategoryId} onChange={e=>setSubcategoryCategoryId(e.target.value)} required>
                       <option value="">Categoria</option>
                       {categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
-                    <input value={subcategoryName} onChange={e=>setSubcategoryName(e.target.value)} required placeholder="Subcategoria" className="rb-field" />
-                    <button className="rb-btn-primary" type="submit">+</button>
+                    <input value={subcategoryName} onChange={e=>setSubcategoryName(e.target.value)} required placeholder="Subcategoria" className="flex-1 px-3 py-2 text-sm bg-input border border-border rounded-lg" />
+                    <Button type="submit">+</Button>
                   </form>
                   <DataTable
                     columns={[
                       { key: "nome", header: "Nome", render: (s) => s.name },
-                      { key: "categoria", header: "Categoria", render: (s) => { const cName = Array.isArray(s.transaction_categories) ? s.transaction_categories[0]?.name : s.transaction_categories?.name; return cName ?? "—"; } },
+                      { key: "categoria", header: "Categoria", render: (s) => { const cName = Array.isArray(s.transaction_categories) ? s.transaction_categories[0]?.name : s.transaction_categories?.name; return cName ?? "-"; } },
                       { key: "status", header: "Status", render: (s) => <StatusBadge active={s.active} /> },
-                      { key: "acao", header: "Ação", render: (s) => (
+                      { key: "acao", header: "Acao", render: (s) => (
                         <Button variant="ghost" size="sm" onClick={()=>toggleSubcategoryActive(s)}>{s.active?"Inativar":"Ativar"}</Button>
                       ) },
                     ]}
                     rows={subcategories.slice(0,20)}
                     emptyMessage="Nenhuma subcategoria encontrada."
-                    className="mt-2"
                   />
                 </SectionCard>
               </div>
             </div>
           )}
 
-          {/* ═══ CONFIGURAÇÕES ═══ */}
+          {/* CONFIGURACOES */}
           {show("configuracoes") && (
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.25rem" }}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Perfis */}
-              <SectionCard title="Cadastrar / atualizar usuário">
-                <form onSubmit={saveProfile} style={{ display:"grid", gap:"0.75rem" }}>
-                  <input value={newProfileUserId} onChange={e=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuário (auth.users.id)" className="rb-field" />
-                  <input value={newProfileName} onChange={e=>setNewProfileName(e.target.value)} required placeholder="Nome completo" className="rb-field" />
-                  <input value={newProfileCpf} onChange={e=>setNewProfileCpf(e.target.value)} placeholder="CPF" className="rb-field" />
-                  <input value={newProfilePhone} onChange={e=>setNewProfilePhone(e.target.value)} placeholder="Telefone" className="rb-field" />
-                  <input value={newProfileAddress} onChange={e=>setNewProfileAddress(e.target.value)} placeholder="Endereço" className="rb-field" />
-                  <input value={newProfileAvatarUrl} onChange={e=>setNewProfileAvatarUrl(e.target.value)} placeholder="URL avatar" className="rb-field" />
-                  <select value={newProfileRole} onChange={e=>setNewProfileRole(e.target.value as "admin"|"operator")} className="rb-field">
+              <SectionCard title="Cadastrar / atualizar usuario">
+                <form onSubmit={saveProfile} className="space-y-4">
+                  <Input value={newProfileUserId} onChange={e=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuario (auth.users.id)" />
+                  <Input value={newProfileName} onChange={e=>setNewProfileName(e.target.value)} required placeholder="Nome completo" />
+                  <Input value={newProfileCpf} onChange={e=>setNewProfileCpf(e.target.value)} placeholder="CPF" />
+                  <Input value={newProfilePhone} onChange={e=>setNewProfilePhone(e.target.value)} placeholder="Telefone" />
+                  <Input value={newProfileAddress} onChange={e=>setNewProfileAddress(e.target.value)} placeholder="Endereco" />
+                  <Input value={newProfileAvatarUrl} onChange={e=>setNewProfileAvatarUrl(e.target.value)} placeholder="URL avatar" />
+                  <select value={newProfileRole} onChange={e=>setNewProfileRole(e.target.value as "admin"|"operator")} className="w-full px-3 py-2 text-sm bg-input border border-border rounded-lg">
                     <option value="operator">Operador</option>
                     <option value="admin">Admin</option>
                   </select>
-                  <label style={{ display:"flex", alignItems:"center", gap:"0.5rem", fontSize:"0.8125rem" }}>
-                    <input type="checkbox" checked={newProfileActive} onChange={e=>setNewProfileActive(e.target.checked)} />
-                    Usuário ativo
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <input type="checkbox" checked={newProfileActive} onChange={e=>setNewProfileActive(e.target.checked)} className="rounded" />
+                    Usuario ativo
                   </label>
-                  <button className="rb-btn-primary" type="submit">Salvar usuário</button>
+                  <Button type="submit" className="w-full">Salvar usuario</Button>
                 </form>
               </SectionCard>
 
-              <div style={{ display:"grid", gap:"1.25rem" }}>
+              <div className="space-y-6">
                 {/* Reset Password */}
-                <SectionCard title="Redefinição de senha">
-                  <form onSubmit={sendResetLink} style={{ display:"grid", gap:"0.75rem" }}>
-                    <input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} required type="email" placeholder="E-mail do usuário" className="rb-field" />
-                    <button className="rb-btn-primary" type="submit">Enviar link</button>
+                <SectionCard title="Redefinicao de senha">
+                  <form onSubmit={sendResetLink} className="space-y-4">
+                    <Input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} required type="email" placeholder="E-mail do usuario" />
+                    <Button type="submit" className="w-full">Enviar link</Button>
                   </form>
                 </SectionCard>
 
                 {/* Empresa */}
                 <SectionCard title="Cadastrar empresa">
-                  <form onSubmit={createCompany} style={{ display:"grid", gap:"0.75rem" }}>
-                    <input value={companyName} onChange={e=>setCompanyName(e.target.value)} required placeholder="Nome da empresa" className="rb-field" />
-                    <input value={companyPct} onChange={e=>setCompanyPct(e.target.value)} required type="number" min="0" step="0.001" placeholder="% Comissão" className="rb-field" />
-                    <button className="rb-btn-primary" type="submit">Salvar empresa</button>
+                  <form onSubmit={createCompany} className="space-y-4">
+                    <Input value={companyName} onChange={e=>setCompanyName(e.target.value)} required placeholder="Nome da empresa" />
+                    <Input value={companyPct} onChange={e=>setCompanyPct(e.target.value)} required type="number" min="0" step="0.001" placeholder="% Comissao" />
+                    <Button type="submit" className="w-full">Salvar empresa</Button>
                   </form>
                 </SectionCard>
 
-                {/* Guichê */}
-                <SectionCard title="Cadastrar guichê">
-                  <form onSubmit={createBooth} style={{ display:"grid", gap:"0.75rem" }}>
-                    <input value={boothCode} onChange={e=>setBoothCode(e.target.value)} required placeholder="Código (ex: G02)" className="rb-field" />
-                    <input value={boothName} onChange={e=>setBoothName(e.target.value)} required placeholder="Nome (ex: Guichê 02)" className="rb-field" />
-                    <button className="rb-btn-primary" type="submit">Salvar guichê</button>
+                {/* Guiche */}
+                <SectionCard title="Cadastrar guiche">
+                  <form onSubmit={createBooth} className="space-y-4">
+                    <Input value={boothCode} onChange={e=>setBoothCode(e.target.value)} required placeholder="Codigo (ex: G02)" />
+                    <Input value={boothName} onChange={e=>setBoothName(e.target.value)} required placeholder="Nome (ex: Guiche 02)" />
+                    <Button type="submit" className="w-full">Salvar guiche</Button>
                   </form>
                 </SectionCard>
               </div>
 
-              {/* Lista usuários */}
-              <div style={{ gridColumn:"1/-1" }}>
-                <SectionCard title="Usuários cadastrados">
-                  <input value={profileSearch} onChange={e=>setProfileSearch(e.target.value)} placeholder="Buscar por nome, CPF ou perfil..." className="rb-field" style={{ marginBottom:"0.75rem" }} />
+              {/* Lista usuarios */}
+              <div className="lg:col-span-2">
+                <SectionCard title="Usuarios cadastrados">
+                  <Input value={profileSearch} onChange={e=>setProfileSearch(e.target.value)} placeholder="Buscar por nome, CPF ou perfil..." className="mb-4" />
                   <DataTable
                     columns={[
                       { key: "nome", header: "Nome", render: (p) => <span className="font-semibold">{p.full_name}</span> },
-                      { key: "cpf", header: "CPF", render: (p) => p.cpf ?? "—" },
-                      { key: "telefone", header: "Telefone", render: (p) => p.phone ?? "—" },
+                      { key: "cpf", header: "CPF", render: (p) => p.cpf ?? "-" },
+                      { key: "telefone", header: "Telefone", render: (p) => p.phone ?? "-" },
                       { key: "perfil", header: "Perfil", render: (p) => <Badge variant="info">{p.role}</Badge> },
                       { key: "status", header: "Status", render: (p) => <StatusBadge active={p.active} /> },
-                      { key: "acao", header: "Ação", render: (p) => (
+                      { key: "acao", header: "Acao", render: (p) => (
                         <Button variant="ghost" size="sm" onClick={()=>toggleProfileActive(p)}>{p.active?"Inativar":"Ativar"}</Button>
                       ) },
                     ]}
                     rows={filteredProfiles}
-                    emptyMessage="Nenhum usuário encontrado."
-                    className="mt-2"
+                    emptyMessage="Nenhum usuario encontrado."
                   />
                 </SectionCard>
               </div>
@@ -773,33 +779,31 @@ export default function AdminRebuildPage() {
                 <DataTable
                   columns={[
                     { key: "nome", header: "Nome", render: (c) => <span className="font-semibold">{c.name}</span> },
-                    { key: "comissao", header: "Comissão", render: (c) => `${getCompanyPct(c).toFixed(3)}%` },
+                    { key: "comissao", header: "Comissao", render: (c) => `${getCompanyPct(c).toFixed(3)}%` },
                     { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
-                    { key: "acao", header: "Ação", render: (c) => (
+                    { key: "acao", header: "Acao", render: (c) => (
                       <Button variant="ghost" size="sm" onClick={()=>toggleCompanyActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
                     ) },
                   ]}
                   rows={companies}
                   emptyMessage="Nenhuma empresa encontrada."
-                  className="mt-2"
                 />
               </SectionCard>
 
-              {/* Lista guichês */}
-              <SectionCard title="Guichês">
-                <input value={boothSearch} onChange={e=>setBoothSearch(e.target.value)} placeholder="Buscar guichê..." className="rb-field" style={{ marginBottom:"0.75rem" }} />
+              {/* Lista guiches */}
+              <SectionCard title="Guiches">
+                <Input value={boothSearch} onChange={e=>setBoothSearch(e.target.value)} placeholder="Buscar guiche..." className="mb-4" />
                 <DataTable
                   columns={[
-                    { key: "codigo", header: "Código", render: (b) => <span className="font-bold">{b.code}</span> },
+                    { key: "codigo", header: "Codigo", render: (b) => <span className="font-bold">{b.code}</span> },
                     { key: "nome", header: "Nome", render: (b) => b.name },
                     { key: "status", header: "Status", render: (b) => <StatusBadge active={b.active} /> },
-                    { key: "acao", header: "Ação", render: (b) => (
+                    { key: "acao", header: "Acao", render: (b) => (
                       <Button variant="ghost" size="sm" onClick={()=>toggleBoothActive(b)}>{b.active?"Inativar":"Ativar"}</Button>
                     ) },
                   ]}
                   rows={filteredBooths}
-                  emptyMessage="Nenhum guichê encontrado."
-                  className="mt-2"
+                  emptyMessage="Nenhum guiche encontrado."
                 />
               </SectionCard>
             </div>

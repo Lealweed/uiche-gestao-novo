@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${manrope.variable} dark`}>
+    <html lang="pt-BR" className={manrope.variable}>
       <body className={`${manrope.className} antialiased bg-[hsl(var(--background))] text-[hsl(var(--foreground))]`}>
         {children}
       </body>

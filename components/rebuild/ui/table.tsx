@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------
-   DataTable — consistent dark-mode table with accessible markup
+   DataTable - Clean light-mode table with accessible markup
 ------------------------------------------------------------------ */
 type Column<T> = {
   key: string;
@@ -31,43 +31,59 @@ export function DataTable<T>({
   className,
 }: DataTableProps<T>) {
   return (
-    <div className={cn("rb-dashboard-table-wrap", className)}>
-      <table className="rb-dashboard-table" role="table">
+    <div className={cn("overflow-x-auto rounded-lg border border-border", className)}>
+      <table className="w-full text-sm" role="table">
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
-          <tr role="row">
+          <tr role="row" className="bg-slate-50 border-b border-border">
             {columns.map((col) => (
-              <th key={col.key} scope="col" className={col.className}>
+              <th
+                key={col.key}
+                scope="col"
+                className={cn(
+                  "px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider",
+                  col.className
+                )}
+              >
                 {col.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="bg-card divide-y divide-border">
           {loading ? (
             Array.from({ length: 4 }).map((_, i) => (
               <tr key={`skeleton-${i}`} role="row">
                 {columns.map((col) => (
-                  <td key={col.key}>
-                    <div
-                      className="h-4 rounded animate-pulse"
-                      style={{ background: "var(--ds-surface-2)", width: "70%" }}
-                    />
+                  <td key={col.key} className="px-4 py-3">
+                    <div className="h-4 bg-slate-100 rounded animate-pulse w-3/4" />
                   </td>
                 ))}
               </tr>
             ))
           ) : rows.length === 0 ? (
             <tr role="row">
-              <td colSpan={columns.length} className="rb-table-empty" role="cell">
+              <td
+                colSpan={columns.length}
+                className="px-4 py-8 text-center text-muted"
+                role="cell"
+              >
                 {emptyMessage}
               </td>
             </tr>
           ) : (
             rows.map((row, idx) => (
-              <tr key={keyExtractor ? keyExtractor(row, idx) : String(idx)} role="row">
+              <tr
+                key={keyExtractor ? keyExtractor(row, idx) : String(idx)}
+                role="row"
+                className="hover:bg-slate-50 transition-colors"
+              >
                 {columns.map((col) => (
-                  <td key={col.key} className={col.className} role="cell">
+                  <td
+                    key={col.key}
+                    className={cn("px-4 py-3 text-foreground", col.className)}
+                    role="cell"
+                  >
                     {col.render(row)}
                   </td>
                 ))}

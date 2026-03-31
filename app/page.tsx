@@ -1,89 +1,56 @@
 import Link from "next/link";
-import { ShieldCheck, Ticket, Wallet, BarChart3, Users, Clock } from "lucide-react";
+import { ShieldCheck, Ticket, Wallet, BarChart3, Users, Clock, ArrowRight } from "lucide-react";
 
 const highlights = [
   {
-    title: "Operação em tempo real",
-    description: "Acompanhe turnos, lançamentos e pendências com atualização contínua por guichê.",
+    title: "Operacao em tempo real",
+    description: "Acompanhe turnos, lancamentos e pendencias com atualizacao continua por guiche.",
     icon: Ticket,
-    color: "#3B82F6",
-    bg: "rgba(59,130,246,0.13)",
   },
   {
-    title: "Conciliação segura",
-    description: "Fluxo completo de comprovantes, caixa PDV e fechamento diário com rastreabilidade.",
+    title: "Conciliacao segura",
+    description: "Fluxo completo de comprovantes, caixa PDV e fechamento diario com rastreabilidade.",
     icon: ShieldCheck,
-    color: "#22C55E",
-    bg: "rgba(34,197,94,0.13)",
   },
   {
-    title: "Relatórios financeiros",
-    description: "Relatórios por operador, guichê e categoria para decisões gerenciais rápidas.",
+    title: "Relatorios financeiros",
+    description: "Relatorios por operador, guiche e categoria para decisoes gerenciais rapidas.",
     icon: Wallet,
-    color: "#FBBF24",
-    bg: "rgba(251,191,36,0.13)",
   },
 ];
 
 const features = [
   { icon: BarChart3, label: "Dashboard executivo" },
-  { icon: Users, label: "Gestão de operadores" },
+  { icon: Users, label: "Gestao de operadores" },
   { icon: Clock, label: "Controle de ponto" },
   { icon: ShieldCheck, label: "Auditoria completa" },
 ];
 
 export default function Home() {
   return (
-    <main
-      className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8 relative overflow-hidden"
-      style={{ background: "var(--ds-bg)" }}
-    >
-      {/* Background gradient */}
-      <div
-        className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] opacity-10 pointer-events-none"
-        style={{ background: "radial-gradient(ellipse at center, #3B82F6 0%, transparent 70%)" }}
-        aria-hidden="true"
-      />
-
-      <div className="w-full max-w-5xl relative z-10 space-y-8">
+    <main className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8 bg-background">
+      <div className="w-full max-w-5xl space-y-8">
         {/* Hero card */}
-        <section
-          className="rounded-3xl p-8 md:p-12 space-y-6"
-          style={{
-            background: "var(--ds-surface-1)",
-            border: "1px solid var(--ds-border-strong)",
-            boxShadow: "var(--ds-shadow-lg)",
-          }}
-        >
+        <section className="bg-card rounded-2xl p-8 md:p-12 space-y-6 border border-border shadow-card">
           {/* Eyebrow */}
-          <div className="flex items-center gap-2">
-            <div
-              className="flex items-center justify-center size-8 rounded-xl"
-              style={{ background: "linear-gradient(135deg, #0ea5e9, #2563eb)" }}
-              aria-hidden="true"
-            >
-              <Ticket size={16} className="text-white" />
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center size-10 rounded-xl bg-primary">
+              <Ticket size={20} className="text-primary-foreground" />
             </div>
-            <p
-              className="text-xs font-semibold uppercase tracking-[0.2em]"
-              style={{ color: "var(--ds-primary)" }}
-            >
-              Central Viagens · Plataforma Operacional
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+              Central Viagens - Plataforma Operacional
             </p>
           </div>
 
           {/* Title */}
-          <div className="space-y-3 max-w-3xl">
-            <h1
-              className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight"
-              style={{ color: "var(--ds-text)" }}
-            >
-              Gestão premium para{" "}
-              <span style={{ color: "var(--ds-primary)" }}>guichês, turnos</span> e caixa
+          <div className="space-y-4 max-w-3xl">
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-tight text-foreground text-balance">
+              Gestao premium para{" "}
+              <span className="text-primary">guiches, turnos</span> e caixa
             </h1>
-            <p className="text-base md:text-lg" style={{ color: "var(--ds-muted)" }}>
-              Controle seu dia com uma experiência moderna, confiável e preparada para operação intensa.
-              Múltiplos guichês, operadores e relatórios em um único painel.
+            <p className="text-base md:text-lg text-muted leading-relaxed">
+              Controle seu dia com uma experiencia moderna, confiavel e preparada para operacao intensa.
+              Multiplos guiches, operadores e relatorios em um unico painel.
             </p>
           </div>
 
@@ -92,14 +59,9 @@ export default function Home() {
             {features.map(({ icon: Icon, label }) => (
               <div
                 key={label}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium"
-                style={{
-                  background: "var(--ds-surface-2)",
-                  border: "1px solid var(--ds-border-strong)",
-                  color: "var(--ds-muted)",
-                }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium bg-slate-100 text-muted border border-border"
               >
-                <Icon size={13} aria-hidden="true" />
+                <Icon size={14} aria-hidden="true" />
                 {label}
               </div>
             ))}
@@ -109,15 +71,14 @@ export default function Home() {
           <div className="flex flex-wrap gap-3 pt-2">
             <Link
               href="/login"
-              className="rb-btn-primary"
-              aria-label="Entrar no sistema"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-blue-700 transition-colors"
             >
               Entrar no sistema
+              <ArrowRight size={16} />
             </Link>
             <Link
               href="/rebuild/admin"
-              className="rb-btn-ghost"
-              aria-label="Ver painel administrativo"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-transparent text-foreground font-semibold rounded-lg border border-border hover:bg-slate-100 transition-colors"
             >
               Ver painel administrativo
             </Link>
@@ -127,34 +88,19 @@ export default function Home() {
         {/* Feature cards */}
         <section aria-label="Funcionalidades principais">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {highlights.map(({ title, description, icon: Icon, color, bg }) => (
+            {highlights.map(({ title, description, icon: Icon }) => (
               <article
                 key={title}
-                className="rounded-2xl p-5 space-y-3"
-                style={{
-                  background: "var(--ds-surface-1)",
-                  border: "1px solid var(--ds-border)",
-                  boxShadow: "var(--ds-shadow-sm)",
-                }}
+                className="bg-card rounded-xl p-6 space-y-4 border border-border shadow-card hover:shadow-card-hover transition-shadow"
               >
-                <div
-                  className="flex items-center justify-center size-10 rounded-xl"
-                  style={{ background: bg, color }}
-                  aria-hidden="true"
-                >
-                  <Icon size={20} />
+                <div className="flex items-center justify-center size-12 rounded-xl bg-primary/10 text-primary">
+                  <Icon size={24} />
                 </div>
                 <div>
-                  <h2
-                    className="text-base font-semibold"
-                    style={{ color: "var(--ds-text)" }}
-                  >
+                  <h2 className="text-base font-semibold text-foreground">
                     {title}
                   </h2>
-                  <p
-                    className="text-sm mt-1 leading-relaxed"
-                    style={{ color: "var(--ds-muted)" }}
-                  >
+                  <p className="text-sm mt-1 leading-relaxed text-muted">
                     {description}
                   </p>
                 </div>
@@ -164,8 +110,8 @@ export default function Home() {
         </section>
 
         {/* Footer */}
-        <footer className="text-center text-xs" style={{ color: "var(--ds-subtle)" }}>
-          <p>Central Viagens · Plataforma B2B de Gestão Operacional</p>
+        <footer className="text-center text-xs text-muted-foreground py-4">
+          <p>Central Viagens - Plataforma B2B de Gestao Operacional</p>
         </footer>
       </div>
     </main>

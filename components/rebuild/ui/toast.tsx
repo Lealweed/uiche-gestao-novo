@@ -21,7 +21,7 @@ export function Toast({
       setIsVisible(true);
       const timer = setTimeout(() => {
         setIsVisible(false);
-        setTimeout(onClose, 300); // Wait for transition before fully removing
+        setTimeout(onClose, 300);
       }, durationMs);
       return () => clearTimeout(timer);
     } else {
@@ -31,17 +31,25 @@ export function Toast({
 
   if (!message && !isVisible) return null;
 
-  const icons = {
-    success: <CheckCircle className="text-emerald-500" size={20} />,
-    error: <AlertCircle className="text-red-500" size={20} />,
-    info: <Info className="text-blue-500" size={20} />,
+  const config = {
+    success: {
+      icon: <CheckCircle className="text-emerald-600" size={20} />,
+      border: "border-emerald-200",
+      bg: "bg-emerald-50",
+    },
+    error: {
+      icon: <AlertCircle className="text-red-600" size={20} />,
+      border: "border-red-200",
+      bg: "bg-red-50",
+    },
+    info: {
+      icon: <Info className="text-blue-600" size={20} />,
+      border: "border-blue-200",
+      bg: "bg-blue-50",
+    },
   };
 
-  const borders = {
-    success: "border-emerald-500/50",
-    error: "border-red-500/50",
-    info: "border-blue-500/50",
-  };
+  const { icon, border, bg } = config[type];
 
   return (
     <div
@@ -50,18 +58,18 @@ export function Toast({
       }`}
     >
       <div
-        className={`flex items-start gap-3 bg-[#18181b] border ${borders[type]} shadow-2xl rounded-xl p-4 min-w-[300px] max-w-sm`}
+        className={`flex items-start gap-3 ${bg} border ${border} shadow-lg rounded-xl p-4 min-w-[300px] max-w-sm`}
       >
-        <div className="flex-shrink-0 mt-0.5">{icons[type]}</div>
+        <div className="flex-shrink-0 mt-0.5">{icon}</div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-white">{message}</p>
+          <p className="text-sm font-medium text-foreground">{message}</p>
         </div>
         <button
           onClick={() => {
             setIsVisible(false);
             setTimeout(onClose, 300);
           }}
-          className="flex-shrink-0 text-zinc-400 hover:text-white transition-colors"
+          className="flex-shrink-0 text-muted hover:text-foreground transition-colors"
         >
           <X size={16} />
         </button>

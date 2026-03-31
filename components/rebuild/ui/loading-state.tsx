@@ -7,14 +7,16 @@ type LoadingStateProps = {
 };
 
 export function LoadingState({
-  title = "Carregando informações",
-  message = "Estamos preparando os dados para você.",
+  title = "Carregando informacoes",
+  message = "Estamos preparando os dados para voce.",
 }: LoadingStateProps) {
   return (
-    <Card className="rb-state-card">
-      <LoaderCircle className="rb-state-icon rb-spin" />
-      <h3 className="rb-state-title">{title}</h3>
-      <p className="rb-state-message">{message}</p>
+    <Card className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="p-3 bg-blue-50 rounded-full mb-4">
+        <LoaderCircle className="w-8 h-8 text-primary animate-spin" />
+      </div>
+      <h3 className="text-lg font-semibold text-foreground mb-1">{title}</h3>
+      <p className="text-sm text-muted max-w-sm">{message}</p>
     </Card>
   );
 }

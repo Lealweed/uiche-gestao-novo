@@ -9,37 +9,43 @@ type BadgeProps = {
   className?: string;
 };
 
-const variantMap: Record<BadgeVariant, string> = {
-  success: "rb-badge rb-badge-success",
-  warning: "rb-badge rb-badge-warning",
-  danger:  "rb-badge rb-badge-danger",
-  neutral: "rb-badge rb-badge-neutral",
-  info:    "rb-badge rb-badge-info",
+const variantStyles: Record<BadgeVariant, string> = {
+  success: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  warning: "bg-amber-50 text-amber-700 border-amber-200",
+  danger: "bg-red-50 text-red-700 border-red-200",
+  neutral: "bg-slate-100 text-slate-600 border-slate-200",
+  info: "bg-blue-50 text-blue-700 border-blue-200",
 };
 
 export function Badge({ variant = "neutral", children, className }: BadgeProps) {
   return (
-    <span className={cn(variantMap[variant], className)}>
+    <span
+      className={cn(
+        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border",
+        variantStyles[variant],
+        className
+      )}
+    >
       {children}
     </span>
   );
 }
 
 export function PaymentBadge({ method }: { method: string }) {
-  const map: Record<string, { className: string; label: string }> = {
-    pix:    { className: "rb-payment-badge rb-payment-pix",    label: "PIX" },
-    credit: { className: "rb-payment-badge rb-payment-credit", label: "Crédito" },
-    debit:  { className: "rb-payment-badge rb-payment-debit",  label: "Débito" },
-    cash:   { className: "rb-payment-badge rb-payment-cash",   label: "Dinheiro" },
+  const map: Record<string, { variant: BadgeVariant; label: string }> = {
+    pix: { variant: "success", label: "PIX" },
+    credit: { variant: "info", label: "Crédito" },
+    debit: { variant: "info", label: "Débito" },
+    cash: { variant: "warning", label: "Dinheiro" },
   };
-  const item = map[method] ?? { className: "rb-badge rb-badge-neutral", label: method };
-  return <span className={item.className}>{item.label}</span>;
+  const item = map[method] ?? { variant: "neutral" as BadgeVariant, label: method };
+  return <Badge variant={item.variant}>{item.label}</Badge>;
 }
 
 export function ShiftStatusBadge({ status }: { status: "open" | "closed" }) {
   return status === "open" ? (
-    <span className="rb-badge rb-badge-success">Aberto</span>
+    <Badge variant="success">Aberto</Badge>
   ) : (
-    <span className="rb-badge rb-badge-neutral">Fechado</span>
+    <Badge variant="neutral">Fechado</Badge>
   );
 }

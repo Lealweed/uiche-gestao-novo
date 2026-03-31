@@ -1,6 +1,19 @@
 import { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
+const baseFieldStyles = [
+  "w-full px-3 py-2 text-sm text-foreground",
+  "bg-input border border-border rounded-lg",
+  "placeholder:text-muted-foreground",
+  "focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:border-primary",
+  "disabled:opacity-50 disabled:cursor-not-allowed",
+  "transition-colors",
+].join(" ");
+
+const labelStyles = "block text-sm font-medium text-foreground mb-1.5";
+const errorTextStyles = "text-red-600 text-xs mt-1";
+const hintTextStyles = "text-muted text-xs mt-1";
+
 /* ------------------------------------------------------------------
    Input
 ------------------------------------------------------------------ */
@@ -16,25 +29,29 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="space-y-1">
         {label && (
-          <label htmlFor={inputId} className="rb-form-label">
+          <label htmlFor={inputId} className={labelStyles}>
             {label}
           </label>
         )}
         <input
           id={inputId}
           ref={ref}
-          className={cn("rb-field", error && "!border-[var(--ds-danger)] !shadow-[0_0_0_3px_var(--ds-danger-soft)]", className)}
+          className={cn(
+            baseFieldStyles,
+            error && "border-red-500 focus:ring-red-500 focus:border-red-500",
+            className
+          )}
           aria-invalid={!!error}
           aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
           {...props}
         />
         {error && (
-          <p id={`${inputId}-error`} className="text-[#F87171] text-xs" role="alert">
+          <p id={`${inputId}-error`} className={errorTextStyles} role="alert">
             {error}
           </p>
         )}
         {hint && !error && (
-          <p id={`${inputId}-hint`} className="text-[var(--ds-muted)] text-xs">
+          <p id={`${inputId}-hint`} className={hintTextStyles}>
             {hint}
           </p>
         )}
@@ -58,21 +75,26 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     return (
       <div className="space-y-1">
         {label && (
-          <label htmlFor={selectId} className="rb-form-label">
+          <label htmlFor={selectId} className={labelStyles}>
             {label}
           </label>
         )}
         <select
           id={selectId}
           ref={ref}
-          className={cn("rb-field", error && "!border-[var(--ds-danger)]", className)}
+          className={cn(
+            baseFieldStyles,
+            "cursor-pointer",
+            error && "border-red-500 focus:ring-red-500 focus:border-red-500",
+            className
+          )}
           aria-invalid={!!error}
           {...props}
         >
           {children}
         </select>
         {error && (
-          <p className="text-[#F87171] text-xs" role="alert">
+          <p className={errorTextStyles} role="alert">
             {error}
           </p>
         )}
@@ -96,19 +118,24 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <div className="space-y-1">
         {label && (
-          <label htmlFor={textareaId} className="rb-form-label">
+          <label htmlFor={textareaId} className={labelStyles}>
             {label}
           </label>
         )}
         <textarea
           id={textareaId}
           ref={ref}
-          className={cn("rb-field resize-none", error && "!border-[var(--ds-danger)]", className)}
+          className={cn(
+            baseFieldStyles,
+            "resize-none min-h-[80px]",
+            error && "border-red-500 focus:ring-red-500 focus:border-red-500",
+            className
+          )}
           aria-invalid={!!error}
           {...props}
         />
         {error && (
-          <p className="text-[#F87171] text-xs" role="alert">
+          <p className={errorTextStyles} role="alert">
             {error}
           </p>
         )}

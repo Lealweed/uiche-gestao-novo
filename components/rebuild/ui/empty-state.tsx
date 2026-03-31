@@ -7,14 +7,16 @@ type EmptyStateProps = {
 };
 
 export function EmptyState({
-  title = "Nenhum dado disponível",
-  message = "Quando houver movimentação, os registros aparecerão aqui.",
+  title = "Nenhum dado disponivel",
+  message = "Quando houver movimentacao, os registros aparecerao aqui.",
 }: EmptyStateProps) {
   return (
-    <Card className="rb-state-card">
-      <Inbox className="rb-state-icon" />
-      <h3 className="rb-state-title">{title}</h3>
-      <p className="rb-state-message">{message}</p>
+    <Card className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="p-3 bg-slate-100 rounded-full mb-4">
+        <Inbox className="w-8 h-8 text-muted" />
+      </div>
+      <h3 className="text-lg font-semibold text-foreground mb-1">{title}</h3>
+      <p className="text-sm text-muted max-w-sm">{message}</p>
     </Card>
   );
 }
