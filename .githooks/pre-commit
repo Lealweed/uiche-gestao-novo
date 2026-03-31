@@ -1,0 +1,13 @@
+#!/bin/sh
+
+printf "\n[pre-commit] Running typecheck...\n"
+npm run typecheck
+RESULT=$?
+
+if [ $RESULT -ne 0 ]; then
+  printf "\n[pre-commit] Typecheck failed. Commit aborted.\n"
+  exit 1
+fi
+
+printf "\n[pre-commit] OK\n"
+exit 0

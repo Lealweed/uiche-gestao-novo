@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Diretriz de Qualidade
+    url: https://guiche-system.vercel.app
+    about: Validar padrão antes de abrir issue.
