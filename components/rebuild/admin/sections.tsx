@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+﻿import type { FormEvent } from "react";
 import { DataTable } from "@/components/rebuild/ui/table";
 import { Badge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
@@ -123,7 +123,7 @@ export function DashboardSection({
             { key: "operator", header: "Operador", render: (row) => row.operator_name },
             { key: "status", header: "Status", render: (row) => <Badge variant={row.status === "open" ? "success" : "neutral"}>{row.status === "open" ? "ABERTO" : "FECHADO"}</Badge> },
             { key: "receita", header: "Receita", render: (row) => <span className="font-bold">R$ {Number(row.gross_amount || 0).toFixed(2)}</span> },
-            { key: "pendencias", header: "Pendencias", render: (row) => (Number(row.missing_card_receipts || 0) > 0 ? <Badge variant="warning">{row.missing_card_receipts}</Badge> : "�") },
+            { key: "pendencias", header: "Pendencias", render: (row) => (Number(row.missing_card_receipts || 0) > 0 ? <Badge variant="warning">{row.missing_card_receipts}</Badge> : "—") },
             { key: "acao", header: "Acao", render: (row) => (row.status === "open" ? <Button variant="ghost" size="sm" onClick={() => onForceCloseShift(row.shift_id)}>Encerrar</Button> : null) },
           ]}
           rows={rows.slice(0, 50)}
@@ -137,10 +137,10 @@ export function DashboardSection({
           <SectionHeader title={`Ajustes pendentes (${adjustments.length})`} />
           <DataTable
             columns={[
-              { key: "operador", header: "Operador", render: (adjustment) => relatedFullName(adjustment.profiles) ?? "�" },
+              { key: "operador", header: "Operador", render: (adjustment) => relatedFullName(adjustment.profiles) ?? "—" },
               { key: "motivo", header: "Motivo", render: (adjustment) => <span className="truncate max-w-[200px]">{adjustment.reason}</span> },
-              { key: "valor", header: "Valor", render: (adjustment) => (adjustment.transactions ? `R$ ${Number(adjustment.transactions.amount).toFixed(2)}` : "�") },
-              { key: "empresa", header: "Empresa", render: (adjustment) => (adjustment.transactions ? relatedName(adjustment.transactions.companies) ?? "�" : "�") },
+              { key: "valor", header: "Valor", render: (adjustment) => (adjustment.transactions ? `R$ ${Number(adjustment.transactions.amount).toFixed(2)}` : "—") },
+              { key: "empresa", header: "Empresa", render: (adjustment) => (adjustment.transactions ? relatedName(adjustment.transactions.companies) ?? "—" : "—") },
               {
                 key: "acao",
                 header: "Acao",
@@ -177,10 +177,10 @@ export function OperatorsSection({ timePunchRows }: OperatorsSectionProps) {
       <DataTable
         columns={[
           { key: "data", header: "Data/Hora", render: (row) => new Date(row.punched_at).toLocaleString("pt-BR") },
-          { key: "operador", header: "Operador", render: (row) => relatedFullName(row.profiles) ?? "�" },
+          { key: "operador", header: "Operador", render: (row) => relatedFullName(row.profiles) ?? "—" },
           { key: "guiche", header: "Guiche", render: (row) => boothLabel(row.booths) },
           { key: "tipo", header: "Tipo", render: (row) => <Badge variant="neutral">{row.punch_type}</Badge> },
-          { key: "obs", header: "Obs", render: (row) => row.note ?? "�" },
+          { key: "obs", header: "Obs", render: (row) => row.note ?? "—" },
         ]}
         rows={timePunchRows.slice(0, 100)}
         emptyMessage="Nenhum registro de ponto."
@@ -256,11 +256,11 @@ export function FinanceSection({
         <DataTable
           columns={[
             { key: "data", header: "Data", render: (row) => new Date(row.created_at).toLocaleString("pt-BR") },
-            { key: "operador", header: "Operador", render: (row) => relatedFullName(row.profiles) ?? "�" },
+            { key: "operador", header: "Operador", render: (row) => relatedFullName(row.profiles) ?? "—" },
             { key: "guiche", header: "Guiche", render: (row) => boothLabel(row.booths) },
             { key: "tipo", header: "Tipo", render: (row) => <Badge variant="neutral">{row.movement_type}</Badge> },
             { key: "valor", header: "Valor", render: (row) => <span className="font-bold">R$ {Number(row.amount).toFixed(2)}</span> },
-            { key: "obs", header: "Obs", render: (row) => row.note ?? "�" },
+            { key: "obs", header: "Obs", render: (row) => row.note ?? "—" },
           ]}
           rows={cashMovementRows.slice(0, 100)}
           emptyMessage="Nenhum movimento de caixa."
@@ -273,7 +273,7 @@ export function FinanceSection({
         <DataTable
           columns={[
             { key: "data", header: "Data", render: (row) => new Date(row.created_at).toLocaleString("pt-BR") },
-            { key: "operador", header: "Operador", render: (row) => relatedFullName(row.profiles) ?? "�" },
+            { key: "operador", header: "Operador", render: (row) => relatedFullName(row.profiles) ?? "—" },
             { key: "guiche", header: "Guiche", render: (row) => boothLabel(row.booths) },
             { key: "esperado", header: "Esperado", render: (row) => `R$ ${Number(row.expected_cash).toFixed(2)}` },
             { key: "declarado", header: "Declarado", render: (row) => `R$ ${Number(row.declared_cash).toFixed(2)}` },
@@ -285,7 +285,7 @@ export function FinanceSection({
                 return <span className={difference === 0 ? "text-emerald-400" : "text-amber-400 font-bold"}>{`R$ ${difference.toFixed(2)}`}</span>;
               },
             },
-            { key: "obs", header: "Obs", render: (row) => row.note ?? "�" },
+            { key: "obs", header: "Obs", render: (row) => row.note ?? "—" },
           ]}
           rows={shiftCashClosingRows.slice(0, 100)}
           emptyMessage="Nenhum fechamento de caixa."
@@ -307,9 +307,9 @@ export function ReportsSection({ auditLogs }: ReportsSectionProps) {
       <DataTable
         columns={[
           { key: "data", header: "Data", render: (row) => new Date(row.created_at).toLocaleString("pt-BR") },
-          { key: "usuario", header: "Usuario", render: (row) => relatedFullName(row.profiles) ?? "�" },
+          { key: "usuario", header: "Usuario", render: (row) => relatedFullName(row.profiles) ?? "—" },
           { key: "acao", header: "Acao", render: (row) => <Badge variant="info">{row.action}</Badge> },
-          { key: "entidade", header: "Entidade", render: (row) => row.entity ?? "�" },
+          { key: "entidade", header: "Entidade", render: (row) => row.entity ?? "—" },
         ]}
         rows={auditLogs}
         emptyMessage="Nenhum log de auditoria."
@@ -369,7 +369,7 @@ export function ManagementSection({
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
       <SectionCard
-        title="Vinculos operador ? guiche"
+        title="Vínculos operador → guichê"
         action={
           <form onSubmit={onLinkOperatorToBooth} style={{ display: "flex", gap: "0.5rem" }}>
             <select className="rb-field" value={selectedOperatorId} onChange={(event) => onSelectedOperatorIdChange(event.target.value)} required style={{ minWidth: "140px" }}>
@@ -396,7 +396,7 @@ export function ManagementSection({
       >
         <DataTable
           columns={[
-            { key: "operador", header: "Operador", render: (row) => relatedFullName(row.profiles) ?? "�" },
+            { key: "operador", header: "Operador", render: (row) => relatedFullName(row.profiles) ?? "—" },
             { key: "guiche", header: "Guiche", render: (row) => boothLabel(row.booths) },
             { key: "status", header: "Status", render: (row) => <StatusBadge active={row.active} /> },
             {
@@ -461,7 +461,7 @@ export function ManagementSection({
           <DataTable
             columns={[
               { key: "nome", header: "Nome", render: (row) => row.name },
-              { key: "categoria", header: "Categoria", render: (row) => relatedName(row.transaction_categories) ?? "�" },
+              { key: "categoria", header: "Categoria", render: (row) => relatedName(row.transaction_categories) ?? "—" },
               { key: "status", header: "Status", render: (row) => <StatusBadge active={row.active} /> },
               {
                 key: "acao",
@@ -633,8 +633,8 @@ export function SettingsSection({
           <DataTable
             columns={[
               { key: "nome", header: "Nome", render: (row) => <span className="font-semibold">{row.full_name}</span> },
-              { key: "cpf", header: "CPF", render: (row) => row.cpf ?? "�" },
-              { key: "telefone", header: "Telefone", render: (row) => row.phone ?? "�" },
+              { key: "cpf", header: "CPF", render: (row) => row.cpf ?? "—" },
+              { key: "telefone", header: "Telefone", render: (row) => row.phone ?? "—" },
               { key: "perfil", header: "Perfil", render: (row) => <Badge variant="info">{row.role}</Badge> },
               { key: "status", header: "Status", render: (row) => <StatusBadge active={row.active} /> },
               {

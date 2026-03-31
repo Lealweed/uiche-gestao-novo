@@ -67,6 +67,7 @@ const ADMIN_SECTION_MAP: Record<string, MenuSection> = {
   "controle-turno": "dashboard",
   financeiro: "financeiro",
   relatorios: "relatorios",
+  operadores: "operadores",
   usuarios: "gestao",
   empresas: "gestao",
   configuracoes: "configuracoes",

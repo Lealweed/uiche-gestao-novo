@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { APP_ROUTES } from "@/lib/app-routes";
 import { isAdminPanelRole } from "@/lib/auth/roles";
+import type { ToastType } from "@/components/rebuild/ui/toast";
 import {
   closeShiftRecord,
   createCashMovementRecord,
@@ -75,6 +76,7 @@ export default function OperatorRebuildPage() {
   const [ticketReference, setTicketReference] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<ToastType>("info");
   const [txs, setTxs] = useState<Tx[]>([]);
   const [punches, setPunches] = useState<Punch[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
@@ -116,6 +118,7 @@ export default function OperatorRebuildPage() {
 
         await loadPunches(uid);
       } catch (error) {
+        setToastType("error");
         setMessage(`Erro: ${getErrorMessage(error)}`);
       }
     })();
@@ -144,10 +147,12 @@ export default function OperatorRebuildPage() {
       const openedShift = await openShiftRecord(supabase, boothId);
       await logAction("OPEN_SHIFT", "shifts", openedShift.id, { booth_id: boothId });
       setShift(openedShift);
+      setToastType("success");
       setMessage("Turno aberto.");
       await loadTransactions(openedShift.id);
       await loadCashMovements(openedShift.id);
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -192,8 +197,10 @@ export default function OperatorRebuildPage() {
       setTxs([]);
       setCashMovements([]);
       setShowCloseModal(false);
-      setMessage(`Turno encerrado. Diferenca: R$ ${difference.toFixed(2)}.`);
+      setToastType("success");
+      setMessage(`Turno encerrado. Diferença: R$ ${difference.toFixed(2)}.`);
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     } finally {
       setIsClosing(false);
@@ -207,8 +214,10 @@ export default function OperatorRebuildPage() {
       await createTimePunchRecord(supabase, { user_id: userId, booth_id: (shift?.booth_id ?? boothId) || null, shift_id: shift?.id ?? null, punch_type: type, note: label });
       await logAction("TIME_PUNCH", "time_punches", undefined, { type });
       await loadPunches(userId);
+      setToastType("success");
       setMessage(`Ponto: ${label}.`);
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -228,8 +237,10 @@ export default function OperatorRebuildPage() {
       setCashAmount("");
       setCashNote("");
       await loadCashMovements(shift.id);
+      setToastType("success");
       setMessage("Movimento registrado.");
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -255,9 +266,11 @@ export default function OperatorRebuildPage() {
       setAmount("");
       setTicketReference("");
       setNote("");
-      setMessage("Lancamento salvo.");
+      setToastType("success");
+      setMessage("Lançamento salvo.");
       await loadTransactions(shift.id);
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -273,9 +286,11 @@ export default function OperatorRebuildPage() {
       await uploadPaymentReceiptFile(supabase, path, file);
       await upsertTransactionReceiptRecord(supabase, { transaction_id: txId, storage_path: path, mime_type: file.type || "image/jpeg", uploaded_by: userId });
       await logAction("UPLOAD_RECEIPT", "transactions", txId, { path });
+      setToastType("success");
       setMessage("Comprovante enviado.");
       if (shift) await loadTransactions(shift.id);
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro upload: ${getErrorMessage(error)}`);
     } finally {
       setUploadingTxId(null);
@@ -311,7 +326,7 @@ export default function OperatorRebuildPage() {
 
   return (
     <RebuildShell>
-      <Toast message={message} onClose={() => setMessage(null)} type="info" />
+      <Toast message={message} onClose={() => setMessage(null)} type={toastType} />
       <div className="grid gap-5">
         {show("resumo") ? (
           <SummarySection

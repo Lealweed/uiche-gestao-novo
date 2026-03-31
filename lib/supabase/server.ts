@@ -9,12 +9,17 @@ export const createClient = () => {
       cookies: {
         async getAll() {
           const cookieStore = await nextCookies();
-          // Compatível com o formato esperado pelo Supabase SSR
           return Array.from(cookieStore.getAll()).map(({ name, value }) => ({ name, value }));
         },
-        async setAll(cookies) {
-          // Next.js 15 não permite setar cookies diretamente do lado do servidor via headers/cookies API
-          // (deve ser feito via Response, mas para SSR puro, normalmente não é necessário setar manualmente)
+        async setAll(cookiesToSet) {
+          try {
+            const cookieStore = await nextCookies();
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options ?? {});
+            });
+          } catch {
+            // Em Server Components o cookie só pode ser setado via Route Handler ou Server Action
+          }
         },
       },
     }

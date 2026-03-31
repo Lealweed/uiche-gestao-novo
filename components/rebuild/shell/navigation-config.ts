@@ -27,6 +27,7 @@ export const adminMainNav: NavItem[] = [
 ];
 
 export const adminSystemNav: NavItem[] = [
+  { href: withHash(APP_ROUTES.rebuild.admin, "operadores"), label: "Ponto Digital", section: "operadores", Icon: Clock },
   { href: withHash(APP_ROUTES.rebuild.admin, "usuarios"), label: "Usuários", section: "usuarios", Icon: Users },
   { href: withHash(APP_ROUTES.rebuild.admin, "empresas"), label: "Empresas", section: "empresas", Icon: Building2 },
   { href: withHash(APP_ROUTES.rebuild.admin, "configuracoes"), label: "Configurações", section: "configuracoes", Icon: Settings },
@@ -45,6 +46,7 @@ export const adminSectionLabels: Record<string, string> = {
   "controle-turno": "Controle de Turno",
   financeiro: "Financeiro",
   relatorios: "Relatórios",
+  operadores: "Ponto Digital",
   usuarios: "Usuários",
   empresas: "Empresas",
   configuracoes: "Configurações",
