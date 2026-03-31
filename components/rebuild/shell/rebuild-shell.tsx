@@ -77,6 +77,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   const [currentSection, setCurrentSection] = useState("dashboard");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<{ name: string; role: string } | null>(null);
+  const [currentDate, setCurrentDate] = useState<string | null>(null);
 
   const isOperator = pathname.startsWith("/rebuild/operator");
   const mainNav = isOperator ? operatorNav : adminMainNav;
@@ -115,6 +116,10 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setDrawerOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    setCurrentDate(new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }));
+  }, []);
 
   function navigate(href: string, section: string) {
     setCurrentSection(section);
@@ -325,7 +330,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-border text-sm">
               <CalendarDays className="text-muted" size={16} aria-hidden="true" />
               <time className="font-medium text-foreground text-xs">
-                {new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                {currentDate ?? "--"}
               </time>
             </div>
           </div>

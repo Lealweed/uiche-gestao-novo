@@ -138,6 +138,11 @@ export default function AdminRebuildPage() {
   const [newProfileAvatarUrl, setNewProfileAvatarUrl] = useState("");
   const [newProfileActive, setNewProfileActive]       = useState(true);
   const [resetEmail, setResetEmail]                   = useState("");
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -574,83 +579,85 @@ export default function AdminRebuildPage() {
                 </div>
 
                 {/* Charts Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Revenue Trend Chart */}
-                  <Card>
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-base font-semibold text-foreground">Faturamento por Dia</h3>
-                        <p className="text-xs text-muted">Ultimos 7 dias</p>
+                {isMounted && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Revenue Trend Chart */}
+                    <Card>
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-base font-semibold text-foreground">Faturamento por Dia</h3>
+                          <p className="text-xs text-muted">Ultimos 7 dias</p>
+                        </div>
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                          <BarChart3 className="w-4 h-4" />
+                        </div>
                       </div>
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                        <BarChart3 className="w-4 h-4" />
+                      <div style={{ width: "100%", height: 256 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={dailyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3}/>
+                                <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                            <YAxis tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
+                            <Tooltip 
+                              formatter={(value: number) => [formatCurrency(value), "Faturamento"]}
+                              contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}
+                            />
+                            <Area type="monotone" dataKey="valor" stroke={CHART_COLORS.primary} fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
+                          </AreaChart>
+                        </ResponsiveContainer>
                       </div>
-                    </div>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={dailyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0}/>
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                          <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                          <YAxis tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
-                          <Tooltip 
-                            formatter={(value: number) => [formatCurrency(value), "Faturamento"]}
-                            contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}
-                          />
-                          <Area type="monotone" dataKey="valor" stroke={CHART_COLORS.primary} fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Card>
+                    </Card>
 
-                  {/* Payment Methods Chart */}
-                  <Card>
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-base font-semibold text-foreground">Formas de Pagamento</h3>
-                        <p className="text-xs text-muted">Distribuicao por metodo</p>
+                    {/* Payment Methods Chart */}
+                    <Card>
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="text-base font-semibold text-foreground">Formas de Pagamento</h3>
+                          <p className="text-xs text-muted">Distribuicao por metodo</p>
+                        </div>
+                        <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                          <CreditCard className="w-4 h-4" />
+                        </div>
                       </div>
-                      <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
-                        <CreditCard className="w-4 h-4" />
+                      <div style={{ width: "100%", height: 256 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={paymentMethodData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={90}
+                              paddingAngle={3}
+                              dataKey="value"
+                            >
+                              {paymentMethodData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip 
+                              formatter={(value: number) => [formatCurrency(value), ""]}
+                              contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}
+                            />
+                            <Legend 
+                              iconType="circle"
+                              formatter={(value) => <span className="text-sm text-foreground">{value}</span>}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
                       </div>
-                    </div>
-                    <div className="h-64 flex items-center">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={paymentMethodData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={90}
-                            paddingAngle={3}
-                            dataKey="value"
-                          >
-                            {paymentMethodData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip 
-                            formatter={(value: number) => [formatCurrency(value), ""]}
-                            contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}
-                          />
-                          <Legend 
-                            iconType="circle"
-                            formatter={(value) => <span className="text-sm text-foreground">{value}</span>}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </Card>
-                </div>
+                    </Card>
+                  </div>
+                )}
 
                 {/* Top Companies Chart */}
-                {topCompaniesData.length > 0 && (
+                {isMounted && topCompaniesData.length > 0 && (
                   <Card>
                     <div className="flex items-center justify-between mb-4">
                       <div>
@@ -662,7 +669,7 @@ export default function AdminRebuildPage() {
                         Exportar CSV
                       </Button>
                     </div>
-                    <div className="h-72">
+                    <div style={{ width: "100%", height: 288 }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={topCompaniesData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={true} vertical={false} />
