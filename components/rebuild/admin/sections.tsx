@@ -8,6 +8,7 @@ import { Card } from "@/components/rebuild/ui/card";
 import { DateFilterForm } from "@/components/rebuild/admin/date-filter-form";
 import { SectionCard, StatusBadge } from "@/components/rebuild/admin/section-card";
 import { boothLabel, relatedFullName, relatedName } from "@/components/rebuild/admin/display";
+import { AdminPaymentBarChart, RepasseBarChart } from "@/components/rebuild/ui/charts";
 import type { Adjustment, AuditLog, Booth, CashMovementRow, Category, Company, OperatorBoothLink, Profile, ShiftCashClosingRow, ShiftTotal, Subcategory, TimePunchRow } from "@/lib/rebuild/data/admin";
 
 type RepassesRow = {
@@ -28,6 +29,7 @@ type DashboardSectionProps = {
     repasse: number;
     viacoes: RepassesRow[];
   };
+  paymentTotals: { pix: number; credit: number; debit: number; cash: number };
   reportTransactionCount: number;
   summary: {
     abertos: number;
@@ -51,6 +53,7 @@ export function DashboardSection({
   dateFrom,
   dateTo,
   repassesComputed,
+  paymentTotals,
   reportTransactionCount,
   summary,
   adjustments,
@@ -85,9 +88,25 @@ export function DashboardSection({
 
       <SectionHeader title="Auditoria e Repasses (Consolidado do periodo)" />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 mt-2">
-        <StatCard label="Faturamento Total" value={`R$ ${repassesComputed.faturamento.toFixed(2)}`} delta={`${reportTransactionCount} transacoes`} />
+        <StatCard label="Faturamento Total" value={`R$ ${repassesComputed.faturamento.toFixed(2)}`} delta={`${reportTransactionCount} transações`} />
         <StatCard label="Caixa na Central" value={`R$ ${repassesComputed.central.toFixed(2)}`} delta="Lucro (taxas)" />
-        <StatCard label="Valor a Repassar" value={`R$ ${repassesComputed.repasse.toFixed(2)}`} delta="Para viacoes" />
+        <StatCard label="Valor a Repassar" value={`R$ ${repassesComputed.repasse.toFixed(2)}`} delta="Para viações" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+        <Card className="p-4">
+          <SectionHeader title="Repasse por Viação (top 8)" />
+          <RepasseBarChart data={repassesComputed.viacoes} />
+        </Card>
+        <Card className="p-4">
+          <SectionHeader title="Distribuição por Forma de Pagamento" />
+          <AdminPaymentBarChart
+            pix={paymentTotals.pix}
+            credit={paymentTotals.credit}
+            debit={paymentTotals.debit}
+            cash={paymentTotals.cash}
+          />
+        </Card>
       </div>
 
       <Card className="p-0 mb-6 relative">
@@ -96,16 +115,16 @@ export function DashboardSection({
             Exportar CSV
           </Button>
         </div>
-        <SectionHeader title="Consolidado por Viacao" />
+        <SectionHeader title="Consolidado por Viação" />
         <DataTable
           columns={[
-            { key: "empresa", header: "Empresa / Viacao", render: (row) => <span className="font-semibold">{row.name}</span> },
+            { key: "empresa", header: "Empresa / Viação", render: (row) => <span className="font-semibold">{row.name}</span> },
             { key: "faturamento", header: "Faturamento Bruto", render: (row) => `R$ ${row.amount.toFixed(2)}` },
-            { key: "central", header: "Taxa Retida (Central)", render: (row) => <span className="text-emerald-400 font-bold">R$ {row.central.toFixed(2)}</span> },
-            { key: "repasse", header: "Repasse Liquido", render: (row) => <span className="text-amber-500 font-bold">R$ {row.repasse.toFixed(2)}</span> },
+            { key: "central", header: "Taxa Retida (Central)", render: (row) => <span style={{ color: "var(--ds-accent)", fontWeight: 700 }}>R$ {row.central.toFixed(2)}</span> },
+            { key: "repasse", header: "Repasse Líquido", render: (row) => <span style={{ color: "var(--ds-warning)", fontWeight: 700 }}>R$ {row.repasse.toFixed(2)}</span> },
           ]}
           rows={repassesComputed.viacoes}
-          emptyMessage="Nenhum faturamento registrado no periodo."
+          emptyMessage="Nenhum faturamento registrado no período."
         />
       </Card>
 

@@ -207,6 +207,20 @@ export default function AdminRebuildPage() {
     [rows]
   );
 
+  const paymentTotals = useMemo(() => {
+    return reportTxs.reduce(
+      (acc, tx) => {
+        const amt = Number(tx.amount || 0);
+        if (tx.payment_method === "pix")    acc.pix    += amt;
+        if (tx.payment_method === "credit") acc.credit += amt;
+        if (tx.payment_method === "debit")  acc.debit  += amt;
+        if (tx.payment_method === "cash")   acc.cash   += amt;
+        return acc;
+      },
+      { pix: 0, credit: 0, debit: 0, cash: 0 }
+    );
+  }, [reportTxs]);
+
   const cashMovementTotals = useMemo(() => {
     const suprimento = cashMovementRows.filter((row) => row.movement_type === "suprimento").reduce((acc, row) => acc + Number(row.amount || 0), 0);
     const sangria = cashMovementRows.filter((row) => row.movement_type === "sangria").reduce((acc, row) => acc + Number(row.amount || 0), 0);
@@ -239,9 +253,11 @@ export default function AdminRebuildPage() {
       await createCompanyRecord(supabase, companyName.trim(), Number(companyPct));
       setCompanyName("");
       setCompanyPct("6");
+      setToastType("success");
       setMessage("Empresa cadastrada.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -252,9 +268,11 @@ export default function AdminRebuildPage() {
       await createBoothRecord(supabase, boothCode.trim().toUpperCase(), boothName.trim());
       setBoothCode("");
       setBoothName("");
-      setMessage("Guiche cadastrado.");
+      setToastType("success");
+      setMessage("Guichê cadastrado.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -264,9 +282,11 @@ export default function AdminRebuildPage() {
     try {
       await createCategoryRecord(supabase, categoryName.trim());
       setCategoryName("");
+      setToastType("success");
       setMessage("Categoria cadastrada.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -277,9 +297,11 @@ export default function AdminRebuildPage() {
       await createSubcategoryRecord(supabase, subcategoryCategoryId, subcategoryName.trim());
       setSubcategoryName("");
       setSubcategoryCategoryId("");
+      setToastType("success");
       setMessage("Subcategoria cadastrada.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -288,9 +310,11 @@ export default function AdminRebuildPage() {
     event.preventDefault();
     try {
       await linkOperatorToBoothRecord(supabase, selectedOperatorId, selectedBoothId);
+      setToastType("success");
       setMessage("Operador vinculado.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -318,9 +342,11 @@ export default function AdminRebuildPage() {
       setNewProfileRole("operator");
       setNewProfileActive(true);
       await logAction("UPSERT_PROFILE", "profiles", uid, { role: newProfileRole });
+      setToastType("success");
       setMessage("Perfil salvo.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -330,8 +356,10 @@ export default function AdminRebuildPage() {
     try {
       await sendPasswordReset(supabase, resetEmail.trim());
       setResetEmail("");
+      setToastType("success");
       setMessage("Link de reset enviado.");
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -394,9 +422,11 @@ export default function AdminRebuildPage() {
     try {
       await approveAdjustmentRecord(supabase, adjId, txId);
       await logAction("APPROVE_ADJUSTMENT", "adjustment_requests", adjId, { transaction_id: txId });
+      setToastType("success");
       setMessage("Ajuste aprovado.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -405,9 +435,11 @@ export default function AdminRebuildPage() {
     try {
       await rejectAdjustmentRecord(supabase, adjId);
       await logAction("REJECT_ADJUSTMENT", "adjustment_requests", adjId);
+      setToastType("info");
       setMessage("Ajuste rejeitado.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -416,9 +448,11 @@ export default function AdminRebuildPage() {
     try {
       await forceCloseShiftRecord(supabase, shiftId);
       await logAction("FORCE_CLOSE_SHIFT", "shifts", shiftId);
+      setToastType("success");
       setMessage("Turno encerrado.");
       await refreshData();
     } catch (error) {
+      setToastType("error");
       setMessage(`Erro: ${getErrorMessage(error)}`);
     }
   }
@@ -443,6 +477,7 @@ export default function AdminRebuildPage() {
           dateFrom={dateFrom}
           dateTo={dateTo}
           repassesComputed={repassesComputed}
+          paymentTotals={paymentTotals}
           reportTransactionCount={reportTxs.length}
           summary={summary}
           adjustments={adjustments}
