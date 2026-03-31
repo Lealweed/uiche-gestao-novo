@@ -39,6 +39,7 @@ import {
   type TxForReport,
 } from "@/lib/rebuild/data/admin";
 import { useRebuildSection } from "@/lib/rebuild/use-rebuild-section";
+import { RebuildShell } from "@/components/rebuild/shell/rebuild-shell";
 import { Toast, type ToastType } from "@/components/rebuild/ui/toast";
 import {
   DashboardSection,
@@ -431,7 +432,8 @@ export default function AdminRebuildPage() {
   }
 
   return (
-    <div className="grid gap-5">
+    <RebuildShell>
+      <div className="grid gap-5">
       <Toast message={message} type={toastType} onClose={() => setMessage(null)} />
 
       {show("dashboard") ? (
@@ -553,6 +555,11 @@ export default function AdminRebuildPage() {
           onToggleBoothActive={toggleBoothActive}
         />
       ) : null}
-    </div>
+      </div>
+    </RebuildShell>
   );
 }
+
+
+
+
