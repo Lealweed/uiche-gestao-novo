@@ -104,26 +104,15 @@ export function SummarySection({
         )}
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Card className="p-0">
-          <SectionHeader title="Resumo por forma de pagamento" />
-          <div className="grid grid-cols-2 gap-3 p-4">
-            <StatCard label="PIX"      value={`R$ ${totals.pix.toFixed(2)}`} />
-            <StatCard label="Crédito"  value={`R$ ${totals.credit.toFixed(2)}`} />
-            <StatCard label="Débito"   value={`R$ ${totals.debit.toFixed(2)}`} />
-            <StatCard label="Dinheiro" value={`R$ ${totals.cash.toFixed(2)}`} />
-          </div>
-        </Card>
-        <Card className="p-4">
-          <SectionHeader title="Distribuição do turno" />
-          <PaymentPieChart
-            pix={totals.pix}
-            credit={totals.credit}
-            debit={totals.debit}
-            cash={totals.cash}
-          />
-        </Card>
-      </div>
+      <Card className="p-4 mt-6">
+        <SectionHeader title="Distribuição do turno por forma de pagamento" />
+        <PaymentPieChart
+          pix={totals.pix}
+          credit={totals.credit}
+          debit={totals.debit}
+          cash={totals.cash}
+        />
+      </Card>
 
       <PendingReceiptsPanel
         transactions={pendingReceiptTxs}
