@@ -39,7 +39,6 @@ import {
   type TxForReport,
 } from "@/lib/rebuild/data/admin";
 import { useRebuildSection } from "@/lib/rebuild/use-rebuild-section";
-import { RebuildShell } from "@/components/rebuild/shell/rebuild-shell";
 import { Toast, type ToastType } from "@/components/rebuild/ui/toast";
 import {
   DashboardSection,
@@ -71,14 +70,6 @@ const ADMIN_SECTION_MAP: Record<string, MenuSection> = {
   empresas: "gestao",
   configuracoes: "configuracoes",
 };
-
-function NavBtn({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className={`rb-nav-item${active ? " active" : ""}`}>
-      {label}
-    </button>
-  );
-}
 
 export default function AdminRebuildPage() {
   const router = useRouter();
@@ -120,7 +111,7 @@ export default function AdminRebuildPage() {
   const [newProfileAvatarUrl, setNewProfileAvatarUrl] = useState("");
   const [newProfileActive, setNewProfileActive] = useState(true);
   const [resetEmail, setResetEmail] = useState("");
-  const { section: menu, setSection: setMenu, show } = useRebuildSection<MenuSection>("dashboard", ADMIN_SECTION_MAP);
+  const { show } = useRebuildSection<MenuSection>("dashboard", ADMIN_SECTION_MAP);
 
   useEffect(() => {
     (async () => {
@@ -430,15 +421,6 @@ export default function AdminRebuildPage() {
     }
   }
 
-  const navSections: { key: MenuSection; label: string }[] = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "operadores", label: "Operadores" },
-    { key: "financeiro", label: "Financeiro" },
-    { key: "gestao", label: "Gestao" },
-    { key: "relatorios", label: "Relatorios" },
-    { key: "configuracoes", label: "Configuracoes" },
-  ];
-
   function handleExportCSV() {
     exportToCSV("repasses-viacao", repassesComputed.viacoes, [
       { key: "name", label: "Empresa / Viacao" },
@@ -449,153 +431,128 @@ export default function AdminRebuildPage() {
   }
 
   return (
-    <RebuildShell>
-      <div className="rb-topbar mb-5">
-        <div>
-          <p className="rb-topbar-overline">Central Viagem</p>
-          <p className="rb-topbar-title">Painel Administrativo</p>
-        </div>
-        <div className="rb-topbar-actions">
-          <button className="rb-btn-ghost" type="button" onClick={() => refreshData()} disabled={loading}>
-            {loading ? "Atualizando..." : "Atualizar"}
-          </button>
-          <button className="rb-btn-ghost" type="button" onClick={() => window.print()}>
-            Imprimir
-          </button>
-        </div>
-      </div>
+    <div className="grid gap-5">
+      <Toast message={message} type={toastType} onClose={() => setMessage(null)} />
 
-      <div style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "200px 1fr", alignItems: "start" }}>
-        <nav className="rb-panel" style={{ padding: "0.5rem" }}>
-          {navSections.map((section) => (
-            <NavBtn key={section.key} label={section.label} active={menu === section.key} onClick={() => setMenu(section.key)} />
-          ))}
-        </nav>
+      {show("dashboard") ? (
+        <DashboardSection
+          loading={loading}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          repassesComputed={repassesComputed}
+          reportTransactionCount={reportTxs.length}
+          summary={summary}
+          adjustments={adjustments}
+          auditLogCount={auditLogs.length}
+          rows={rows}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          onFilterSubmit={() => refreshData()}
+          onClearFilters={() => {
+            setDateFrom("");
+            setDateTo("");
+            refreshData("", "");
+          }}
+          onExportCsv={handleExportCSV}
+          onForceCloseShift={forceCloseShift}
+          onApproveAdjustment={approveAdjustment}
+          onRejectAdjustment={rejectAdjustment}
+        />
+      ) : null}
 
-        <div style={{ display: "grid", gap: "1.25rem" }}>
-          <Toast message={message} type={toastType} onClose={() => setMessage(null)} />
+      {show("operadores") ? <OperatorsSection timePunchRows={timePunchRows} /> : null}
 
-          {show("dashboard") ? (
-            <DashboardSection
-              loading={loading}
-              dateFrom={dateFrom}
-              dateTo={dateTo}
-              repassesComputed={repassesComputed}
-              reportTransactionCount={reportTxs.length}
-              summary={summary}
-              adjustments={adjustments}
-              auditLogCount={auditLogs.length}
-              rows={rows}
-              onDateFromChange={setDateFrom}
-              onDateToChange={setDateTo}
-              onFilterSubmit={() => refreshData()}
-              onClearFilters={() => {
-                setDateFrom("");
-                setDateTo("");
-                refreshData("", "");
-              }}
-              onExportCsv={handleExportCSV}
-              onForceCloseShift={forceCloseShift}
-              onApproveAdjustment={approveAdjustment}
-              onRejectAdjustment={rejectAdjustment}
-            />
-          ) : null}
+      {show("financeiro") ? (
+        <FinanceSection
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          cashMovementTotals={cashMovementTotals}
+          cashClosingTotals={cashClosingTotals}
+          cashMovementRows={cashMovementRows}
+          shiftCashClosingRows={shiftCashClosingRows}
+          onDateFromChange={setDateFrom}
+          onDateToChange={setDateTo}
+          onFilterSubmit={() => refreshData()}
+          onClearFilters={() => {
+            setDateFrom("");
+            setDateTo("");
+            refreshData("", "");
+          }}
+        />
+      ) : null}
 
-          {show("operadores") ? <OperatorsSection timePunchRows={timePunchRows} /> : null}
+      {show("relatorios") ? <ReportsSection auditLogs={auditLogs} /> : null}
 
-          {show("financeiro") ? (
-            <FinanceSection
-              dateFrom={dateFrom}
-              dateTo={dateTo}
-              cashMovementTotals={cashMovementTotals}
-              cashClosingTotals={cashClosingTotals}
-              cashMovementRows={cashMovementRows}
-              shiftCashClosingRows={shiftCashClosingRows}
-              onDateFromChange={setDateFrom}
-              onDateToChange={setDateTo}
-              onFilterSubmit={() => refreshData()}
-              onClearFilters={() => {
-                setDateFrom("");
-                setDateTo("");
-                refreshData("", "");
-              }}
-            />
-          ) : null}
+      {show("gestao") ? (
+        <ManagementSection
+          profiles={profiles}
+          booths={booths}
+          operatorBoothLinks={operatorBoothLinks}
+          categories={categories}
+          subcategories={subcategories}
+          selectedOperatorId={selectedOperatorId}
+          selectedBoothId={selectedBoothId}
+          categoryName={categoryName}
+          subcategoryName={subcategoryName}
+          subcategoryCategoryId={subcategoryCategoryId}
+          onSelectedOperatorIdChange={setSelectedOperatorId}
+          onSelectedBoothIdChange={setSelectedBoothId}
+          onCategoryNameChange={setCategoryName}
+          onSubcategoryNameChange={setSubcategoryName}
+          onSubcategoryCategoryIdChange={setSubcategoryCategoryId}
+          onLinkOperatorToBooth={linkOperatorToBooth}
+          onCreateCategory={createCategory}
+          onCreateSubcategory={createSubcategory}
+          onToggleOperatorBoothLinkActive={toggleOperatorBoothLinkActive}
+          onToggleCategoryActive={toggleCategoryActive}
+          onToggleSubcategoryActive={toggleSubcategoryActive}
+        />
+      ) : null}
 
-          {show("relatorios") ? <ReportsSection auditLogs={auditLogs} /> : null}
-
-          {show("gestao") ? (
-            <ManagementSection
-              profiles={profiles}
-              booths={booths}
-              operatorBoothLinks={operatorBoothLinks}
-              categories={categories}
-              subcategories={subcategories}
-              selectedOperatorId={selectedOperatorId}
-              selectedBoothId={selectedBoothId}
-              categoryName={categoryName}
-              subcategoryName={subcategoryName}
-              subcategoryCategoryId={subcategoryCategoryId}
-              onSelectedOperatorIdChange={setSelectedOperatorId}
-              onSelectedBoothIdChange={setSelectedBoothId}
-              onCategoryNameChange={setCategoryName}
-              onSubcategoryNameChange={setSubcategoryName}
-              onSubcategoryCategoryIdChange={setSubcategoryCategoryId}
-              onLinkOperatorToBooth={linkOperatorToBooth}
-              onCreateCategory={createCategory}
-              onCreateSubcategory={createSubcategory}
-              onToggleOperatorBoothLinkActive={toggleOperatorBoothLinkActive}
-              onToggleCategoryActive={toggleCategoryActive}
-              onToggleSubcategoryActive={toggleSubcategoryActive}
-            />
-          ) : null}
-
-          {show("configuracoes") ? (
-            <SettingsSection
-              companyName={companyName}
-              companyPct={companyPct}
-              boothCode={boothCode}
-              boothName={boothName}
-              profileSearch={profileSearch}
-              boothSearch={boothSearch}
-              resetEmail={resetEmail}
-              newProfileUserId={newProfileUserId}
-              newProfileName={newProfileName}
-              newProfileRole={newProfileRole}
-              newProfileCpf={newProfileCpf}
-              newProfilePhone={newProfilePhone}
-              newProfileAddress={newProfileAddress}
-              newProfileAvatarUrl={newProfileAvatarUrl}
-              newProfileActive={newProfileActive}
-              companies={companies}
-              filteredProfiles={filteredProfiles}
-              filteredBooths={filteredBooths}
-              onCompanyNameChange={setCompanyName}
-              onCompanyPctChange={setCompanyPct}
-              onBoothCodeChange={setBoothCode}
-              onBoothNameChange={setBoothName}
-              onProfileSearchChange={setProfileSearch}
-              onBoothSearchChange={setBoothSearch}
-              onResetEmailChange={setResetEmail}
-              onNewProfileUserIdChange={setNewProfileUserId}
-              onNewProfileNameChange={setNewProfileName}
-              onNewProfileRoleChange={setNewProfileRole}
-              onNewProfileCpfChange={setNewProfileCpf}
-              onNewProfilePhoneChange={setNewProfilePhone}
-              onNewProfileAddressChange={setNewProfileAddress}
-              onNewProfileAvatarUrlChange={setNewProfileAvatarUrl}
-              onNewProfileActiveChange={setNewProfileActive}
-              onSaveProfile={saveProfile}
-              onSendResetLink={sendResetLink}
-              onCreateCompany={createCompany}
-              onCreateBooth={createBooth}
-              onToggleProfileActive={toggleProfileActive}
-              onToggleCompanyActive={toggleCompanyActive}
-              onToggleBoothActive={toggleBoothActive}
-            />
-          ) : null}
-        </div>
-      </div>
-    </RebuildShell>
+      {show("configuracoes") ? (
+        <SettingsSection
+          companyName={companyName}
+          companyPct={companyPct}
+          boothCode={boothCode}
+          boothName={boothName}
+          profileSearch={profileSearch}
+          boothSearch={boothSearch}
+          resetEmail={resetEmail}
+          newProfileUserId={newProfileUserId}
+          newProfileName={newProfileName}
+          newProfileRole={newProfileRole}
+          newProfileCpf={newProfileCpf}
+          newProfilePhone={newProfilePhone}
+          newProfileAddress={newProfileAddress}
+          newProfileAvatarUrl={newProfileAvatarUrl}
+          newProfileActive={newProfileActive}
+          companies={companies}
+          filteredProfiles={filteredProfiles}
+          filteredBooths={filteredBooths}
+          onCompanyNameChange={setCompanyName}
+          onCompanyPctChange={setCompanyPct}
+          onBoothCodeChange={setBoothCode}
+          onBoothNameChange={setBoothName}
+          onProfileSearchChange={setProfileSearch}
+          onBoothSearchChange={setBoothSearch}
+          onResetEmailChange={setResetEmail}
+          onNewProfileUserIdChange={setNewProfileUserId}
+          onNewProfileNameChange={setNewProfileName}
+          onNewProfileRoleChange={setNewProfileRole}
+          onNewProfileCpfChange={setNewProfileCpf}
+          onNewProfilePhoneChange={setNewProfilePhone}
+          onNewProfileAddressChange={setNewProfileAddress}
+          onNewProfileAvatarUrlChange={setNewProfileAvatarUrl}
+          onNewProfileActiveChange={setNewProfileActive}
+          onSaveProfile={saveProfile}
+          onSendResetLink={sendResetLink}
+          onCreateCompany={createCompany}
+          onCreateBooth={createBooth}
+          onToggleProfileActive={toggleProfileActive}
+          onToggleCompanyActive={toggleCompanyActive}
+          onToggleBoothActive={toggleBoothActive}
+        />
+      ) : null}
+    </div>
   );
 }
