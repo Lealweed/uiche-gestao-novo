@@ -21,6 +21,18 @@ type DataTableProps<T> = {
   className?: string;
 };
 
+function getDefaultRowKey<T>(row: T, idx: number) {
+  if (row && typeof row === "object") {
+    const record = row as Record<string, unknown>;
+    const preferredKey = record.id ?? record.user_id ?? record.shift_id;
+    if (typeof preferredKey === "string" || typeof preferredKey === "number") {
+      return String(preferredKey);
+    }
+  }
+
+  return String(idx);
+}
+
 export function DataTable<T>({
   columns,
   rows,
@@ -65,7 +77,7 @@ export function DataTable<T>({
             </tr>
           ) : (
             rows.map((row, idx) => (
-              <tr key={keyExtractor ? keyExtractor(row, idx) : String(idx)} role="row">
+              <tr key={keyExtractor ? keyExtractor(row, idx) : getDefaultRowKey(row, idx)} role="row">
                 {columns.map((col) => (
                   <td key={col.key} className={col.className} role="cell">
                     {col.render(row)}

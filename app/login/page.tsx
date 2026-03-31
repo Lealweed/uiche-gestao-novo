@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getDashboardRouteForRole } from "@/lib/auth/roles";
 import { Eye, EyeOff, Loader2, Ticket } from "lucide-react";
 
 const supabase = createClient();
@@ -48,13 +49,7 @@ export default function LoginPage() {
 
     const role = (profile as { role?: string }).role ?? "";
 
-    // admin / tenant_admin / financeiro → painel admin
-    if (["admin", "tenant_admin", "financeiro"].includes(role)) {
-      router.push("/rebuild/admin");
-    } else {
-      // operator e qualquer outro → painel operador
-      router.push("/rebuild/operator");
-    }
+    router.push(getDashboardRouteForRole(role));
   }
 
   /* ── UI ───────────────────────────────────────────────────── */

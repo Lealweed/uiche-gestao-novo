@@ -2,8 +2,8 @@
 
 Sistema de gestão operacional para guichês de venda de passagem (sem emissão de bilhete), com controle de turno, lançamentos por forma de pagamento, comprovantes e fechamento diário.
 
-## Stack sugerida
-- Frontend: Next.js 14 + Tailwind
+## Stack atual
+- Frontend: Next.js 16 + React 18 + Tailwind
 - Backend/Auth/DB/Storage: Supabase
 - Deploy: Vercel
 
@@ -20,6 +20,16 @@ Sistema de gestão operacional para guichês de venda de passagem (sem emissão 
 
 ## Banco de dados
 Use o arquivo `supabase/schema.sql` no SQL Editor do Supabase.
+
+## Rotas ativas
+- `/`
+- `/login`
+- `/rebuild/admin`
+- `/rebuild/auditoria`
+- `/rebuild/financeiro`
+- `/rebuild/operator`
+- `/rebuild/operadores`
+- `/rebuild/terminais`
 
 ## Variáveis de ambiente (web)
 ```bash

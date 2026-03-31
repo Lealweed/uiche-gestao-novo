@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ShieldCheck, Ticket, Wallet, BarChart3, Users, Clock } from "lucide-react";
+import { APP_ROUTES } from "@/lib/app-routes";
 
 const highlights = [
   {
@@ -108,14 +109,14 @@ export default function Home() {
           {/* CTAs */}
           <div className="flex flex-wrap gap-3 pt-2">
             <Link
-              href="/login"
+              href={APP_ROUTES.login}
               className="rb-btn-primary"
               aria-label="Entrar no sistema"
             >
               Entrar no sistema
             </Link>
             <Link
-              href="/rebuild/admin"
+              href={APP_ROUTES.rebuild.admin}
               className="rb-btn-ghost"
               aria-label="Ver painel administrativo"
             >

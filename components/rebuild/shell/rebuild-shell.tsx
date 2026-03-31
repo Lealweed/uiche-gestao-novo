@@ -3,86 +3,39 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { APP_ROUTES, isOperatorPanelPath } from "@/lib/app-routes";
+import { getRoleLabel } from "@/lib/auth/roles";
+import {
+  adminMainNav,
+  adminSectionLabels,
+  adminSystemNav,
+  operatorNav,
+  operatorSectionLabels,
+} from "@/components/rebuild/shell/navigation-config";
 import {
   Bell,
-  Building2,
   CalendarDays,
   ChevronRight,
-  LayoutDashboard,
   LogOut,
   Menu,
   ScanSearch,
-  Settings,
   Ticket,
-  Users,
   X,
-  ClipboardList,
-  BarChart3,
-  Wallet,
-  Clock,
-  type LucideIcon,
 } from "lucide-react";
 
 const supabase = createClient();
 
-type NavItem = {
-  href: string;
-  label: string;
-  section: string;
-  Icon: LucideIcon;
-};
-
-const adminMainNav: NavItem[] = [
-  { href: "/rebuild/admin#dashboard",       label: "Dashboard",        section: "dashboard",       Icon: LayoutDashboard },
-  { href: "/rebuild/admin#controle-turno",  label: "Controle de Turno",section: "controle-turno",  Icon: Ticket },
-  { href: "/rebuild/admin#financeiro",      label: "Financeiro",       section: "financeiro",      Icon: Wallet },
-  { href: "/rebuild/admin#relatorios",      label: "Relatórios",       section: "relatorios",      Icon: BarChart3 },
-];
-
-const adminSystemNav: NavItem[] = [
-  { href: "/rebuild/admin#usuarios",        label: "Usuários",         section: "usuarios",        Icon: Users },
-  { href: "/rebuild/admin#empresas",        label: "Empresas",         section: "empresas",        Icon: Building2 },
-  { href: "/rebuild/admin#configuracoes",   label: "Configurações",    section: "configuracoes",   Icon: Settings },
-];
-
-const operatorNav: NavItem[] = [
-  { href: "/rebuild/operator#resumo",       label: "Resumo do Turno",  section: "resumo",          Icon: LayoutDashboard },
-  { href: "/rebuild/operator#caixa-pdv",   label: "Caixa PDV",        section: "caixa-pdv",       Icon: Ticket },
-  { href: "/rebuild/operator#historico",   label: "Histórico",        section: "historico",       Icon: ClipboardList },
-  { href: "/rebuild/operator#ponto",       label: "Ponto Digital",    section: "ponto",           Icon: Clock },
-  { href: "/rebuild/operator#configuracoes", label: "Configurações",  section: "configuracoes",   Icon: Settings },
-];
-
-const adminSectionLabels: Record<string, string> = {
-  dashboard: "Dashboard",
-  "controle-turno": "Controle de Turno",
-  financeiro: "Financeiro",
-  relatorios: "Relatórios",
-  usuarios: "Usuários",
-  empresas: "Empresas",
-  configuracoes: "Configurações",
-};
-
-const operatorSectionLabels: Record<string, string> = {
-  resumo: "Resumo do Turno",
-  "caixa-pdv": "Caixa PDV",
-  historico: "Histórico",
-  ponto: "Ponto Digital",
-  configuracoes: "Configurações",
-};
-
 export function RebuildShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [currentSection, setCurrentSection] = useState("dashboard");
+  const isOperator = isOperatorPanelPath(pathname);
+  const defaultSection = isOperator ? "resumo" : "dashboard";
+  const [currentSection, setCurrentSection] = useState(defaultSection);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<{ name: string; role: string } | null>(null);
-
-  const isOperator = pathname.startsWith("/rebuild/operator");
   const mainNav = isOperator ? operatorNav : adminMainNav;
   const systemNav = isOperator ? [] : adminSystemNav;
   const sectionLabels = isOperator ? operatorSectionLabels : adminSectionLabels;
-  const defaultSection = isOperator ? "resumo" : "dashboard";
 
   useEffect(() => {
     const readHash = () => {
@@ -128,7 +81,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
 
   async function handleLogout() {
     await supabase.auth.signOut();
-    router.replace("/login");
+    router.replace(APP_ROUTES.login);
   }
 
   function isActive(section: string) {
@@ -224,7 +177,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               {userProfile?.name ?? "Carregando..."}
             </p>
             <p className="text-xs text-[#6B7280] capitalize">
-              {userProfile?.role === "admin" ? "Administrador" : "Operador"}
+              {getRoleLabel(userProfile?.role)}
             </p>
           </div>
           <button
