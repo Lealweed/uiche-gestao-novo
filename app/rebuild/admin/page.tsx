@@ -42,6 +42,9 @@ import {
   RefreshCw,
   Download,
   Printer,
+  Pencil,
+  X,
+  Check,
 } from "lucide-react";
 
 const supabase = createClient();
@@ -142,6 +145,18 @@ export default function AdminRebuildPage() {
   const [isMounted, setIsMounted] = useState(false);
   const [punchPage, setPunchPage] = useState(1);
   const PUNCH_PER_PAGE = 10;
+
+  // Estados de edicao
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [editingSubcategoryId, setEditingSubcategoryId] = useState<string | null>(null);
+  const [editingSubcategoryName, setEditingSubcategoryName] = useState("");
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
+  const [editingCompanyName, setEditingCompanyName] = useState("");
+  const [editingCompanyPct, setEditingCompanyPct] = useState("");
+  const [editingBoothId, setEditingBoothId] = useState<string | null>(null);
+  const [editingBoothCode, setEditingBoothCode] = useState("");
+  const [editingBoothName, setEditingBoothName] = useState("");
 
   useEffect(() => {
     setIsMounted(true);
@@ -407,6 +422,81 @@ export default function AdminRebuildPage() {
   async function toggleProfileActive(p: Profile) { await supabase.from("profiles").update({ active: !p.active }).eq("user_id",p.user_id); await refreshData(); }
   async function toggleCategoryActive(c: Category) { await supabase.from("transaction_categories").update({ active: !c.active }).eq("id",c.id); await refreshData(); }
   async function toggleSubcategoryActive(s: Subcategory) { await supabase.from("transaction_subcategories").update({ active: !s.active }).eq("id",s.id); await refreshData(); }
+
+  // Funcoes de edicao
+  function startEditCategory(c: Category) {
+    setEditingCategoryId(c.id);
+    setEditingCategoryName(c.name);
+  }
+  async function saveEditCategory() {
+    if (!editingCategoryId) return;
+    await supabase.from("transaction_categories").update({ name: editingCategoryName }).eq("id", editingCategoryId);
+    setEditingCategoryId(null);
+    setEditingCategoryName("");
+    await refreshData();
+    setToastType("success"); setMessage("Categoria atualizada!");
+  }
+  function cancelEditCategory() {
+    setEditingCategoryId(null);
+    setEditingCategoryName("");
+  }
+
+  function startEditSubcategory(s: Subcategory) {
+    setEditingSubcategoryId(s.id);
+    setEditingSubcategoryName(s.name);
+  }
+  async function saveEditSubcategory() {
+    if (!editingSubcategoryId) return;
+    await supabase.from("transaction_subcategories").update({ name: editingSubcategoryName }).eq("id", editingSubcategoryId);
+    setEditingSubcategoryId(null);
+    setEditingSubcategoryName("");
+    await refreshData();
+    setToastType("success"); setMessage("Subcategoria atualizada!");
+  }
+  function cancelEditSubcategory() {
+    setEditingSubcategoryId(null);
+    setEditingSubcategoryName("");
+  }
+
+  function startEditCompany(c: Company) {
+    setEditingCompanyId(c.id);
+    setEditingCompanyName(c.name);
+    setEditingCompanyPct(getCompanyPct(c).toString());
+  }
+  async function saveEditCompany() {
+    if (!editingCompanyId) return;
+    await supabase.from("companies").update({ name: editingCompanyName, commission_percentage: parseFloat(editingCompanyPct) }).eq("id", editingCompanyId);
+    setEditingCompanyId(null);
+    setEditingCompanyName("");
+    setEditingCompanyPct("");
+    await refreshData();
+    setToastType("success"); setMessage("Empresa atualizada!");
+  }
+  function cancelEditCompany() {
+    setEditingCompanyId(null);
+    setEditingCompanyName("");
+    setEditingCompanyPct("");
+  }
+
+  function startEditBooth(b: Booth) {
+    setEditingBoothId(b.id);
+    setEditingBoothCode(b.code);
+    setEditingBoothName(b.name);
+  }
+  async function saveEditBooth() {
+    if (!editingBoothId) return;
+    await supabase.from("booths").update({ code: editingBoothCode, name: editingBoothName }).eq("id", editingBoothId);
+    setEditingBoothId(null);
+    setEditingBoothCode("");
+    setEditingBoothName("");
+    await refreshData();
+    setToastType("success"); setMessage("Guiche atualizado!");
+  }
+  function cancelEditBooth() {
+    setEditingBoothId(null);
+    setEditingBoothCode("");
+    setEditingBoothName("");
+  }
 
   async function approveAdjustment(adjId: string, txId: string) {
     await supabase.from("transactions").update({ status:"voided" }).eq("id",txId);
@@ -1004,12 +1094,41 @@ export default function AdminRebuildPage() {
             <SectionCard title="Empresas / Viacoes">
               <DataTable
                 columns={[
-                  { key: "nome", header: "Nome", render: (c) => <span className="font-semibold">{c.name}</span> },
-                  { key: "comissao", header: "Comissao Central", render: (c) => `${getCompanyPct(c).toFixed(3)}%` },
+                  { key: "nome", header: "Nome", render: (c) => 
+                    editingCompanyId === c.id ? (
+                      <input
+                        value={editingCompanyName}
+                        onChange={(e) => setEditingCompanyName(e.target.value)}
+                        className="px-2 py-1 text-sm bg-input border border-border rounded text-foreground w-full"
+                        autoFocus
+                      />
+                    ) : <span className="font-semibold">{c.name}</span>
+                  },
+                  { key: "comissao", header: "Comissao Central", render: (c) => 
+                    editingCompanyId === c.id ? (
+                      <input
+                        value={editingCompanyPct}
+                        onChange={(e) => setEditingCompanyPct(e.target.value)}
+                        type="number"
+                        step="0.001"
+                        className="px-2 py-1 text-sm bg-input border border-border rounded text-foreground w-20"
+                      />
+                    ) : `${getCompanyPct(c).toFixed(3)}%`
+                  },
                   { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
-                  { key: "acao", header: "Acao", render: (c) => (
-                    <Button variant="ghost" size="sm" onClick={()=>toggleCompanyActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
-                  ) },
+                  { key: "acao", header: "Acao", render: (c) => 
+                    editingCompanyId === c.id ? (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={saveEditCompany}><Check className="w-4 h-4 text-emerald-400" /></Button>
+                        <Button variant="ghost" size="sm" onClick={cancelEditCompany}><X className="w-4 h-4 text-red-400" /></Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={()=>startEditCompany(c)}><Pencil className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="sm" onClick={()=>toggleCompanyActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
+                      </div>
+                    )
+                  },
                 ]}
                 rows={companies}
                 emptyMessage="Nenhuma empresa cadastrada."
@@ -1021,12 +1140,39 @@ export default function AdminRebuildPage() {
               <Input value={boothSearch} onChange={e=>setBoothSearch(e.target.value)} placeholder="Buscar guiche..." className="mb-4" />
               <DataTable
                 columns={[
-                  { key: "codigo", header: "Codigo", render: (b) => <span className="font-bold">{b.code}</span> },
-                  { key: "nome", header: "Nome", render: (b) => b.name },
+                  { key: "codigo", header: "Codigo", render: (b) => 
+                    editingBoothId === b.id ? (
+                      <input
+                        value={editingBoothCode}
+                        onChange={(e) => setEditingBoothCode(e.target.value)}
+                        className="px-2 py-1 text-sm bg-input border border-border rounded text-foreground w-16"
+                        autoFocus
+                      />
+                    ) : <span className="font-bold">{b.code}</span>
+                  },
+                  { key: "nome", header: "Nome", render: (b) => 
+                    editingBoothId === b.id ? (
+                      <input
+                        value={editingBoothName}
+                        onChange={(e) => setEditingBoothName(e.target.value)}
+                        className="px-2 py-1 text-sm bg-input border border-border rounded text-foreground w-full"
+                      />
+                    ) : b.name
+                  },
                   { key: "status", header: "Status", render: (b) => <StatusBadge active={b.active} /> },
-                  { key: "acao", header: "Acao", render: (b) => (
-                    <Button variant="ghost" size="sm" onClick={()=>toggleBoothActive(b)}>{b.active?"Inativar":"Ativar"}</Button>
-                  ) },
+                  { key: "acao", header: "Acao", render: (b) => 
+                    editingBoothId === b.id ? (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={saveEditBooth}><Check className="w-4 h-4 text-emerald-400" /></Button>
+                        <Button variant="ghost" size="sm" onClick={cancelEditBooth}><X className="w-4 h-4 text-red-400" /></Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={()=>startEditBooth(b)}><Pencil className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="sm" onClick={()=>toggleBoothActive(b)}>{b.active?"Inativar":"Ativar"}</Button>
+                      </div>
+                    )
+                  },
                 ]}
                 rows={filteredBooths}
                 emptyMessage="Nenhum guiche cadastrado."
@@ -1077,11 +1223,30 @@ export default function AdminRebuildPage() {
                 </form>
                 <DataTable
                   columns={[
-                    { key: "nome", header: "Nome", render: (c) => c.name },
+                    { key: "nome", header: "Nome", render: (c) => 
+                      editingCategoryId === c.id ? (
+                        <input
+                          value={editingCategoryName}
+                          onChange={(e) => setEditingCategoryName(e.target.value)}
+                          className="px-2 py-1 text-sm bg-input border border-border rounded text-foreground w-full"
+                          autoFocus
+                        />
+                      ) : c.name
+                    },
                     { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
-                    { key: "acao", header: "Acao", render: (c) => (
-                      <Button variant="ghost" size="sm" onClick={()=>toggleCategoryActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
-                    ) },
+                    { key: "acao", header: "Acao", render: (c) => 
+                      editingCategoryId === c.id ? (
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={saveEditCategory}><Check className="w-4 h-4 text-emerald-400" /></Button>
+                          <Button variant="ghost" size="sm" onClick={cancelEditCategory}><X className="w-4 h-4 text-red-400" /></Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={()=>startEditCategory(c)}><Pencil className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="sm" onClick={()=>toggleCategoryActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
+                        </div>
+                      )
+                    },
                   ]}
                   rows={categories}
                   emptyMessage="Nenhuma categoria encontrada."
@@ -1101,12 +1266,31 @@ export default function AdminRebuildPage() {
               </form>
               <DataTable
                 columns={[
-                  { key: "nome", header: "Nome", render: (s) => s.name },
+                  { key: "nome", header: "Nome", render: (s) => 
+                    editingSubcategoryId === s.id ? (
+                      <input
+                        value={editingSubcategoryName}
+                        onChange={(e) => setEditingSubcategoryName(e.target.value)}
+                        className="px-2 py-1 text-sm bg-input border border-border rounded text-foreground w-full"
+                        autoFocus
+                      />
+                    ) : s.name
+                  },
                   { key: "categoria", header: "Categoria", render: (s) => { const cat = s.transaction_categories; return Array.isArray(cat) ? cat[0]?.name : cat?.name ?? "-"; } },
                   { key: "status", header: "Status", render: (s) => <StatusBadge active={s.active} /> },
-                  { key: "acao", header: "Acao", render: (s) => (
-                    <Button variant="ghost" size="sm" onClick={()=>toggleSubcategoryActive(s)}>{s.active?"Inativar":"Ativar"}</Button>
-                  ) },
+                  { key: "acao", header: "Acao", render: (s) => 
+                    editingSubcategoryId === s.id ? (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={saveEditSubcategory}><Check className="w-4 h-4 text-emerald-400" /></Button>
+                        <Button variant="ghost" size="sm" onClick={cancelEditSubcategory}><X className="w-4 h-4 text-red-400" /></Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="sm" onClick={()=>startEditSubcategory(s)}><Pencil className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="sm" onClick={()=>toggleSubcategoryActive(s)}>{s.active?"Inativar":"Ativar"}</Button>
+                      </div>
+                    )
+                  },
                 ]}
                 rows={subcategories.slice(0,20)}
                 emptyMessage="Nenhuma subcategoria encontrada."
