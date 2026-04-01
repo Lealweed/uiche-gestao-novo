@@ -26,6 +26,9 @@ import { Input } from "@/components/rebuild/ui/input";
 import { StatCard } from "@/components/rebuild/ui/stat-card";
 import { Card } from "@/components/rebuild/ui/card";
 import { Toast, type ToastType } from "@/components/rebuild/ui/toast";
+import { ConfirmDialog } from "@/components/rebuild/ui/confirm-dialog";
+import { Breadcrumb } from "@/components/rebuild/ui/breadcrumb";
+import { SkeletonDashboard, SkeletonTable } from "@/components/rebuild/ui/skeleton";
 import { exportToCSV } from "@/lib/csv-export";
 import { 
   DollarSign, 
@@ -45,6 +48,14 @@ import {
   Pencil,
   X,
   Check,
+  Power,
+  Trash2,
+  Filter,
+  SortAsc,
+  SortDesc,
+  MoreVertical,
+  Radio,
+  CircleDot,
 } from "lucide-react";
 
 const supabase = createClient();
@@ -158,9 +169,38 @@ export default function AdminRebuildPage() {
   const [editingBoothCode, setEditingBoothCode] = useState("");
   const [editingBoothName, setEditingBoothName] = useState("");
 
+  // Estados de confirmacao
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    variant: "danger" | "warning" | "info";
+    onConfirm: () => Promise<void>;
+  }>({ open: false, title: "", description: "", variant: "danger", onConfirm: async () => {} });
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
+  // Estados de filtros
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+
+  // Estado de loading
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Auto-refresh every 60 seconds when enabled
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      refreshData();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [autoRefresh]);
 
   useEffect(() => {
     (async () => {
@@ -203,6 +243,7 @@ export default function AdminRebuildPage() {
 
   async function refreshData(from?: string, to?: string) {
     setLoading(true);
+    setIsLoading(true);
     const f = from ?? dateFrom; const t = to ?? dateTo;
     const sI = f ? `${f}T00:00:00.000Z` : null;
     const eI = t ? `${t}T23:59:59.999Z` : null;
@@ -257,7 +298,7 @@ export default function AdminRebuildPage() {
       setCashMovementRows(hydratedCash as unknown as CashMovementRow[]);
       setShiftCashClosingRows(hydratedClosings as unknown as ShiftCashClosingRow[]);
       setReportTxs(hydratedTxs as unknown as TxForReport[]); setAdjustments(hydratedAdj as unknown as Adjustment[]);
-    } finally { setLoading(false); }
+    } finally { setLoading(false); setIsLoading(false); setLastUpdate(new Date()); }
   }
 
   const repassesComputed = useMemo(() => {
@@ -417,11 +458,90 @@ export default function AdminRebuildPage() {
     setResetEmail(""); setToastType("success"); setMessage("Link de reset enviado com sucesso!");
   }
 
-  async function toggleCompanyActive(c: Company) { await supabase.from("companies").update({ active: !c.active }).eq("id",c.id); await refreshData(); }
-  async function toggleBoothActive(b: Booth) { await supabase.from("booths").update({ active: !b.active }).eq("id",b.id); await refreshData(); }
-  async function toggleProfileActive(p: Profile) { await supabase.from("profiles").update({ active: !p.active }).eq("user_id",p.user_id); await refreshData(); }
-  async function toggleCategoryActive(c: Category) { await supabase.from("transaction_categories").update({ active: !c.active }).eq("id",c.id); await refreshData(); }
-  async function toggleSubcategoryActive(s: Subcategory) { await supabase.from("transaction_subcategories").update({ active: !s.active }).eq("id",s.id); await refreshData(); }
+  function confirmToggleCompany(c: Company) {
+    setConfirmDialog({
+      open: true,
+      title: c.active ? "Inativar Empresa" : "Reativar Empresa",
+      description: `Tem certeza que deseja ${c.active ? "inativar" : "reativar"} a empresa "${c.name}"?`,
+      variant: c.active ? "warning" : "info",
+      onConfirm: async () => {
+        await supabase.from("companies").update({ active: !c.active }).eq("id", c.id);
+        await refreshData();
+        setToastType("success");
+        setMessage(`Empresa ${c.active ? "inativada" : "reativada"} com sucesso!`);
+      },
+    });
+  }
+
+  function confirmToggleBooth(b: Booth) {
+    setConfirmDialog({
+      open: true,
+      title: b.active ? "Inativar Guiche" : "Reativar Guiche",
+      description: `Tem certeza que deseja ${b.active ? "inativar" : "reativar"} o guiche "${b.code} - ${b.name}"?`,
+      variant: b.active ? "warning" : "info",
+      onConfirm: async () => {
+        await supabase.from("booths").update({ active: !b.active }).eq("id", b.id);
+        await refreshData();
+        setToastType("success");
+        setMessage(`Guiche ${b.active ? "inativado" : "reativado"} com sucesso!`);
+      },
+    });
+  }
+
+  function confirmToggleProfile(p: Profile) {
+    setConfirmDialog({
+      open: true,
+      title: p.active ? "Inativar Usuario" : "Reativar Usuario",
+      description: `Tem certeza que deseja ${p.active ? "inativar" : "reativar"} o usuario "${p.full_name}"?`,
+      variant: p.active ? "danger" : "info",
+      onConfirm: async () => {
+        await supabase.from("profiles").update({ active: !p.active }).eq("user_id", p.user_id);
+        await refreshData();
+        setToastType("success");
+        setMessage(`Usuario ${p.active ? "inativado" : "reativado"} com sucesso!`);
+      },
+    });
+  }
+
+  function confirmToggleCategory(c: Category) {
+    setConfirmDialog({
+      open: true,
+      title: c.active ? "Inativar Categoria" : "Reativar Categoria",
+      description: `Tem certeza que deseja ${c.active ? "inativar" : "reativar"} a categoria "${c.name}"?`,
+      variant: c.active ? "warning" : "info",
+      onConfirm: async () => {
+        await supabase.from("transaction_categories").update({ active: !c.active }).eq("id", c.id);
+        await refreshData();
+        setToastType("success");
+        setMessage(`Categoria ${c.active ? "inativada" : "reativada"} com sucesso!`);
+      },
+    });
+  }
+
+  function confirmToggleSubcategory(s: Subcategory) {
+    setConfirmDialog({
+      open: true,
+      title: s.active ? "Inativar Subcategoria" : "Reativar Subcategoria",
+      description: `Tem certeza que deseja ${s.active ? "inativar" : "reativar"} a subcategoria "${s.name}"?`,
+      variant: s.active ? "warning" : "info",
+      onConfirm: async () => {
+        await supabase.from("transaction_subcategories").update({ active: !s.active }).eq("id", s.id);
+        await refreshData();
+        setToastType("success");
+        setMessage(`Subcategoria ${s.active ? "inativada" : "reativada"} com sucesso!`);
+      },
+    });
+  }
+
+  async function handleConfirmAction() {
+    setConfirmLoading(true);
+    try {
+      await confirmDialog.onConfirm();
+    } finally {
+      setConfirmLoading(false);
+      setConfirmDialog({ ...confirmDialog, open: false });
+    }
+  }
 
   // Funcoes de edicao
   function startEditCategory(c: Category) {
@@ -535,15 +655,57 @@ export default function AdminRebuildPage() {
     return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
   };
 
+  const menuLabels: Record<MenuSection, string> = {
+    dashboard: "Dashboard",
+    operadores: "Controle de Turno",
+    financeiro: "Financeiro",
+    relatorios: "Relatorios",
+    gestao: "Gestao",
+    usuarios: "Usuarios",
+    empresas: "Empresas",
+    configuracoes: "Configuracoes",
+  };
+
   return (
     <RebuildShell>
+      {/* Breadcrumbs */}
+      <Breadcrumb
+        items={[
+          { label: "Central Viagens", onClick: () => setMenu("dashboard") },
+          { label: menuLabels[menu] },
+        ]}
+        className="mb-4"
+      />
+
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
         <div>
-          <p className="text-xs font-semibold text-primary uppercase tracking-wider mb-1">Central Viagens</p>
-          <h1 className="text-2xl font-bold text-foreground">Painel Administrativo</h1>
+          <div className="flex items-center gap-3 mb-1">
+            <p className="text-xs font-semibold text-primary uppercase tracking-wider">Central Viagens</p>
+            {lastUpdate && (
+              <span className="text-xs text-muted flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Atualizado {lastUpdate.toLocaleTimeString("pt-BR")}
+              </span>
+            )}
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">{menuLabels[menu]}</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Auto-refresh toggle */}
+          <button
+            onClick={() => setAutoRefresh(!autoRefresh)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              autoRefresh
+                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                : "bg-slate-700/50 text-muted border border-border hover:text-foreground"
+            }`}
+            title={autoRefresh ? "Desativar atualizacao automatica" : "Ativar atualizacao automatica (60s)"}
+          >
+            <CircleDot className={`w-3 h-3 ${autoRefresh ? "animate-pulse" : ""}`} />
+            {autoRefresh ? "Tempo Real" : "Manual"}
+          </button>
+
           <Button variant="ghost" size="sm" onClick={() => refreshData()} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Atualizando..." : "Atualizar"}
@@ -562,16 +724,26 @@ export default function AdminRebuildPage() {
       {/* Global message */}
       <Toast message={message} type={toastType} onClose={() => setMessage(null)} />
 
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        onClose={() => setConfirmDialog({ ...confirmDialog, open: false })}
+        onConfirm={handleConfirmAction}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        variant={confirmDialog.variant}
+        loading={confirmLoading}
+        confirmText="Confirmar"
+        cancelText="Cancelar"
+      />
+
       {/* Main content - No duplicate menu! */}
       <div className="space-y-6">
         {/* DASHBOARD */}
         {show("dashboard") && (
           <>
-            {loading ? (
-              <Card className="text-center py-12">
-                <RefreshCw className="w-8 h-8 animate-spin mx-auto text-primary mb-4" />
-                <p className="text-muted">Carregando indicadores...</p>
-              </Card>
+            {isLoading ? (
+              <SkeletonDashboard />
             ) : (
               <>
                 {/* Date filter */}
@@ -1057,7 +1229,9 @@ export default function AdminRebuildPage() {
                   { key: "perfil", header: "Perfil", render: (p) => <Badge variant="info">{p.role}</Badge> },
                   { key: "status", header: "Status", render: (p) => <StatusBadge active={p.active} /> },
                   { key: "acao", header: "Acao", render: (p) => (
-                    <Button variant="ghost" size="sm" onClick={()=>toggleProfileActive(p)}>{p.active?"Inativar":"Ativar"}</Button>
+                    <Button variant="ghost" size="sm" onClick={()=>confirmToggleProfile(p)} title={p.active ? "Inativar" : "Ativar"}>
+                          <Power className={`w-4 h-4 ${p.active ? "text-amber-400" : "text-emerald-400"}`} />
+                        </Button>
                   ) },
                 ]}
                 rows={filteredProfiles}
@@ -1125,7 +1299,9 @@ export default function AdminRebuildPage() {
                     ) : (
                       <div className="flex gap-1">
                         <Button variant="ghost" size="sm" onClick={()=>startEditCompany(c)}><Pencil className="w-4 h-4" /></Button>
-                        <Button variant="ghost" size="sm" onClick={()=>toggleCompanyActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
+                        <Button variant="ghost" size="sm" onClick={()=>confirmToggleCompany(c)} title={c.active ? "Inativar" : "Ativar"}>
+                          <Power className={`w-4 h-4 ${c.active ? "text-amber-400" : "text-emerald-400"}`} />
+                        </Button>
                       </div>
                     )
                   },
@@ -1169,7 +1345,9 @@ export default function AdminRebuildPage() {
                     ) : (
                       <div className="flex gap-1">
                         <Button variant="ghost" size="sm" onClick={()=>startEditBooth(b)}><Pencil className="w-4 h-4" /></Button>
-                        <Button variant="ghost" size="sm" onClick={()=>toggleBoothActive(b)}>{b.active?"Inativar":"Ativar"}</Button>
+                        <Button variant="ghost" size="sm" onClick={()=>confirmToggleBooth(b)} title={b.active ? "Inativar" : "Ativar"}>
+                          <Power className={`w-4 h-4 ${b.active ? "text-amber-400" : "text-emerald-400"}`} />
+                        </Button>
                       </div>
                     )
                   },
@@ -1243,7 +1421,9 @@ export default function AdminRebuildPage() {
                       ) : (
                         <div className="flex gap-1">
                           <Button variant="ghost" size="sm" onClick={()=>startEditCategory(c)}><Pencil className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="sm" onClick={()=>toggleCategoryActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
+                          <Button variant="ghost" size="sm" onClick={()=>confirmToggleCategory(c)} title={c.active ? "Inativar" : "Ativar"}>
+                              <Power className={`w-4 h-4 ${c.active ? "text-amber-400" : "text-emerald-400"}`} />
+                            </Button>
                         </div>
                       )
                     },
@@ -1287,7 +1467,9 @@ export default function AdminRebuildPage() {
                     ) : (
                       <div className="flex gap-1">
                         <Button variant="ghost" size="sm" onClick={()=>startEditSubcategory(s)}><Pencil className="w-4 h-4" /></Button>
-                        <Button variant="ghost" size="sm" onClick={()=>toggleSubcategoryActive(s)}>{s.active?"Inativar":"Ativar"}</Button>
+                        <Button variant="ghost" size="sm" onClick={()=>confirmToggleSubcategory(s)} title={s.active ? "Inativar" : "Ativar"}>
+                            <Power className={`w-4 h-4 ${s.active ? "text-amber-400" : "text-emerald-400"}`} />
+                          </Button>
                       </div>
                     )
                   },
