@@ -20,6 +20,7 @@ import {
   BarChart3,
   Wallet,
   Clock,
+  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +41,7 @@ const adminMainNav: NavItem[] = [
 ];
 
 const adminSystemNav: NavItem[] = [
+  { href: "/rebuild/admin#mensagens", label: "Mensagens", section: "mensagens", Icon: MessageSquare },
   { href: "/rebuild/admin#usuarios", label: "Usuarios", section: "usuarios", Icon: Users },
   { href: "/rebuild/admin#empresas", label: "Empresas", section: "empresas", Icon: Building2 },
   { href: "/rebuild/admin#configuracoes", label: "Configuracoes", section: "configuracoes", Icon: Settings },
@@ -58,6 +60,7 @@ const adminSectionLabels: Record<string, string> = {
   "controle-turno": "Controle de Turno",
   financeiro: "Financeiro",
   relatorios: "Relatorios",
+  mensagens: "Mensagens",
   usuarios: "Usuarios",
   empresas: "Empresas",
   configuracoes: "Configuracoes",

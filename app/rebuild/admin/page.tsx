@@ -56,6 +56,10 @@ import {
   MoreVertical,
   Radio,
   CircleDot,
+  MessageSquare,
+  Send,
+  Eye,
+  CheckCheck,
 } from "lucide-react";
 
 const supabase = createClient();
@@ -90,7 +94,8 @@ type TxForReport = { id: string; status?: string; amount: number; sold_at?: stri
 type TimePunchRow = { id: string; punch_type: string; punched_at: string; note: string|null; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type CashMovementRow = { id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type ShiftCashClosingRow = { id: string; expected_cash: number; declared_cash: number; difference: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
-type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"relatorios"|"usuarios"|"empresas"|"configuracoes";
+type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"relatorios"|"usuarios"|"empresas"|"configuracoes"|"mensagens";
+type OperatorMessage = { id: string; message: string; read: boolean; created_at: string; operator_id: string; profiles: { full_name: string }|{ full_name: string }[]|null };
 
 function getCompanyPct(c: Company) { return Number(c.commission_percent ?? c.comission_percent ?? 0); }
 function nameOf(x: { full_name: string }|{ full_name: string }[]|null) { return Array.isArray(x) ? x[0]?.full_name : x?.full_name; }
@@ -188,6 +193,12 @@ export default function AdminRebuildPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+
+  // Estados de mensagens dos operadores
+  const [operatorMessages, setOperatorMessages] = useState<OperatorMessage[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [adminReply, setAdminReply] = useState("");
 
   useEffect(() => {
     setIsMounted(true);
@@ -299,6 +310,39 @@ export default function AdminRebuildPage() {
       setShiftCashClosingRows(hydratedClosings as unknown as ShiftCashClosingRow[]);
       setReportTxs(hydratedTxs as unknown as TxForReport[]); setAdjustments(hydratedAdj as unknown as Adjustment[]);
     } finally { setLoading(false); setIsLoading(false); setLastUpdate(new Date()); }
+  }
+
+  // ===== FUNCOES MENSAGENS OPERADORES =====
+  async function loadOperatorMessages() {
+    const profileMap = new Map(profiles.map(p => [p.user_id, p.full_name]));
+    const { data, error } = await supabase
+      .from("operator_messages")
+      .select("id, message, read, created_at, operator_id")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    
+    if (!error && data) {
+      const hydratedMessages = data.map((m: { id: string; message: string; read: boolean; created_at: string; operator_id: string }) => ({
+        ...m,
+        profiles: { full_name: profileMap.get(m.operator_id) ?? "Operador" }
+      }));
+      setOperatorMessages(hydratedMessages);
+      setUnreadCount(hydratedMessages.filter((m: OperatorMessage) => !m.read).length);
+    }
+  }
+
+  async function markMessageAsRead(msgId: string) {
+    await supabase.from("operator_messages").update({ read: true }).eq("id", msgId);
+    setOperatorMessages(prev => prev.map(m => m.id === msgId ? { ...m, read: true } : m));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  }
+
+  async function markAllMessagesAsRead() {
+    await supabase.from("operator_messages").update({ read: true }).eq("read", false);
+    setOperatorMessages(prev => prev.map(m => ({ ...m, read: true })));
+    setUnreadCount(0);
+    setToastType("success");
+    setMessage("Todas as mensagens foram marcadas como lidas.");
   }
 
   const repassesComputed = useMemo(() => {
@@ -664,6 +708,7 @@ export default function AdminRebuildPage() {
     usuarios: "Usuarios",
     empresas: "Empresas",
     configuracoes: "Configuracoes",
+    mensagens: "Mensagens",
   };
 
   return (
@@ -1478,6 +1523,110 @@ export default function AdminRebuildPage() {
                 emptyMessage="Nenhuma subcategoria encontrada."
               />
             </SectionCard>
+          </div>
+        )}
+
+        {/* ===== MENSAGENS DOS OPERADORES ===== */}
+        {show("mensagens") && (
+          <div className="space-y-6">
+            <SectionHeader title="Central de Mensagens" subtitle="Mensagens recebidas dos operadores" />
+            
+            {/* Header com acoes */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Badge variant={unreadCount > 0 ? "warning" : "secondary"} className="text-sm">
+                  {unreadCount} nao lida{unreadCount !== 1 ? "s" : ""}
+                </Badge>
+                <Button variant="ghost" size="sm" onClick={loadOperatorMessages}>
+                  <RefreshCw className="w-4 h-4 mr-1" />
+                  Atualizar
+                </Button>
+              </div>
+              {unreadCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={markAllMessagesAsRead}>
+                  <CheckCheck className="w-4 h-4 mr-1" />
+                  Marcar todas como lidas
+                </Button>
+              )}
+            </div>
+
+            {/* Lista de Mensagens */}
+            <Card>
+              {operatorMessages.length === 0 ? (
+                <div className="text-center py-12">
+                  <MessageSquare size={48} className="mx-auto text-muted mb-3 opacity-50" />
+                  <p className="text-muted">Nenhuma mensagem recebida.</p>
+                  <p className="text-xs text-muted mt-1">As mensagens dos operadores aparecerao aqui.</p>
+                  <Button variant="ghost" size="sm" className="mt-4" onClick={loadOperatorMessages}>
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Carregar mensagens
+                  </Button>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {operatorMessages.map(msg => (
+                    <div 
+                      key={msg.id} 
+                      className={`p-4 transition-colors ${!msg.read ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-slate-800/30"}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3 flex-1">
+                          <div className={`size-10 rounded-full flex items-center justify-center ${!msg.read ? "bg-primary/20" : "bg-slate-700"}`}>
+                            <MessageSquare size={18} className={!msg.read ? "text-primary" : "text-muted"} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-semibold text-foreground">
+                                {nameOf(msg.profiles) ?? "Operador"}
+                              </span>
+                              {!msg.read && (
+                                <Badge variant="primary" className="text-[10px] px-1.5 py-0">NOVA</Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-foreground/90 mb-2">{msg.message}</p>
+                            <p className="text-xs text-muted">
+                              {isMounted ? new Date(msg.created_at).toLocaleString("pt-BR") : "--"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!msg.read && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => markMessageAsRead(msg.id)}
+                              title="Marcar como lida"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Estatisticas */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <StatCard 
+                title="Total de Mensagens" 
+                value={operatorMessages.length.toString()} 
+                icon={<MessageSquare className="w-5 h-5" />}
+              />
+              <StatCard 
+                title="Nao Lidas" 
+                value={unreadCount.toString()} 
+                icon={<AlertCircle className="w-5 h-5" />}
+                trend={unreadCount > 0 ? { value: unreadCount, positive: false } : undefined}
+              />
+              <StatCard 
+                title="Operadores Ativos" 
+                value={new Set(operatorMessages.map(m => m.operator_id)).size.toString()} 
+                icon={<Users className="w-5 h-5" />}
+              />
+            </div>
           </div>
         )}
       </div>
