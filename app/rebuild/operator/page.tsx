@@ -745,9 +745,15 @@ export default function OperatorRebuildPage() {
       {/* ===== HISTORICO ===== */}
       {show("historico") && (
         <div className="space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Historico de Lancamentos</h1>
-            <p className="text-sm text-muted">Todos os lancamentos do turno atual</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Historico de Lancamentos</h1>
+              <p className="text-sm text-muted">Todos os lancamentos do turno atual</p>
+            </div>
+            <Button variant="primary" onClick={() => setSection("caixa-pdv")}>
+              <Plus size={16} className="mr-1" />
+              Novo Lancamento
+            </Button>
           </div>
 
           {/* Comprovantes Pendentes */}
@@ -776,8 +782,36 @@ export default function OperatorRebuildPage() {
             </Card>
           )}
 
+          {/* Resumo do Turno */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <Card className="text-center p-4">
+              <p className="text-xs text-muted uppercase mb-1">Dinheiro</p>
+              <p className="text-xl font-bold text-emerald-400">{formatCurrency(totals.cash)}</p>
+            </Card>
+            <Card className="text-center p-4">
+              <p className="text-xs text-muted uppercase mb-1">PIX</p>
+              <p className="text-xl font-bold text-cyan-400">{formatCurrency(totals.pix)}</p>
+            </Card>
+            <Card className="text-center p-4">
+              <p className="text-xs text-muted uppercase mb-1">Credito</p>
+              <p className="text-xl font-bold text-purple-400">{formatCurrency(totals.credit)}</p>
+            </Card>
+            <Card className="text-center p-4">
+              <p className="text-xs text-muted uppercase mb-1">Debito</p>
+              <p className="text-xl font-bold text-blue-400">{formatCurrency(totals.debit)}</p>
+            </Card>
+            <Card className="text-center p-4 border-primary/30 bg-primary/5">
+              <p className="text-xs text-muted uppercase mb-1">Total</p>
+              <p className="text-xl font-bold text-foreground">{formatCurrency(totalGeral)}</p>
+            </Card>
+          </div>
+
           {/* Tabela de Lancamentos */}
           <Card>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-foreground">Lancamentos ({txs.length})</h3>
+              <Badge variant="secondary">{txs.length} registro{txs.length !== 1 ? "s" : ""}</Badge>
+            </div>
             <DataTable
               columns={[
                 { key: "hora", header: "Hora", render: (tx) => isMounted ? new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "--" },
@@ -789,94 +823,6 @@ export default function OperatorRebuildPage() {
               rows={txs}
               emptyMessage="Sem lancamentos neste turno."
             />
-          </Card>
-
-          {/* Form Novo Lancamento */}
-          <Card>
-            <h3 className="font-semibold text-foreground mb-4">Novo Lancamento</h3>
-            <form onSubmit={submitTx} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Select
-                  label="Empresa"
-                  value={companyId}
-                  onChange={e=>setCompanyId(e.target.value)}
-                  required
-                  disabled={!shift||operatorBlocked}
-                >
-                  <option value="">Selecione a empresa</option>
-                  {companies.map(c=><option key={c.id} value={c.id}>{c.name} ({getCompanyPct(c)}%)</option>)}
-                </Select>
-                <Select
-                  label="Categoria"
-                  value={categoryId}
-                  onChange={e=>{ setCategoryId(e.target.value); const first=subcategories.find(s=>s.category_id===e.target.value); setSubcategoryId(first?.id??""); }}
-                  required
-                  disabled={!shift||operatorBlocked}
-                >
-                  <option value="">Selecione</option>
-                  {categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                </Select>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Select
-                  label="Subcategoria"
-                  value={subcategoryId}
-                  onChange={e=>setSubcategoryId(e.target.value)}
-                  required
-                  disabled={!shift||operatorBlocked}
-                >
-                  <option value="">Selecione</option>
-                  {filteredSubs.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                </Select>
-                <Input
-                  label="Valor (R$)"
-                  value={amount}
-                  onChange={e=>setAmount(e.target.value)}
-                  required
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="0,00"
-                  disabled={!shift||operatorBlocked}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Forma de pagamento</label>
-                <div className="flex gap-2">
-                  {(["pix","credit","debit","cash"] as const).map(m=>(
-                    <Button
-                      key={m}
-                      type="button"
-                      variant={paymentMethod===m?"primary":"secondary"}
-                      size="sm"
-                      className="flex-1"
-                      onClick={()=>setPaymentMethod(m)}
-                    >
-                      {m==="pix"?"PIX":m==="credit"?"Credito":m==="debit"?"Debito":"Dinheiro"}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input
-                  label="Referencia / Bilhete"
-                  value={ticketReference}
-                  onChange={e=>setTicketReference(e.target.value)}
-                  placeholder="Ex: 12345"
-                  disabled={!shift||operatorBlocked}
-                />
-                <Input
-                  label="Observacao"
-                  value={note}
-                  onChange={e=>setNote(e.target.value)}
-                  placeholder="Opcional"
-                  disabled={!shift||operatorBlocked}
-                />
-              </div>
-              <Button type="submit" variant="primary" disabled={!shift||operatorBlocked} className="w-full">
-                Registrar Lancamento
-              </Button>
-            </form>
           </Card>
         </div>
       )}
