@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -94,8 +94,9 @@ type TxForReport = { id: string; status?: string; amount: number; sold_at?: stri
 type TimePunchRow = { id: string; punch_type: string; punched_at: string; note: string|null; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type CashMovementRow = { id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type ShiftCashClosingRow = { id: string; expected_cash: number; declared_cash: number; difference: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
-type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"relatorios"|"usuarios"|"empresas"|"configuracoes"|"mensagens";
+type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"relatorios"|"usuarios"|"empresas"|"configuracoes"|"mensagens"|"ponto";
 type OperatorMessage = { id: string; message: string; read: boolean; created_at: string; operator_id: string; profiles: { full_name: string }|{ full_name: string }[]|null };
+type AttendanceRow = { id: string; user_id: string; clock_in: string; clock_out: string | null; full_name: string };
 
 function getCompanyPct(c: Company) { return Number(c.commission_percent ?? c.comission_percent ?? 0); }
 function nameOf(x: { full_name: string }|{ full_name: string }[]|null) { return Array.isArray(x) ? x[0]?.full_name : x?.full_name; }
@@ -199,6 +200,11 @@ export default function AdminRebuildPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [adminReply, setAdminReply] = useState("");
+  const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
+  const menuRef = useRef(menu);
+  menuRef.current = menu;
+  const profilesRef = useRef(profiles);
+  profilesRef.current = profiles;
 
   useEffect(() => {
     setIsMounted(true);
@@ -235,8 +241,14 @@ export default function AdminRebuildPage() {
         "usuarios": "usuarios",
         "empresas": "empresas",
         "configuracoes": "configuracoes",
+        "mensagens": "mensagens",
+        "folha-de-ponto": "ponto",
       };
-      if (map[section]) setMenu(map[section]);
+      if (map[section]) {
+        setMenu(map[section]);
+        if (section === "mensagens") setTimeout(() => loadOperatorMessages(), 200);
+        if (section === "folha-de-ponto") setTimeout(() => loadAttendance(), 200);
+      }
     }
     window.addEventListener("rebuild:section-change", handleSectionChange);
     const hash = window.location.hash.replace("#", "").trim();
@@ -244,6 +256,7 @@ export default function AdminRebuildPage() {
       handleSectionChange(new CustomEvent("rebuild:section-change", { detail: hash }) as Event);
     }
     return () => window.removeEventListener("rebuild:section-change", handleSectionChange);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string,unknown>) {
@@ -313,8 +326,8 @@ export default function AdminRebuildPage() {
   }
 
   // ===== FUNCOES MENSAGENS OPERADORES =====
-  async function loadOperatorMessages() {
-    const profileMap = new Map(profiles.map(p => [p.user_id, p.full_name]));
+  const loadOperatorMessages = useCallback(async () => {
+    const profileMap = new Map(profilesRef.current.map(p => [p.user_id, p.full_name]));
     const { data, error } = await supabase
       .from("operator_messages")
       .select("id, message, read, created_at, operator_id")
@@ -329,7 +342,27 @@ export default function AdminRebuildPage() {
       setOperatorMessages(hydratedMessages);
       setUnreadCount(hydratedMessages.filter((m: OperatorMessage) => !m.read).length);
     }
-  }
+  }, []);
+
+  // Realtime: escutar operator_messages (inserts de qualquer operador)
+  useEffect(() => {
+    const channel = supabase
+      .channel("admin-messages")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "operator_messages" }, (payload) => {
+        const raw = payload.new as { id: string; message: string; read: boolean; created_at: string; operator_id: string };
+        const profileMap = new Map(profilesRef.current.map(p => [p.user_id, p.full_name]));
+        const hydrated: OperatorMessage = { ...raw, profiles: { full_name: profileMap.get(raw.operator_id) ?? "Operador" } };
+        setOperatorMessages(prev => [hydrated, ...prev]);
+        setUnreadCount(prev => prev + 1);
+        if (menuRef.current !== "mensagens") {
+          setToastType("info");
+          setMessage(`Nova mensagem de ${hydrated.profiles && !Array.isArray(hydrated.profiles) ? hydrated.profiles.full_name : "Operador"}.`);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function markMessageAsRead(msgId: string) {
     await supabase.from("operator_messages").update({ read: true }).eq("id", msgId);
@@ -343,6 +376,27 @@ export default function AdminRebuildPage() {
     setUnreadCount(0);
     setToastType("success");
     setMessage("Todas as mensagens foram marcadas como lidas.");
+  }
+
+  // ===== FUNCOES FOLHA DE PONTO =====
+  async function loadAttendance() {
+    const profileMap = new Map(profilesRef.current.map(p => [p.user_id, p.full_name]));
+    const today = new Date(); today.setHours(0,0,0,0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const { data, error } = await supabase
+      .from("user_attendance")
+      .select("id, user_id, clock_in, clock_out")
+      .gte("clock_in", today.toISOString())
+      .lt("clock_in", tomorrow.toISOString())
+      .order("clock_in", { ascending: true });
+    if (!error && data) {
+      setAttendanceRows(
+        (data as { id: string; user_id: string; clock_in: string; clock_out: string | null }[]).map(r => ({
+          ...r,
+          full_name: profileMap.get(r.user_id) ?? "Operador",
+        }))
+      );
+    }
   }
 
   const repassesComputed = useMemo(() => {
@@ -709,6 +763,7 @@ export default function AdminRebuildPage() {
     empresas: "Empresas",
     configuracoes: "Configuracoes",
     mensagens: "Mensagens",
+    ponto: "Folha de Ponto",
   };
 
   return (
@@ -1625,6 +1680,75 @@ export default function AdminRebuildPage() {
                 title="Operadores Ativos" 
                 value={new Set(operatorMessages.map(m => m.operator_id)).size.toString()} 
                 icon={<Users className="w-5 h-5" />}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ===== FOLHA DE PONTO ===== */}
+        {show("ponto") && (
+          <div className="space-y-6">
+            <SectionHeader title="Folha de Ponto" subtitle="Registro de presenca dos operadores — hoje" />
+
+            <div className="flex items-center justify-between">
+              <Badge variant="secondary" className="text-sm">
+                {attendanceRows.length} registro{attendanceRows.length !== 1 ? "s" : ""} hoje
+              </Badge>
+              <Button variant="ghost" size="sm" onClick={loadAttendance}>
+                <RefreshCw className="w-4 h-4 mr-1" />
+                Atualizar
+              </Button>
+            </div>
+
+            <Card>
+              {attendanceRows.length === 0 ? (
+                <div className="text-center py-12">
+                  <Clock size={48} className="mx-auto text-muted mb-3 opacity-50" />
+                  <p className="text-muted">Nenhum registro de ponto hoje.</p>
+                  <p className="text-xs text-muted mt-1">Os registros aparecem automaticamente quando operadores fazem login.</p>
+                  <Button variant="ghost" size="sm" className="mt-4" onClick={loadAttendance}>
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    Carregar registros
+                  </Button>
+                </div>
+              ) : (
+                <DataTable
+                  columns={[
+                    { key: "nome", header: "Operador", render: (r) => <span className="font-semibold text-foreground">{r.full_name}</span> },
+                    { key: "entrada", header: "Entrada", render: (r) => <span className="text-emerald-400 font-mono text-sm">{isMounted ? new Date(r.clock_in).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}</span> },
+                    { key: "saida", header: "Saida", render: (r) => r.clock_out ? <span className="text-rose-400 font-mono text-sm">{isMounted ? new Date(r.clock_out).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "--"}</span> : <Badge variant="success">Em atividade</Badge> },
+                    { key: "duracao", header: "Duracao", render: (r) => {
+                      const start = new Date(r.clock_in).getTime();
+                      const end = r.clock_out ? new Date(r.clock_out).getTime() : Date.now();
+                      const mins = Math.round((end - start) / 60000);
+                      const h = Math.floor(mins / 60);
+                      const m = mins % 60;
+                      return <span className="text-sm text-muted font-mono">{h}h{String(m).padStart(2, "0")}m</span>;
+                    }},
+                  ]}
+                  rows={attendanceRows}
+                  emptyMessage="Nenhum registro."
+                />
+              )}
+            </Card>
+
+            {/* Estatisticas */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <StatCard
+                title="Presentes Hoje"
+                value={attendanceRows.length.toString()}
+                icon={<Users className="w-5 h-5" />}
+              />
+              <StatCard
+                title="Em Atividade"
+                value={attendanceRows.filter(r => !r.clock_out).length.toString()}
+                icon={<Clock className="w-5 h-5" />}
+                trend={attendanceRows.filter(r => !r.clock_out).length > 0 ? { value: attendanceRows.filter(r => !r.clock_out).length, positive: true } : undefined}
+              />
+              <StatCard
+                title="Ja Saiu"
+                value={attendanceRows.filter(r => r.clock_out).length.toString()}
+                icon={<ArrowDownRight className="w-5 h-5" />}
               />
             </div>
           </div>

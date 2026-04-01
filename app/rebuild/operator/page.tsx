@@ -1,5 +1,5 @@
 "use client";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { tolerantData, isSchemaToleranceError } from "@/lib/schema-tolerance";
@@ -10,7 +10,7 @@ import { Button } from "@/components/rebuild/ui/button";
 import { DataTable } from "@/components/rebuild/ui/table";
 import { Badge, PaymentBadge } from "@/components/rebuild/ui/badge";
 import { Toast } from "@/components/rebuild/ui/toast";
-import { Plus, RefreshCw, Banknote, CreditCard, Clock, AlertTriangle, Delete, Send, MessageSquare, Link2, Smartphone, Wallet, MapPin, Settings, X, Check, ChevronRight } from "lucide-react";
+import { Plus, RefreshCw, Banknote, CreditCard, Clock, AlertTriangle, Delete, Send, MessageSquare, Link2, Smartphone, Wallet, MapPin, Settings, X, Check, ChevronRight, Bell } from "lucide-react";
 
 const supabase = createClient();
 
@@ -18,7 +18,7 @@ type Option     = { id: string; name: string; commission_percent?: number | null
 type Category   = { id: string; name: string };
 type Subcategory= { id: string; name: string; category_id: string };
 type Shift      = { id: string; booth_id: string; status: "open" | "closed" };
-type Tx = { id: string; amount: number; payment_method: "pix"|"credit"|"debit"|"cash"; sold_at: string; ticket_reference: string|null; note: string|null; company_id: string|null; company_name: string; receipt_count: number };
+type Tx = { id: string; amount: number; payment_method: "pix"|"credit"|"debit"|"cash"; sold_at: string; ticket_reference: string|null; note: string|null; company_id: string|null; company_name: string; receipt_count: number; boarding_tax_state: number; boarding_tax_federal: number };
 type BoothLink  = { booth_id: string; booth_name: string };
 type Punch      = { id: string; punch_type: "entrada"|"saida"|"pausa_inicio"|"pausa_fim"; punched_at: string; note: string|null };
 type CashMovement={ id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_name?: string };
@@ -55,6 +55,9 @@ export default function OperatorRebuildPage() {
   const [cashNote, setCashNote]         = useState("");
   const [uploadingTxId, setUploadingTxId] = useState<string|null>(null);
 
+  const [boardingTaxState, setBoardingTaxState]     = useState("");
+  const [boardingTaxFederal, setBoardingTaxFederal] = useState("");
+
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeDeclared, setCloseDeclared] = useState("");
   const [closeObs, setCloseObs] = useState("");
@@ -73,13 +76,15 @@ export default function OperatorRebuildPage() {
   const [pdvCompanyId, setPdvCompanyId] = useState("");
   const [pdvTicketRef, setPdvTicketRef] = useState("");
   const [pdvNote, setPdvNote] = useState("");
+  const [pdvBoardingTaxState, setPdvBoardingTaxState] = useState("");
+  const [pdvBoardingTaxFederal, setPdvBoardingTaxFederal] = useState("");
   const [showPdvConfirm, setShowPdvConfirm] = useState(false);
 
   // Taxa de embarque
-  type TaxaEmbarque = { id: string; nome: string; valor: number };
+  type TaxaEmbarque = { id: string; nome: string; valor: number; tipo: "estadual" | "federal" };
   const [taxasEmbarque, setTaxasEmbarque] = useState<TaxaEmbarque[]>([
-    { id: "goiania", nome: "Goiania", valor: 8.50 },
-    { id: "belem", nome: "Belem", valor: 12.00 },
+    { id: "goiania", nome: "Goiania", valor: 8.50, tipo: "estadual" },
+    { id: "belem",   nome: "Belem",   valor: 12.00, tipo: "estadual" },
   ]);
   const [showTaxaConfig, setShowTaxaConfig] = useState(false);
   const [editingTaxa, setEditingTaxa] = useState<TaxaEmbarque | null>(null);
@@ -91,6 +96,10 @@ export default function OperatorRebuildPage() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newChatMessage, setNewChatMessage] = useState("");
   const [showChat, setShowChat] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const showChatRef = useRef(showChat);
+  showChatRef.current = showChat;
 
   useEffect(() => {
     setIsMounted(true);
@@ -140,14 +149,29 @@ export default function OperatorRebuildPage() {
       if (sData) { setShift(sData); await loadTxs(sData.id); await loadCashMovements(sData.id); }
       await loadPunches(uid);
       if (!sData && bData?.[0]) setBoothId((bData[0] as {booth_id:string}).booth_id);
+
+      // Ponto Digital: clock_in automatico na entrada
+      try {
+        const today = new Date(); today.setHours(0,0,0,0);
+        const { data: openPunch } = await supabase
+          .from("user_attendance")
+          .select("id")
+          .eq("user_id", uid)
+          .is("clock_out", null)
+          .gte("clock_in", today.toISOString())
+          .maybeSingle();
+        if (!openPunch) {
+          await supabase.from("user_attendance").insert({ user_id: uid });
+        }
+      } catch { /* silencioso */ }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadTxs(shiftId: string) {
-    const txRes = await supabase.from("transactions").select("id,amount,payment_method,sold_at,ticket_reference,note,company_id").eq("shift_id",shiftId).eq("status","posted").order("sold_at",{ascending:false}).limit(100);
+    const txRes = await supabase.from("transactions").select("id,amount,payment_method,sold_at,ticket_reference,note,company_id,boarding_tax_state,boarding_tax_federal").eq("shift_id",shiftId).eq("status","posted").order("sold_at",{ascending:false}).limit(100);
     if (txRes.error) return;
-    const baseTxs = (txRes.data??[]) as Array<{id:string;amount:number;payment_method:"pix"|"credit"|"debit"|"cash";sold_at:string;ticket_reference:string|null;note:string|null;company_id:string|null}>;
+    const baseTxs = (txRes.data??[]) as Array<{id:string;amount:number;payment_method:"pix"|"credit"|"debit"|"cash";sold_at:string;ticket_reference:string|null;note:string|null;company_id:string|null;boarding_tax_state:number;boarding_tax_federal:number}>;
     const txIds = baseTxs.map(t=>t.id);
     const companyIds = Array.from(new Set(baseTxs.map(t=>t.company_id).filter(Boolean))) as string[];
     const [receiptRes,companyRes] = await Promise.all([
@@ -239,10 +263,13 @@ export default function OperatorRebuildPage() {
   async function submitTx(e: FormEvent) {
     e.preventDefault();
     if (!shift||!companyId||!categoryId||!subcategoryId||!amount||!userId) return;
-    const { data: inserted, error } = await supabase.from("transactions").insert({ shift_id:shift.id, booth_id:shift.booth_id, operator_id:userId, company_id:companyId, category_id:categoryId, subcategory_id:subcategoryId, amount:Number(amount), payment_method:paymentMethod, commission_percent:null, ticket_reference:ticketReference||null, note:note||null }).select("id").single();
+    const taxState   = Number(boardingTaxState.replace(",","."))   || 0;
+    const taxFederal = Number(boardingTaxFederal.replace(",",".")) || 0;
+    const totalAmount = Number(amount) + taxState + taxFederal;
+    const { data: inserted, error } = await supabase.from("transactions").insert({ shift_id:shift.id, booth_id:shift.booth_id, operator_id:userId, company_id:companyId, category_id:categoryId, subcategory_id:subcategoryId, amount:totalAmount, payment_method:paymentMethod, commission_percent:null, ticket_reference:ticketReference||null, note:note||null, boarding_tax_state:taxState, boarding_tax_federal:taxFederal }).select("id").single();
     if (error) return setMessage(`Erro: ${error.message}`);
-    await logAction("CREATE_TRANSACTION","transactions",inserted?.id,{amount:Number(amount),payment_method:paymentMethod});
-    setAmount(""); setTicketReference(""); setNote(""); setMessage("Lancamento salvo."); await loadTxs(shift.id);
+    await logAction("CREATE_TRANSACTION","transactions",inserted?.id,{amount:totalAmount,payment_method:paymentMethod,boarding_tax_state:taxState,boarding_tax_federal:taxFederal});
+    setAmount(""); setTicketReference(""); setNote(""); setBoardingTaxState(""); setBoardingTaxFederal(""); setMessage("Lancamento salvo."); await loadTxs(shift.id);
   }
 
   // ===== FUNCOES PDV CALCULADORA =====
@@ -253,11 +280,16 @@ export default function OperatorRebuildPage() {
       return prev + d;
     });
   }
-  function pdvClear() { setPdvDisplay("0"); }
+  function pdvClear() { setPdvDisplay("0"); setPdvBoardingTaxState(""); setPdvBoardingTaxFederal(""); }
   function pdvBackspace() { setPdvDisplay(prev => prev.length > 1 ? prev.slice(0, -1) : "0"); }
   function pdvAddTaxa(taxa: TaxaEmbarque) {
     const current = parseFloat(pdvDisplay) || 0;
     setPdvDisplay((current + taxa.valor).toFixed(2));
+    if (taxa.tipo === "estadual") {
+      setPdvBoardingTaxState(prev => (((parseFloat(prev) || 0) + taxa.valor).toFixed(2)));
+    } else {
+      setPdvBoardingTaxFederal(prev => (((parseFloat(prev) || 0) + taxa.valor).toFixed(2)));
+    }
   }
 
   async function pdvSubmitSale() {
@@ -267,6 +299,8 @@ export default function OperatorRebuildPage() {
     
     const defaultCat = categories[0];
     const defaultSub = subcategories.find(s => s.category_id === defaultCat?.id);
+    const taxState   = Number(pdvBoardingTaxState.replace(",","."))   || 0;
+    const taxFederal = Number(pdvBoardingTaxFederal.replace(",",".")) || 0;
     
     const { data: inserted, error } = await supabase.from("transactions").insert({
       shift_id: shift.id,
@@ -279,15 +313,19 @@ export default function OperatorRebuildPage() {
       payment_method: pdvPaymentMethod === "link" ? "pix" : pdvPaymentMethod,
       ticket_reference: pdvTicketRef || null,
       note: pdvPaymentMethod === "link" ? `Link de Pagamento - ${pdvNote}` : pdvNote || null,
+      boarding_tax_state: taxState,
+      boarding_tax_federal: taxFederal,
     }).select("id").single();
     
     if (error) return setMessage(`Erro: ${error.message}`);
-    await logAction("CREATE_TRANSACTION", "transactions", inserted?.id, { amount: valor, payment_method: pdvPaymentMethod });
+    await logAction("CREATE_TRANSACTION", "transactions", inserted?.id, { amount: valor, payment_method: pdvPaymentMethod, boarding_tax_state: taxState, boarding_tax_federal: taxFederal });
     
     // Reset PDV
     setPdvDisplay("0");
     setPdvTicketRef("");
     setPdvNote("");
+    setPdvBoardingTaxState("");
+    setPdvBoardingTaxFederal("");
     setShowPdvConfirm(false);
     setMessage(`Venda de ${formatCurrency(valor)} registrada!`);
     await loadTxs(shift.id);
@@ -307,16 +345,44 @@ export default function OperatorRebuildPage() {
   }
 
   // ===== FUNCOES CHAT =====
-  async function loadChatMessages() {
+  const loadChatMessages = useCallback(async () => {
     if (!userId) return;
     const res = await supabase
       .from("operator_messages")
       .select("id, message, created_at, read")
       .eq("operator_id", userId)
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: true })
       .limit(50);
-    if (!res.error) setChatMessages((res.data as ChatMessage[]) || []);
-  }
+    if (!res.error) {
+      const msgs = (res.data as ChatMessage[]) || [];
+      setChatMessages(msgs);
+      setUnreadChatCount(msgs.filter(m => !m.read).length);
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
+    }
+  }, [userId]);
+
+  // Realtime: escutar novos inserts na tabela operator_messages
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`op-messages-${userId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "operator_messages", filter: `operator_id=eq.${userId}` }, (payload) => {
+        const newMsg = payload.new as ChatMessage;
+        setChatMessages(prev => [...prev, newMsg]);
+        if (!showChatRef.current) {
+          setUnreadChatCount(prev => prev + 1);
+          setMessage("Nova mensagem do administrador.");
+        }
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "operator_messages", filter: `operator_id=eq.${userId}` }, (payload) => {
+        const updated = payload.new as ChatMessage;
+        setChatMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   async function sendChatMessage() {
     if (!userId || !newChatMessage.trim()) return;
@@ -329,6 +395,7 @@ export default function OperatorRebuildPage() {
     setNewChatMessage("");
     setMessage("Mensagem enviada para o administrador.");
     await loadChatMessages();
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 120);
   }
 
   async function handleUploadReceipt(txId: string, ev: ChangeEvent<HTMLInputElement>) {
@@ -344,7 +411,7 @@ export default function OperatorRebuildPage() {
     setMessage("Comprovante enviado."); if (shift) await loadTxs(shift.id); setUploadingTxId(null);
   }
 
-  const totals = useMemo(()=>txs.reduce((acc,tx)=>{ acc[tx.payment_method]+=Number(tx.amount||0); return acc; },{pix:0,credit:0,debit:0,cash:0}),[txs]);
+  const totals = useMemo(()=>txs.reduce((acc,tx)=>{ acc[tx.payment_method]+=Number(tx.amount||0); acc.taxState+=Number(tx.boarding_tax_state||0); acc.taxFederal+=Number(tx.boarding_tax_federal||0); return acc; },{pix:0,credit:0,debit:0,cash:0,taxState:0,taxFederal:0}),[txs]);
   const totalGeral = totals.pix+totals.credit+totals.debit+totals.cash;
   const cashTotals = useMemo(()=>{
     const s=cashMovements.filter(m=>m.movement_type==="suprimento").reduce((a,m)=>a+Number(m.amount||0),0);
@@ -424,6 +491,18 @@ export default function OperatorRebuildPage() {
               <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total Dinheiro</p>
               <p className="text-2xl font-bold text-success">{formatCurrency(totals.cash)}</p>
             </Card>
+            {totals.taxState > 0 && (
+              <Card className="bg-indigo-500/10">
+                <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Taxa Estadual</p>
+                <p className="text-2xl font-bold text-indigo-400">{formatCurrency(totals.taxState)}</p>
+              </Card>
+            )}
+            {totals.taxFederal > 0 && (
+              <Card className="bg-rose-500/10">
+                <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Taxa Federal</p>
+                <p className="text-2xl font-bold text-rose-400">{formatCurrency(totals.taxFederal)}</p>
+              </Card>
+            )}
             <Card className="bg-[hsl(var(--card-elevated))]">
               <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total Geral</p>
               <p className="text-2xl font-bold text-foreground">{formatCurrency(totalGeral)}</p>
@@ -463,10 +542,16 @@ export default function OperatorRebuildPage() {
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={() => { loadChatMessages(); setShowChat(true); }}
+                className="relative"
+                onClick={() => { loadChatMessages(); setUnreadChatCount(0); setShowChat(true); }}
               >
                 <MessageSquare size={16} className="mr-1" />
                 Chat
+                {unreadChatCount > 0 && (
+                  <span className="absolute -top-1 -right-1 size-5 flex items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white animate-pulse">
+                    {unreadChatCount > 9 ? "9+" : unreadChatCount}
+                  </span>
+                )}
               </Button>
               <Button 
                 variant="success" 
@@ -630,6 +715,29 @@ export default function OperatorRebuildPage() {
                       disabled={!shift || operatorBlocked}
                     />
                   </div>
+                  {/* Taxas de Embarque */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="Taxa Estadual (R$)"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pdvBoardingTaxState}
+                      onChange={e => setPdvBoardingTaxState(e.target.value)}
+                      placeholder="0,00"
+                      disabled={!shift || operatorBlocked}
+                    />
+                    <Input
+                      label="Taxa Federal (R$)"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={pdvBoardingTaxFederal}
+                      onChange={e => setPdvBoardingTaxFederal(e.target.value)}
+                      placeholder="0,00"
+                      disabled={!shift || operatorBlocked}
+                    />
+                  </div>
                 </div>
               </Card>
             </div>
@@ -686,6 +794,22 @@ export default function OperatorRebuildPage() {
                   <div className="flex justify-between items-center p-3 bg-blue-500/10 rounded-lg">
                     <span className="text-sm text-muted flex items-center gap-2"><Wallet size={16} className="text-blue-400" /> Debito</span>
                     <span className="font-bold text-blue-400">{formatCurrency(totals.debit)}</span>
+                  </div>
+                  {totals.taxState > 0 && (
+                    <div className="flex justify-between items-center p-3 bg-indigo-500/10 rounded-lg">
+                      <span className="text-sm text-muted">Taxa Estadual</span>
+                      <span className="font-bold text-indigo-400">{formatCurrency(totals.taxState)}</span>
+                    </div>
+                  )}
+                  {totals.taxFederal > 0 && (
+                    <div className="flex justify-between items-center p-3 bg-rose-500/10 rounded-lg">
+                      <span className="text-sm text-muted">Taxa Federal</span>
+                      <span className="font-bold text-rose-400">{formatCurrency(totals.taxFederal)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                    <span className="text-sm text-muted">Taxas de Embarque</span>
+                    <span className="font-bold text-amber-400">{formatCurrency(totals.taxState + totals.taxFederal)}</span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg border-t-2 border-primary">
                     <span className="text-sm font-semibold text-foreground">Total Geral</span>
@@ -800,6 +924,18 @@ export default function OperatorRebuildPage() {
               <p className="text-xs text-muted uppercase mb-1">Debito</p>
               <p className="text-xl font-bold text-blue-400">{formatCurrency(totals.debit)}</p>
             </Card>
+            {totals.taxState > 0 && (
+              <Card className="text-center p-4 bg-indigo-500/10">
+                <p className="text-xs text-muted uppercase mb-1">Taxa Estadual</p>
+                <p className="text-xl font-bold text-indigo-400">{formatCurrency(totals.taxState)}</p>
+              </Card>
+            )}
+            {totals.taxFederal > 0 && (
+              <Card className="text-center p-4 bg-rose-500/10">
+                <p className="text-xs text-muted uppercase mb-1">Taxa Federal</p>
+                <p className="text-xl font-bold text-rose-400">{formatCurrency(totals.taxFederal)}</p>
+              </Card>
+            )}
             <Card className="text-center p-4 border-primary/30 bg-primary/5">
               <p className="text-xs text-muted uppercase mb-1">Total</p>
               <p className="text-xl font-bold text-foreground">{formatCurrency(totalGeral)}</p>
@@ -1078,7 +1214,7 @@ export default function OperatorRebuildPage() {
             </div>
             
             {/* Mensagens */}
-            <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+            <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1">
               {chatMessages.length === 0 ? (
                 <div className="text-center py-12">
                   <MessageSquare size={48} className="mx-auto text-muted mb-3 opacity-50" />
@@ -1087,15 +1223,22 @@ export default function OperatorRebuildPage() {
                 </div>
               ) : (
                 chatMessages.map(msg => (
-                  <div key={msg.id} className="bg-slate-800 p-3 rounded-lg">
-                    <p className="text-sm text-foreground">{msg.message}</p>
-                    <p className="text-xs text-muted mt-1">
-                      {isMounted ? new Date(msg.created_at).toLocaleString("pt-BR") : "--"}
-                      {!msg.read && <span className="ml-2 text-amber-400">(Nao lida)</span>}
-                    </p>
+                  <div key={msg.id} className="flex justify-end">
+                    <div className="max-w-[80%] bg-primary/20 border border-primary/30 p-3 rounded-lg rounded-tr-sm">
+                      <p className="text-sm text-foreground">{msg.message}</p>
+                      <div className="flex items-center justify-end gap-2 mt-1">
+                        <p className="text-xs text-muted">
+                          {isMounted ? new Date(msg.created_at).toLocaleString("pt-BR") : "--"}
+                        </p>
+                        {msg.read
+                          ? <Check size={12} className="text-emerald-400" />
+                          : <Clock size={12} className="text-amber-400" />}
+                      </div>
+                    </div>
                   </div>
                 ))
               )}
+              <div ref={chatEndRef} />
             </div>
 
             {/* Input Mensagem */}

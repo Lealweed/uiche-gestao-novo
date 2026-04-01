@@ -42,6 +42,7 @@ const adminMainNav: NavItem[] = [
 
 const adminSystemNav: NavItem[] = [
   { href: "/rebuild/admin#mensagens", label: "Mensagens", section: "mensagens", Icon: MessageSquare },
+  { href: "/rebuild/admin#folha-de-ponto", label: "Folha de Ponto", section: "folha-de-ponto", Icon: CalendarDays },
   { href: "/rebuild/admin#usuarios", label: "Usuarios", section: "usuarios", Icon: Users },
   { href: "/rebuild/admin#empresas", label: "Empresas", section: "empresas", Icon: Building2 },
   { href: "/rebuild/admin#configuracoes", label: "Configuracoes", section: "configuracoes", Icon: Settings },
@@ -61,6 +62,7 @@ const adminSectionLabels: Record<string, string> = {
   financeiro: "Financeiro",
   relatorios: "Relatorios",
   mensagens: "Mensagens",
+  "folha-de-ponto": "Folha de Ponto",
   usuarios: "Usuarios",
   empresas: "Empresas",
   configuracoes: "Configuracoes",
@@ -134,6 +136,20 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   }
 
   async function handleLogout() {
+    // Ponto Digital: registra clock_out antes de deslogar
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const uid = authData.user?.id;
+      if (uid) {
+        const today = new Date(); today.setHours(0,0,0,0);
+        await supabase
+          .from("user_attendance")
+          .update({ clock_out: new Date().toISOString() })
+          .eq("user_id", uid)
+          .is("clock_out", null)
+          .gte("clock_in", today.toISOString());
+      }
+    } catch { /* não impedir logout */ }
     await supabase.auth.signOut();
     router.replace("/login");
   }
