@@ -14,6 +14,7 @@ const config: Config = {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+          elevated: "hsl(var(--card-elevated))",
         },
         popover: {
           DEFAULT: "hsl(var(--popover))",

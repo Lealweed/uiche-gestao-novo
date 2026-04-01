@@ -14,7 +14,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   Legend,
 } from "recharts";
 
@@ -47,14 +46,16 @@ import {
 
 const supabase = createClient();
 
-// Chart colors
+// Chart colors - Dark mode compatible
 const CHART_COLORS = {
-  primary: "#2563eb",
+  primary: "#3b82f6",
   secondary: "#f59e0b", 
   success: "#10b981",
   danger: "#ef4444",
-  purple: "#8b5cf6",
-  cyan: "#06b6d4",
+  purple: "#a78bfa",
+  cyan: "#22d3ee",
+  grid: "#1e293b",
+  text: "#94a3b8",
 };
 
 type ShiftTotal = {
@@ -482,14 +483,14 @@ export default function AdminRebuildPage() {
             ) : (
               <>
                 {/* Date filter */}
-                <Card className="bg-slate-50 border-dashed">
-                  <form className="flex flex-wrap items-end gap-4" onSubmit={e => { e.preventDefault(); refreshData(); }}>
-                    <Input type="date" label="Data inicial" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
-                    <Input type="date" label="Data final" value={dateTo} onChange={e=>setDateTo(e.target.value)} />
-                    <Button type="submit">Filtrar periodo</Button>
-                    <Button variant="ghost" type="button" onClick={() => { setDateFrom(""); setDateTo(""); refreshData("",""); }}>Limpar</Button>
-                  </form>
-                </Card>
+<Card>
+              <form className="flex flex-wrap items-end gap-4" onSubmit={e => { e.preventDefault(); refreshData(); }}>
+                <Input type="date" label="Data inicial" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
+                <Input type="date" label="Data final" value={dateTo} onChange={e=>setDateTo(e.target.value)} />
+                <Button type="submit">Filtrar</Button>
+                <Button variant="ghost" type="button" onClick={() => { setDateFrom(""); setDateTo(""); refreshData("",""); }}>Limpar</Button>
+              </form>
+            </Card>
 
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -506,12 +507,12 @@ export default function AdminRebuildPage() {
                           transacoes
                         </p>
                       </div>
-                      <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                      <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400">
                         <DollarSign className="w-5 h-5" />
                       </div>
                     </div>
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary/20">
-                      <div className="h-full bg-primary" style={{ width: "75%" }} />
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-500/20">
+                      <div className="h-full bg-blue-500" style={{ width: "75%" }} />
                     </div>
                   </Card>
 
@@ -527,11 +528,11 @@ export default function AdminRebuildPage() {
                           taxas retidas
                         </p>
                       </div>
-                      <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600">
+                      <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
                         <TrendingUp className="w-5 h-5" />
                       </div>
                     </div>
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-200">
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500/20">
                       <div className="h-full bg-emerald-500" style={{ width: "60%" }} />
                     </div>
                   </Card>
@@ -543,11 +544,11 @@ export default function AdminRebuildPage() {
                         <p className="text-2xl font-bold text-amber-600">{formatCurrency(repassesComputed.repasse)}</p>
                         <p className="text-xs text-muted mt-1">valor liquido</p>
                       </div>
-                      <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center text-amber-600">
+                      <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-400">
                         <Wallet className="w-5 h-5" />
                       </div>
                     </div>
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-amber-200">
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-amber-500/20">
                       <div className="h-full bg-amber-500" style={{ width: "85%" }} />
                     </div>
                   </Card>
@@ -568,11 +569,11 @@ export default function AdminRebuildPage() {
                           )}
                         </p>
                       </div>
-                      <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                      <div className="w-10 h-10 rounded-lg bg-slate-500/20 flex items-center justify-center text-slate-400">
                         <Users className="w-5 h-5" />
                       </div>
                     </div>
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-200">
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-500/20">
                       <div className="h-full bg-slate-500" style={{ width: `${Math.min(summary.abertos * 10, 100)}%` }} />
                     </div>
                   </Card>
@@ -588,29 +589,28 @@ export default function AdminRebuildPage() {
                           <h3 className="text-base font-semibold text-foreground">Faturamento por Dia</h3>
                           <p className="text-xs text-muted">Ultimos 7 dias</p>
                         </div>
-                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400">
                           <BarChart3 className="w-4 h-4" />
                         </div>
                       </div>
-                      <div style={{ width: "100%", height: 256 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={dailyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <div className="w-full">
+                        <AreaChart width={500} height={256} data={dailyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} style={{ width: "100%", height: 256 }}>
                             <defs>
                               <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3}/>
                                 <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0}/>
                               </linearGradient>
                             </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                            <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                            <YAxis tick={{ fontSize: 12, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
+                            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
+                            <XAxis dataKey="date" tick={{ fontSize: 12, fill: CHART_COLORS.text }} tickLine={false} axisLine={false} />
+                            <YAxis tick={{ fontSize: 12, fill: CHART_COLORS.text }} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
                             <Tooltip 
                               formatter={(value: number) => [formatCurrency(value), "Faturamento"]}
-                              contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}
+                              contentStyle={{ backgroundColor: "hsl(230 20% 13%)", border: "1px solid hsl(230 15% 20%)", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)", color: "#f1f5f9" }}
+                              labelStyle={{ color: "#94a3b8" }}
                             />
                             <Area type="monotone" dataKey="valor" stroke={CHART_COLORS.primary} fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
                           </AreaChart>
-                        </ResponsiveContainer>
                       </div>
                     </Card>
 
@@ -621,13 +621,12 @@ export default function AdminRebuildPage() {
                           <h3 className="text-base font-semibold text-foreground">Formas de Pagamento</h3>
                           <p className="text-xs text-muted">Distribuicao por metodo</p>
                         </div>
-                        <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center text-purple-600">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400">
                           <CreditCard className="w-4 h-4" />
                         </div>
                       </div>
-                      <div style={{ width: "100%", height: 256 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
+                      <div className="w-full flex justify-center">
+                          <PieChart width={300} height={256}>
                             <Pie
                               data={paymentMethodData}
                               cx="50%"
@@ -643,14 +642,13 @@ export default function AdminRebuildPage() {
                             </Pie>
                             <Tooltip 
                               formatter={(value: number) => [formatCurrency(value), ""]}
-                              contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}
+                              contentStyle={{ backgroundColor: "hsl(230 20% 13%)", border: "1px solid hsl(230 15% 20%)", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)", color: "#f1f5f9" }}
                             />
                             <Legend 
                               iconType="circle"
-                              formatter={(value) => <span className="text-sm text-foreground">{value}</span>}
+                              formatter={(value) => <span style={{ color: "#f1f5f9", fontSize: "14px" }}>{value}</span>}
                             />
                           </PieChart>
-                        </ResponsiveContainer>
                       </div>
                     </Card>
                   </div>
@@ -669,21 +667,20 @@ export default function AdminRebuildPage() {
                         Exportar CSV
                       </Button>
                     </div>
-                    <div style={{ width: "100%", height: 288 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={topCompaniesData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={true} vertical={false} />
-                          <XAxis type="number" tick={{ fontSize: 12, fill: "#64748b" }} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
-                          <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 12, fill: "#64748b" }} />
+                    <div className="w-full">
+                        <BarChart width={600} height={288} data={topCompaniesData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }} style={{ width: "100%", height: 288 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} horizontal={true} vertical={false} />
+                          <XAxis type="number" tick={{ fontSize: 12, fill: CHART_COLORS.text }} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
+                          <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 12, fill: CHART_COLORS.text }} />
                           <Tooltip 
                             formatter={(value: number, name: string) => [formatCurrency(value), name === "faturamento" ? "Faturamento" : "Repasse"]}
-                            contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)" }}
+                            contentStyle={{ backgroundColor: "hsl(230 20% 13%)", border: "1px solid hsl(230 15% 20%)", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)", color: "#f1f5f9" }}
+                            labelStyle={{ color: "#94a3b8" }}
                           />
                           <Legend />
                           <Bar dataKey="faturamento" name="Faturamento" fill={CHART_COLORS.primary} radius={[0, 4, 4, 0]} />
                           <Bar dataKey="repasse" name="Repasse" fill={CHART_COLORS.secondary} radius={[0, 4, 4, 0]} />
                         </BarChart>
-                      </ResponsiveContainer>
                     </div>
                   </Card>
                 )}
@@ -691,7 +688,7 @@ export default function AdminRebuildPage() {
                 {/* Secondary Stats */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <Card className="flex items-center gap-4 p-4">
-                    <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600">
+                    <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400">
                       <AlertCircle className="w-6 h-6" />
                     </div>
                     <div>
@@ -700,7 +697,7 @@ export default function AdminRebuildPage() {
                     </div>
                   </Card>
                   <Card className="flex items-center gap-4 p-4">
-                    <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600">
+                    <div className="w-12 h-12 rounded-xl bg-slate-500/20 flex items-center justify-center text-slate-400">
                       <Clock className="w-6 h-6" />
                     </div>
                     <div>
@@ -709,7 +706,7 @@ export default function AdminRebuildPage() {
                     </div>
                   </Card>
                   <Card className="flex items-center gap-4 p-4">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400">
                       <Banknote className="w-6 h-6" />
                     </div>
                     <div>
@@ -799,9 +796,9 @@ export default function AdminRebuildPage() {
         )}
 
         {/* FINANCEIRO */}
-        {show("financeiro") && (
+{show("financeiro") && (
           <>
-            <Card className="bg-slate-50 border-dashed">
+            <Card>
               <form className="flex flex-wrap items-end gap-4" onSubmit={e => { e.preventDefault(); refreshData(); }}>
                 <Input type="date" label="Data inicial" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
                 <Input type="date" label="Data final" value={dateTo} onChange={e=>setDateTo(e.target.value)} />
