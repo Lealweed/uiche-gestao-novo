@@ -76,7 +76,7 @@ type TxForReport = { id: string; status?: string; amount: number; sold_at?: stri
 type TimePunchRow = { id: string; punch_type: string; punched_at: string; note: string|null; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type CashMovementRow = { id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type ShiftCashClosingRow = { id: string; expected_cash: number; declared_cash: number; difference: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
-type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"relatorios"|"configuracoes";
+type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"relatorios"|"usuarios"|"empresas"|"configuracoes";
 
 function getCompanyPct(c: Company) { return Number(c.commission_percent ?? c.comission_percent ?? 0); }
 function nameOf(x: { full_name: string }|{ full_name: string }[]|null) { return Array.isArray(x) ? x[0]?.full_name : x?.full_name; }
@@ -140,6 +140,8 @@ export default function AdminRebuildPage() {
   const [newProfileActive, setNewProfileActive]       = useState(true);
   const [resetEmail, setResetEmail]                   = useState("");
   const [isMounted, setIsMounted] = useState(false);
+  const [punchPage, setPunchPage] = useState(1);
+  const PUNCH_PER_PAGE = 10;
 
   useEffect(() => {
     setIsMounted(true);
@@ -164,8 +166,8 @@ export default function AdminRebuildPage() {
         "controle-turno": "operadores",
         "financeiro": "financeiro",
         "relatorios": "relatorios",
-        "usuarios": "configuracoes",
-        "empresas": "configuracoes",
+        "usuarios": "usuarios",
+        "empresas": "empresas",
         "configuracoes": "configuracoes",
       };
       if (map[section]) setMenu(map[section]);
@@ -779,20 +781,68 @@ export default function AdminRebuildPage() {
 
         {/* OPERADORES */}
         {show("operadores") && (
-          <Card>
-            <SectionHeader title="Registro de Ponto" className="mb-4" />
-            <DataTable
-              columns={[
-                { key: "data", header: "Data/Hora", render: (p) => new Date(p.punched_at).toLocaleString("pt-BR") },
-                { key: "operador", header: "Operador", render: (p) => nameOf(p.profiles) ?? "-" },
-                { key: "guiche", header: "Guiche", render: (p) => { const b = boothOf(p.booths); return b ? `${b.code} - ${b.name}` : "-"; } },
-                { key: "tipo", header: "Tipo", render: (p) => <Badge variant="neutral">{p.punch_type}</Badge> },
-                { key: "obs", header: "Obs", render: (p) => p.note ?? "-" },
-              ]}
-              rows={timePunchRows.slice(0,100)}
-              emptyMessage="Nenhum registro de ponto."
-            />
-          </Card>
+          <>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-foreground">Registro de Ponto</h2>
+              <span className="text-sm text-muted">{timePunchRows.length} registros</span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {timePunchRows
+                .slice((punchPage - 1) * PUNCH_PER_PAGE, punchPage * PUNCH_PER_PAGE)
+                .map((p) => {
+                  const b = boothOf(p.booths);
+                  const punchTypeColors: Record<string, string> = {
+                    entrada: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+                    saida: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+                    pausa_inicio: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+                    pausa_fim: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+                  };
+                  const colorClass = punchTypeColors[p.punch_type] ?? "bg-slate-500/20 text-slate-400 border-slate-500/30";
+                  
+                  return (
+                    <Card key={p.id} className="relative overflow-hidden">
+                      <div className={`absolute top-0 left-0 w-1 h-full ${colorClass.split(" ")[0]}`} />
+                      <div className="pl-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <Badge className={colorClass}>{p.punch_type.replace("_", " ")}</Badge>
+                          <span className="text-xs text-muted">
+                            {new Date(p.punched_at).toLocaleString("pt-BR")}
+                          </span>
+                        </div>
+                        <p className="font-semibold text-foreground mb-1">{nameOf(p.profiles) ?? "Operador"}</p>
+                        <p className="text-sm text-muted">{b ? `${b.code} - ${b.name}` : "-"}</p>
+                        {p.note && <p className="text-xs text-muted mt-2 italic">{p.note}</p>}
+                      </div>
+                    </Card>
+                  );
+                })}
+            </div>
+
+            {timePunchRows.length > PUNCH_PER_PAGE && (
+              <div className="flex items-center justify-center gap-2 mt-6">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={punchPage === 1}
+                  onClick={() => setPunchPage((p) => Math.max(1, p - 1))}
+                >
+                  Anterior
+                </Button>
+                <span className="text-sm text-muted px-4">
+                  Pagina {punchPage} de {Math.ceil(timePunchRows.length / PUNCH_PER_PAGE)}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={punchPage >= Math.ceil(timePunchRows.length / PUNCH_PER_PAGE)}
+                  onClick={() => setPunchPage((p) => p + 1)}
+                >
+                  Proxima
+                </Button>
+              </div>
+            )}
+          </>
         )}
 
         {/* FINANCEIRO */}
@@ -872,42 +922,157 @@ export default function AdminRebuildPage() {
           </Card>
         )}
 
-        {/* GESTAO */}
-        {show("gestao") && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <SectionCard title="Vinculos Operador - Guiche" action={
-              <form onSubmit={linkOperatorToBooth} className="flex gap-2">
-                <select className="px-3 py-2 text-sm bg-white border border-border rounded-lg" value={selectedOperatorId} onChange={e=>setSelectedOperatorId(e.target.value)} required>
-                  <option value="">Operador</option>
-                  {profiles.filter(p=>p.role==="operator").map(p=><option key={p.user_id} value={p.user_id}>{p.full_name}</option>)}
-                </select>
-                <select className="px-3 py-2 text-sm bg-white border border-border rounded-lg" value={selectedBoothId} onChange={e=>setSelectedBoothId(e.target.value)} required>
-                  <option value="">Guiche</option>
-                  {booths.filter(b=>b.active).map(b=><option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
-                </select>
-                <Button type="submit">Vincular</Button>
-              </form>
-            }>
+        {/* USUARIOS */}
+        {show("usuarios") && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Cadastrar Usuario */}
+              <SectionCard title="Cadastrar / Atualizar Usuario">
+                <form onSubmit={saveProfile} className="space-y-4">
+                  <Input value={newProfileUserId} onChange={e=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuario (auth.users.id)" />
+                  <Input value={newProfileName} onChange={e=>setNewProfileName(e.target.value)} required placeholder="Nome completo" />
+                  <Input value={newProfileCpf} onChange={e=>setNewProfileCpf(e.target.value)} placeholder="CPF" />
+                  <Input value={newProfilePhone} onChange={e=>setNewProfilePhone(e.target.value)} placeholder="Telefone" />
+                  <Input value={newProfileAddress} onChange={e=>setNewProfileAddress(e.target.value)} placeholder="Endereco" />
+                  <Input value={newProfileAvatarUrl} onChange={e=>setNewProfileAvatarUrl(e.target.value)} placeholder="URL avatar" />
+                  <select value={newProfileRole} onChange={e=>setNewProfileRole(e.target.value as "admin"|"operator")} className="w-full px-3 py-2 text-sm bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                    <option value="operator">Operador</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <input type="checkbox" checked={newProfileActive} onChange={e=>setNewProfileActive(e.target.checked)} className="rounded" />
+                    Usuario ativo
+                  </label>
+                  <Button type="submit" className="w-full">Salvar Usuario</Button>
+                </form>
+              </SectionCard>
+
+              {/* Reset Password */}
+              <SectionCard title="Redefinicao de Senha">
+                <form onSubmit={sendResetLink} className="space-y-4">
+                  <Input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} required type="email" placeholder="E-mail do usuario" />
+                  <Button type="submit" className="w-full">Enviar Link de Redefinicao</Button>
+                </form>
+              </SectionCard>
+            </div>
+
+            {/* Lista usuarios */}
+            <SectionCard title="Usuarios Cadastrados">
+              <Input value={profileSearch} onChange={e=>setProfileSearch(e.target.value)} placeholder="Buscar por nome, CPF ou perfil..." className="mb-4" />
               <DataTable
                 columns={[
-                  { key: "operador", header: "Operador", render: (l) => nameOf(l.profiles) ?? "-" },
-                  { key: "guiche", header: "Guiche", render: (l) => { const b = boothOf(l.booths); return b ? `${b.code} - ${b.name}` : "-"; } },
-                  { key: "status", header: "Status", render: (l) => <StatusBadge active={l.active} /> },
-                  { key: "acao", header: "Acao", render: (l) => (
-                    <Button variant="ghost" size="sm" onClick={async()=>{ await supabase.from("operator_booths").update({active:!l.active}).eq("id",l.id); await refreshData(); }}>
-                      {l.active ? "Desvincular" : "Reativar"}
-                    </Button>
+                  { key: "nome", header: "Nome", render: (p) => <span className="font-semibold">{p.full_name}</span> },
+                  { key: "cpf", header: "CPF", render: (p) => p.cpf ?? "-" },
+                  { key: "telefone", header: "Telefone", render: (p) => p.phone ?? "-" },
+                  { key: "perfil", header: "Perfil", render: (p) => <Badge variant="info">{p.role}</Badge> },
+                  { key: "status", header: "Status", render: (p) => <StatusBadge active={p.active} /> },
+                  { key: "acao", header: "Acao", render: (p) => (
+                    <Button variant="ghost" size="sm" onClick={()=>toggleProfileActive(p)}>{p.active?"Inativar":"Ativar"}</Button>
                   ) },
                 ]}
-                rows={operatorBoothLinks}
-                emptyMessage="Nenhum vinculo encontrado."
+                rows={filteredProfiles}
+                emptyMessage="Nenhum usuario encontrado."
+              />
+            </SectionCard>
+          </div>
+        )}
+
+        {/* EMPRESAS */}
+        {show("empresas") && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Cadastrar Empresa */}
+              <SectionCard title="Cadastrar Nova Empresa">
+                <form onSubmit={createCompany} className="space-y-4">
+                  <Input value={companyName} onChange={e=>setCompanyName(e.target.value)} required placeholder="Nome da empresa / viacao" />
+                  <Input value={companyPct} onChange={e=>setCompanyPct(e.target.value)} required type="number" min="0" step="0.001" placeholder="% Comissao Central" />
+                  <Button type="submit" className="w-full">Cadastrar Empresa</Button>
+                </form>
+              </SectionCard>
+
+              {/* Cadastrar Guiche */}
+              <SectionCard title="Cadastrar Novo Guiche">
+                <form onSubmit={createBooth} className="space-y-4">
+                  <Input value={boothCode} onChange={e=>setBoothCode(e.target.value)} required placeholder="Codigo (ex: G02)" />
+                  <Input value={boothName} onChange={e=>setBoothName(e.target.value)} required placeholder="Nome (ex: Guiche 02)" />
+                  <Button type="submit" className="w-full">Cadastrar Guiche</Button>
+                </form>
+              </SectionCard>
+            </div>
+
+            {/* Lista empresas */}
+            <SectionCard title="Empresas / Viacoes">
+              <DataTable
+                columns={[
+                  { key: "nome", header: "Nome", render: (c) => <span className="font-semibold">{c.name}</span> },
+                  { key: "comissao", header: "Comissao Central", render: (c) => `${getCompanyPct(c).toFixed(3)}%` },
+                  { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
+                  { key: "acao", header: "Acao", render: (c) => (
+                    <Button variant="ghost" size="sm" onClick={()=>toggleCompanyActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
+                  ) },
+                ]}
+                rows={companies}
+                emptyMessage="Nenhuma empresa cadastrada."
               />
             </SectionCard>
 
-            <div className="space-y-6">
-              <SectionCard title="Categorias">
+            {/* Lista guiches */}
+            <SectionCard title="Guiches de Venda">
+              <Input value={boothSearch} onChange={e=>setBoothSearch(e.target.value)} placeholder="Buscar guiche..." className="mb-4" />
+              <DataTable
+                columns={[
+                  { key: "codigo", header: "Codigo", render: (b) => <span className="font-bold">{b.code}</span> },
+                  { key: "nome", header: "Nome", render: (b) => b.name },
+                  { key: "status", header: "Status", render: (b) => <StatusBadge active={b.active} /> },
+                  { key: "acao", header: "Acao", render: (b) => (
+                    <Button variant="ghost" size="sm" onClick={()=>toggleBoothActive(b)}>{b.active?"Inativar":"Ativar"}</Button>
+                  ) },
+                ]}
+                rows={filteredBooths}
+                emptyMessage="Nenhum guiche cadastrado."
+              />
+            </SectionCard>
+          </div>
+        )}
+
+        {/* CONFIGURACOES */}
+        {show("configuracoes") && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Vinculos Operador - Guiche */}
+              <SectionCard title="Vinculos Operador - Guiche" action={
+                <form onSubmit={linkOperatorToBooth} className="flex gap-2">
+                  <select className="px-3 py-2 text-sm bg-input border border-border rounded-lg text-foreground" value={selectedOperatorId} onChange={e=>setSelectedOperatorId(e.target.value)} required>
+                    <option value="">Operador</option>
+                    {profiles.filter(p=>p.role==="operator").map(p=><option key={p.user_id} value={p.user_id}>{p.full_name}</option>)}
+                  </select>
+                  <select className="px-3 py-2 text-sm bg-input border border-border rounded-lg text-foreground" value={selectedBoothId} onChange={e=>setSelectedBoothId(e.target.value)} required>
+                    <option value="">Guiche</option>
+                    {booths.filter(b=>b.active).map(b=><option key={b.id} value={b.id}>{b.code} - {b.name}</option>)}
+                  </select>
+                  <Button type="submit">Vincular</Button>
+                </form>
+              }>
+                <DataTable
+                  columns={[
+                    { key: "operador", header: "Operador", render: (l) => nameOf(l.profiles) ?? "-" },
+                    { key: "guiche", header: "Guiche", render: (l) => { const b = boothOf(l.booths); return b ? `${b.code} - ${b.name}` : "-"; } },
+                    { key: "status", header: "Status", render: (l) => <StatusBadge active={l.active} /> },
+                    { key: "acao", header: "Acao", render: (l) => (
+                      <Button variant="ghost" size="sm" onClick={async()=>{ await supabase.from("operator_booths").update({active:!l.active}).eq("id",l.id); await refreshData(); }}>
+                        {l.active ? "Desvincular" : "Reativar"}
+                      </Button>
+                    ) },
+                  ]}
+                  rows={operatorBoothLinks}
+                  emptyMessage="Nenhum vinculo encontrado."
+                />
+              </SectionCard>
+
+              {/* Categorias */}
+              <SectionCard title="Categorias de Transacao">
                 <form onSubmit={createCategory} className="flex gap-2 mb-4">
-                  <input value={categoryName} onChange={e=>setCategoryName(e.target.value)} required placeholder="Nome da categoria" className="flex-1 px-3 py-2 text-sm bg-white border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                  <input value={categoryName} onChange={e=>setCategoryName(e.target.value)} required placeholder="Nome da categoria" className="flex-1 px-3 py-2 text-sm bg-input border border-border rounded-lg text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
                   <Button type="submit">+</Button>
                 </form>
                 <DataTable
@@ -922,136 +1087,29 @@ export default function AdminRebuildPage() {
                   emptyMessage="Nenhuma categoria encontrada."
                 />
               </SectionCard>
-
-              <SectionCard title="Subcategorias">
-                <form onSubmit={createSubcategory} className="flex gap-2 mb-4">
-                  <select className="px-3 py-2 text-sm bg-white border border-border rounded-lg" value={subcategoryCategoryId} onChange={e=>setSubcategoryCategoryId(e.target.value)} required>
-                    <option value="">Categoria</option>
-                    {categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  <input value={subcategoryName} onChange={e=>setSubcategoryName(e.target.value)} required placeholder="Subcategoria" className="flex-1 px-3 py-2 text-sm bg-white border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
-                  <Button type="submit">+</Button>
-                </form>
-                <DataTable
-                  columns={[
-                    { key: "nome", header: "Nome", render: (s) => s.name },
-                    { key: "categoria", header: "Categoria", render: (s) => { const cName = Array.isArray(s.transaction_categories) ? s.transaction_categories[0]?.name : s.transaction_categories?.name; return cName ?? "-"; } },
-                    { key: "status", header: "Status", render: (s) => <StatusBadge active={s.active} /> },
-                    { key: "acao", header: "Acao", render: (s) => (
-                      <Button variant="ghost" size="sm" onClick={()=>toggleSubcategoryActive(s)}>{s.active?"Inativar":"Ativar"}</Button>
-                    ) },
-                  ]}
-                  rows={subcategories.slice(0,20)}
-                  emptyMessage="Nenhuma subcategoria encontrada."
-                />
-              </SectionCard>
             </div>
-          </div>
-        )}
 
-        {/* CONFIGURACOES */}
-        {show("configuracoes") && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Perfis */}
-            <SectionCard title="Cadastrar / Atualizar Usuario">
-              <form onSubmit={saveProfile} className="space-y-4">
-                <Input value={newProfileUserId} onChange={e=>setNewProfileUserId(e.target.value)} required placeholder="UUID do usuario (auth.users.id)" />
-                <Input value={newProfileName} onChange={e=>setNewProfileName(e.target.value)} required placeholder="Nome completo" />
-                <Input value={newProfileCpf} onChange={e=>setNewProfileCpf(e.target.value)} placeholder="CPF" />
-                <Input value={newProfilePhone} onChange={e=>setNewProfilePhone(e.target.value)} placeholder="Telefone" />
-                <Input value={newProfileAddress} onChange={e=>setNewProfileAddress(e.target.value)} placeholder="Endereco" />
-                <Input value={newProfileAvatarUrl} onChange={e=>setNewProfileAvatarUrl(e.target.value)} placeholder="URL avatar" />
-                <select value={newProfileRole} onChange={e=>setNewProfileRole(e.target.value as "admin"|"operator")} className="w-full px-3 py-2 text-sm bg-white border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary">
-                  <option value="operator">Operador</option>
-                  <option value="admin">Admin</option>
+            {/* Subcategorias */}
+            <SectionCard title="Subcategorias de Transacao">
+              <form onSubmit={createSubcategory} className="flex flex-wrap gap-2 mb-4">
+                <select value={subcategoryCategoryId} onChange={e=>setSubcategoryCategoryId(e.target.value)} required className="px-3 py-2 text-sm bg-input border border-border rounded-lg text-foreground">
+                  <option value="">Categoria pai</option>
+                  {categories.filter(c=>c.active).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <label className="flex items-center gap-2 text-sm text-foreground">
-                  <input type="checkbox" checked={newProfileActive} onChange={e=>setNewProfileActive(e.target.checked)} className="rounded" />
-                  Usuario ativo
-                </label>
-                <Button type="submit" className="w-full">Salvar Usuario</Button>
+                <input value={subcategoryName} onChange={e=>setSubcategoryName(e.target.value)} required placeholder="Nome da subcategoria" className="flex-1 px-3 py-2 text-sm bg-input border border-border rounded-lg text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                <Button type="submit">+</Button>
               </form>
-            </SectionCard>
-
-            <div className="space-y-6">
-              {/* Reset Password */}
-              <SectionCard title="Redefinicao de Senha">
-                <form onSubmit={sendResetLink} className="space-y-4">
-                  <Input value={resetEmail} onChange={e=>setResetEmail(e.target.value)} required type="email" placeholder="E-mail do usuario" />
-                  <Button type="submit" className="w-full">Enviar Link</Button>
-                </form>
-              </SectionCard>
-
-              {/* Empresa */}
-              <SectionCard title="Cadastrar Empresa">
-                <form onSubmit={createCompany} className="space-y-4">
-                  <Input value={companyName} onChange={e=>setCompanyName(e.target.value)} required placeholder="Nome da empresa" />
-                  <Input value={companyPct} onChange={e=>setCompanyPct(e.target.value)} required type="number" min="0" step="0.001" placeholder="% Comissao" />
-                  <Button type="submit" className="w-full">Salvar Empresa</Button>
-                </form>
-              </SectionCard>
-
-              {/* Guiche */}
-              <SectionCard title="Cadastrar Guiche">
-                <form onSubmit={createBooth} className="space-y-4">
-                  <Input value={boothCode} onChange={e=>setBoothCode(e.target.value)} required placeholder="Codigo (ex: G02)" />
-                  <Input value={boothName} onChange={e=>setBoothName(e.target.value)} required placeholder="Nome (ex: Guiche 02)" />
-                  <Button type="submit" className="w-full">Salvar Guiche</Button>
-                </form>
-              </SectionCard>
-            </div>
-
-            {/* Lista usuarios */}
-            <div className="lg:col-span-2">
-              <SectionCard title="Usuarios Cadastrados">
-                <Input value={profileSearch} onChange={e=>setProfileSearch(e.target.value)} placeholder="Buscar por nome, CPF ou perfil..." className="mb-4" />
-                <DataTable
-                  columns={[
-                    { key: "nome", header: "Nome", render: (p) => <span className="font-semibold">{p.full_name}</span> },
-                    { key: "cpf", header: "CPF", render: (p) => p.cpf ?? "-" },
-                    { key: "telefone", header: "Telefone", render: (p) => p.phone ?? "-" },
-                    { key: "perfil", header: "Perfil", render: (p) => <Badge variant="info">{p.role}</Badge> },
-                    { key: "status", header: "Status", render: (p) => <StatusBadge active={p.active} /> },
-                    { key: "acao", header: "Acao", render: (p) => (
-                      <Button variant="ghost" size="sm" onClick={()=>toggleProfileActive(p)}>{p.active?"Inativar":"Ativar"}</Button>
-                    ) },
-                  ]}
-                  rows={filteredProfiles}
-                  emptyMessage="Nenhum usuario encontrado."
-                />
-              </SectionCard>
-            </div>
-
-            {/* Lista empresas */}
-            <SectionCard title="Empresas">
               <DataTable
                 columns={[
-                  { key: "nome", header: "Nome", render: (c) => <span className="font-semibold">{c.name}</span> },
-                  { key: "comissao", header: "Comissao", render: (c) => `${getCompanyPct(c).toFixed(3)}%` },
-                  { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
-                  { key: "acao", header: "Acao", render: (c) => (
-                    <Button variant="ghost" size="sm" onClick={()=>toggleCompanyActive(c)}>{c.active?"Inativar":"Ativar"}</Button>
+                  { key: "nome", header: "Nome", render: (s) => s.name },
+                  { key: "categoria", header: "Categoria", render: (s) => { const cat = s.transaction_categories; return Array.isArray(cat) ? cat[0]?.name : cat?.name ?? "-"; } },
+                  { key: "status", header: "Status", render: (s) => <StatusBadge active={s.active} /> },
+                  { key: "acao", header: "Acao", render: (s) => (
+                    <Button variant="ghost" size="sm" onClick={()=>toggleSubcategoryActive(s)}>{s.active?"Inativar":"Ativar"}</Button>
                   ) },
                 ]}
-                rows={companies}
-                emptyMessage="Nenhuma empresa encontrada."
-              />
-            </SectionCard>
-
-            {/* Lista guiches */}
-            <SectionCard title="Guiches">
-              <Input value={boothSearch} onChange={e=>setBoothSearch(e.target.value)} placeholder="Buscar guiche..." className="mb-4" />
-              <DataTable
-                columns={[
-                  { key: "codigo", header: "Codigo", render: (b) => <span className="font-bold">{b.code}</span> },
-                  { key: "nome", header: "Nome", render: (b) => b.name },
-                  { key: "status", header: "Status", render: (b) => <StatusBadge active={b.active} /> },
-                  { key: "acao", header: "Acao", render: (b) => (
-                    <Button variant="ghost" size="sm" onClick={()=>toggleBoothActive(b)}>{b.active?"Inativar":"Ativar"}</Button>
-                  ) },
-                ]}
-                rows={filteredBooths}
-                emptyMessage="Nenhum guiche encontrado."
+                rows={subcategories.slice(0,20)}
+                emptyMessage="Nenhuma subcategoria encontrada."
               />
             </SectionCard>
           </div>
