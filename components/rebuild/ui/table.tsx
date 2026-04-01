@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------
-   DataTable - Clean light-mode table with accessible markup
+   DataTable - Dark mode premium table with accessible markup
 ------------------------------------------------------------------ */
 type Column<T> = {
   key: string;
@@ -35,13 +35,13 @@ export function DataTable<T>({
       <table className="w-full text-sm" role="table">
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
-          <tr role="row" className="bg-slate-50 border-b border-border">
+          <tr role="row" className="bg-[hsl(var(--card-elevated))] border-b border-border">
             {columns.map((col) => (
               <th
                 key={col.key}
                 scope="col"
                 className={cn(
-                  "px-4 py-3 text-left text-xs font-semibold text-muted uppercase tracking-wider",
+                  "px-4 py-3 text-left text-[10px] font-semibold text-muted uppercase tracking-widest",
                   col.className
                 )}
               >
@@ -56,7 +56,7 @@ export function DataTable<T>({
               <tr key={`skeleton-${i}`} role="row">
                 {columns.map((col) => (
                   <td key={col.key} className="px-4 py-3">
-                    <div className="h-4 bg-slate-100 rounded animate-pulse w-3/4" />
+                    <div className="h-4 bg-secondary rounded animate-pulse w-3/4" />
                   </td>
                 ))}
               </tr>
@@ -76,7 +76,7 @@ export function DataTable<T>({
               <tr
                 key={keyExtractor ? keyExtractor(row, idx) : String(idx)}
                 role="row"
-                className="hover:bg-slate-50 transition-colors"
+                className="hover:bg-[hsl(var(--card-elevated))] transition-colors"
               >
                 {columns.map((col) => (
                   <td

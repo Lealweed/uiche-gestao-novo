@@ -144,20 +144,19 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   const SidebarContent = () => (
     <>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
-        <div className="flex items-center justify-center size-10 rounded-xl bg-primary flex-shrink-0">
-          <Ticket size={20} className="text-primary-foreground" />
+      <div className="flex items-center gap-3 px-5 py-5">
+        <div className="flex items-center justify-center size-9 rounded-lg bg-primary text-primary-foreground font-bold text-sm flex-shrink-0">
+          C
         </div>
-        <div className="min-w-0">
-          <p className="font-bold text-sm text-foreground leading-tight">Central Viagens</p>
-          <p className="text-xs text-muted uppercase tracking-wider mt-0.5">
-            {isOperator ? "Operador" : "Admin Pro"}
-          </p>
-        </div>
+        <span className="font-bold text-base text-foreground">Central Viagens</span>
       </div>
 
       {/* Main nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" role="navigation" aria-label="Navegacao principal">
+      <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1" role="navigation" aria-label="Navegacao principal">
+        <p className="px-3 text-[10px] font-semibold text-sidebar-muted uppercase tracking-widest mb-3">
+          {isOperator ? "Operacao" : "Menu Principal"}
+        </p>
+        
         {mainNav.map((item) => {
           const active = isActive(item.section);
           return (
@@ -166,13 +165,13 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               type="button"
               onClick={() => navigate(item.href, item.section)}
               aria-current={active ? "page" : undefined}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-all duration-200 ${
                 active
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-muted hover:text-foreground hover:bg-slate-100"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-sidebar-muted hover:text-foreground hover:bg-[hsl(var(--card-elevated))]"
               }`}
             >
-              <item.Icon size={18} className={active ? "text-primary" : ""} />
+              <item.Icon size={18} />
               {item.label}
             </button>
           );
@@ -180,8 +179,8 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
 
         {systemNav.length > 0 && (
           <>
-            <div className="my-4 border-t border-border mx-1" />
-            <p className="px-3 text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+            <div className="h-px bg-border my-4 mx-1" />
+            <p className="px-3 text-[10px] font-semibold text-sidebar-muted uppercase tracking-widest mb-3">
               Sistema
             </p>
             {systemNav.map((item) => {
@@ -192,13 +191,13 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
                   type="button"
                   onClick={() => navigate(item.href, item.section)}
                   aria-current={active ? "page" : undefined}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-colors ${
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm font-medium transition-all duration-200 ${
                     active
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-muted hover:text-foreground hover:bg-slate-100"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-sidebar-muted hover:text-foreground hover:bg-[hsl(var(--card-elevated))]"
                   }`}
                 >
-                  <item.Icon size={18} className={active ? "text-primary" : ""} />
+                  <item.Icon size={18} />
                   {item.label}
                 </button>
               );
@@ -208,31 +207,31 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       {/* User card */}
-      <div className="p-3 border-t border-border">
-        <div className="flex items-center gap-3 bg-slate-50 border border-border rounded-xl p-3">
+      <div className="p-4 border-t border-sidebar-border">
+        <div className="flex items-center gap-3 mb-3">
           <div
-            className="size-9 rounded-full flex items-center justify-center text-sm font-bold bg-primary text-primary-foreground flex-shrink-0"
+            className="size-10 rounded-full flex items-center justify-center text-sm font-bold bg-primary/20 text-primary border border-primary/30 flex-shrink-0"
             aria-hidden="true"
           >
-            {userProfile?.name?.charAt(0)?.toUpperCase() ?? "U"}
+            {userProfile?.name?.substring(0, 2)?.toUpperCase() ?? "OP"}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-foreground truncate">
-              {userProfile?.name ?? "Carregando..."}
+              {userProfile?.name ?? "Operador"}
             </p>
-            <p className="text-xs text-muted capitalize">
-              {userProfile?.role === "admin" ? "Administrador" : "Operador"}
+            <p className="text-xs text-sidebar-muted">
+              {isOperator ? "Caixa 01 - Matriz" : "Administrador"}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            aria-label="Sair da conta"
-            className="text-muted hover:text-foreground transition-colors p-1.5 rounded-lg hover:bg-slate-200"
-          >
-            <LogOut size={16} />
-          </button>
         </div>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 rounded-lg transition-colors"
+        >
+          <LogOut size={16} />
+          Encerrar Sessao
+        </button>
       </div>
     </>
   );
@@ -240,14 +239,14 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen w-full antialiased overflow-hidden bg-background text-foreground">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-[260px] flex-col flex-shrink-0 z-20 bg-sidebar border-r border-sidebar-border">
+      <aside className="hidden lg:flex w-[240px] flex-col flex-shrink-0 z-20 bg-sidebar border-r border-sidebar-border">
         <SidebarContent />
       </aside>
 
       {/* Mobile Drawer Overlay */}
       {drawerOpen && (
         <div
-          className="fixed inset-0 z-30 lg:hidden bg-black/40"
+          className="fixed inset-0 z-30 lg:hidden bg-black/60 backdrop-blur-sm"
           onClick={() => setDrawerOpen(false)}
           aria-hidden="true"
         />
@@ -255,7 +254,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile Drawer */}
       <aside
-        className={`fixed top-0 left-0 h-full w-[260px] z-40 flex flex-col lg:hidden transition-transform duration-300 ease-in-out bg-sidebar border-r border-sidebar-border ${
+        className={`fixed top-0 left-0 h-full w-[240px] z-40 flex flex-col lg:hidden transition-transform duration-300 ease-in-out bg-sidebar border-r border-sidebar-border ${
           drawerOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         aria-label="Menu lateral"
@@ -264,7 +263,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
           type="button"
           onClick={() => setDrawerOpen(false)}
           aria-label="Fechar menu"
-          className="absolute top-4 right-3 text-muted hover:text-foreground transition-colors p-1 rounded"
+          className="absolute top-4 right-3 text-sidebar-muted hover:text-foreground transition-colors p-1 rounded"
         >
           <X size={18} />
         </button>
@@ -274,12 +273,12 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Topbar */}
-        <header className="h-16 flex items-center justify-between px-4 lg:px-6 flex-shrink-0 bg-card border-b border-border">
+        <header className="h-14 flex items-center justify-between px-4 lg:px-6 flex-shrink-0 bg-card border-b border-border">
           <div className="flex items-center gap-3">
             {/* Mobile hamburger */}
             <button
               type="button"
-              className="lg:hidden text-muted hover:text-foreground transition-colors p-2 rounded-lg hover:bg-slate-100"
+              className="lg:hidden text-muted hover:text-foreground transition-colors p-2 rounded-lg hover:bg-secondary"
               onClick={() => setDrawerOpen(true)}
               aria-label="Abrir menu"
               aria-expanded={drawerOpen}
@@ -287,57 +286,64 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               <Menu size={20} />
             </button>
 
-            {/* Breadcrumb */}
-            <nav aria-label="Localizacao atual" className="flex items-center gap-1.5 text-sm">
-              <span className="text-muted font-medium hidden sm:block">Central Viagens</span>
-              <ChevronRight className="text-slate-400 hidden sm:block" size={14} aria-hidden="true" />
-              <span className="font-semibold text-foreground">{activeLabel}</span>
-            </nav>
+            {/* Page title */}
+            <h1 className="font-semibold text-foreground">{activeLabel}</h1>
           </div>
 
-          {/* Search */}
-          <div className="hidden md:flex flex-1 max-w-md mx-6">
-            <label htmlFor="shell-search" className="sr-only">Buscar</label>
-            <div className="relative w-full">
-              <Search
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-                size={16}
-                aria-hidden="true"
-              />
-              <input
-                id="shell-search"
-                type="search"
-                placeholder={isOperator ? "Buscar lancamento ou referencia..." : "Buscar transacao, operador..."}
-                className="w-full pl-10 pr-4 py-2 text-sm rounded-lg bg-input border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-              />
+          {/* Right side */}
+          <div className="flex items-center gap-3">
+            {/* Search - desktop only */}
+            <div className="hidden md:flex">
+              <label htmlFor="shell-search" className="sr-only">Buscar</label>
+              <div className="relative">
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+                  size={16}
+                  aria-hidden="true"
+                />
+                <input
+                  id="shell-search"
+                  type="search"
+                  placeholder="Buscar..."
+                  className="w-64 pl-10 pr-4 py-2 text-sm rounded-lg bg-input border border-border text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-2">
+            {/* Notifications */}
             <button
               type="button"
               aria-label="Notificacoes"
-              className="relative p-2 rounded-lg transition-colors text-muted hover:text-foreground hover:bg-slate-100"
+              className="relative p-2 rounded-lg transition-colors text-muted hover:text-foreground hover:bg-secondary"
             >
               <Bell size={18} aria-hidden="true" />
               <span
-                className="absolute top-1.5 right-1.5 size-2 bg-red-500 rounded-full border-2 border-card"
+                className="absolute top-1.5 right-1.5 size-2 bg-destructive rounded-full"
                 aria-hidden="true"
               />
             </button>
 
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-border text-sm">
-              <CalendarDays className="text-muted" size={16} aria-hidden="true" />
+            {/* Date */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary text-sm">
+              <CalendarDays className="text-muted" size={14} aria-hidden="true" />
               <time className="font-medium text-foreground text-xs">
                 {currentDate ?? "--"}
               </time>
             </div>
+
+            {/* Settings */}
+            <button
+              type="button"
+              aria-label="Configuracoes"
+              className="p-2 rounded-lg transition-colors text-muted hover:text-foreground hover:bg-secondary"
+            >
+              <Settings size={18} aria-hidden="true" />
+            </button>
           </div>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth bg-background">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 scroll-smooth">
           {children}
         </main>
       </div>

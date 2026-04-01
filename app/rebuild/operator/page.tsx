@@ -5,14 +5,12 @@ import { createClient } from "@/lib/supabase/client";
 import { tolerantData, isSchemaToleranceError } from "@/lib/schema-tolerance";
 import { RebuildShell } from "@/components/rebuild/shell/rebuild-shell";
 import { Card, CardTitle } from "@/components/rebuild/ui/card";
-import { StatCard } from "@/components/rebuild/ui/stat-card";
 import { Select, Input } from "@/components/rebuild/ui/input";
 import { Button } from "@/components/rebuild/ui/button";
 import { DataTable } from "@/components/rebuild/ui/table";
 import { Badge, PaymentBadge } from "@/components/rebuild/ui/badge";
-import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { Toast } from "@/components/rebuild/ui/toast";
-import { DollarSign, TrendingUp, Wallet, AlertTriangle } from "lucide-react";
+import { Plus, RefreshCw, Banknote, CreditCard, Clock, AlertTriangle } from "lucide-react";
 
 const supabase = createClient();
 
@@ -23,9 +21,13 @@ type Shift      = { id: string; booth_id: string; status: "open" | "closed" };
 type Tx = { id: string; amount: number; payment_method: "pix"|"credit"|"debit"|"cash"; sold_at: string; ticket_reference: string|null; note: string|null; company_id: string|null; company_name: string; receipt_count: number };
 type BoothLink  = { booth_id: string; booth_name: string };
 type Punch      = { id: string; punch_type: "entrada"|"saida"|"pausa_inicio"|"pausa_fim"; punched_at: string; note: string|null };
-type CashMovement={ id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string };
+type CashMovement={ id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_name?: string };
 
 function getCompanyPct(c: Option) { return Number(c.commission_percent ?? c.comission_percent ?? 0); }
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+}
 
 export default function OperatorRebuildPage() {
   const router = useRouter();
@@ -58,6 +60,23 @@ export default function OperatorRebuildPage() {
   const [closeObs, setCloseObs] = useState("");
   const [expectedCashVal, setExpectedCashVal] = useState(0);
   const [isClosing, setIsClosing] = useState(false);
+  
+  const [showCashModal, setShowCashModal] = useState(false);
+  const [cashModalType, setCashModalType] = useState<"suprimento"|"sangria">("suprimento");
+  
+  const [section, setSection] = useState("caixa-pdv");
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    const handleSectionChange = (e: CustomEvent<string>) => setSection(e.detail);
+    window.addEventListener("rebuild:section-change", handleSectionChange as EventListener);
+    
+    const hash = window.location.hash.replace("#", "");
+    if (hash) setSection(hash);
+    
+    return () => window.removeEventListener("rebuild:section-change", handleSectionChange as EventListener);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -107,8 +126,8 @@ export default function OperatorRebuildPage() {
     const txIds = baseTxs.map(t=>t.id);
     const companyIds = Array.from(new Set(baseTxs.map(t=>t.company_id).filter(Boolean))) as string[];
     const [receiptRes,companyRes] = await Promise.all([
-      txIds.length ? supabase.from("transaction_receipts").select("id,transaction_id").in("transaction_id",txIds) : Promise.resolve({data:[],error:null} as any),
-      companyIds.length ? supabase.from("companies").select("id,name").in("id",companyIds) : Promise.resolve({data:[],error:null} as any),
+      txIds.length ? supabase.from("transaction_receipts").select("id,transaction_id").in("transaction_id",txIds) : Promise.resolve({data:[],error:null} as {data:unknown[];error:null}),
+      companyIds.length ? supabase.from("companies").select("id,name").in("id",companyIds) : Promise.resolve({data:[],error:null} as {data:unknown[];error:null}),
     ]);
     const receiptCounts = new Map<string,number>();
     for (const r of (receiptRes.data??[]) as {transaction_id:string}[]) receiptCounts.set(r.transaction_id,(receiptCounts.get(r.transaction_id)??0)+1);
@@ -189,7 +208,7 @@ export default function OperatorRebuildPage() {
     if (!shift||!userId||!cashAmount) return;
     const { error } = await supabase.from("cash_movements").insert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, movement_type:cashType, amount:Number(cashAmount), note:cashNote.trim()||null });
     if (error) return setMessage(`Erro: ${error.message}`);
-    setCashAmount(""); setCashNote(""); await loadCashMovements(shift.id); setMessage("Movimento registrado.");
+    setCashAmount(""); setCashNote(""); setShowCashModal(false); await loadCashMovements(shift.id); setMessage("Movimento registrado.");
   }
 
   async function submitTx(e: FormEvent) {
@@ -220,127 +239,230 @@ export default function OperatorRebuildPage() {
     const s=cashMovements.filter(m=>m.movement_type==="suprimento").reduce((a,m)=>a+Number(m.amount||0),0);
     const g=cashMovements.filter(m=>m.movement_type==="sangria").reduce((a,m)=>a+Number(m.amount||0),0);
     const j=cashMovements.filter(m=>m.movement_type==="ajuste").reduce((a,m)=>a+Number(m.amount||0),0);
-    return {suprimento:s,sangria:g,ajuste:j,saldo:s-g+j};
-  },[cashMovements]);
+    return {suprimento:s,sangria:g,ajuste:j,saldo:totals.cash+s-g+j};
+  },[cashMovements, totals.cash]);
+  const digitalTotal = totals.pix + totals.credit + totals.debit;
   const filteredSubs = useMemo(()=>subcategories.filter(s=>s.category_id===categoryId),[subcategories,categoryId]);
   const pendingReceiptTxs = useMemo(()=>txs.filter(t=>(t.payment_method==="credit"||t.payment_method==="debit")&&t.receipt_count===0),[txs]);
   const operatorBlocked = operatorActive===false;
+
+  const show = (s: string) => section === s;
 
   return (
     <RebuildShell>
       <Toast message={message} onClose={() => setMessage(null)} type="info" />
 
-      {/* Header */}
-      <div className="mb-6">
-        <p className="text-xs font-semibold text-primary uppercase tracking-wider">Central Viagem</p>
-        <h1 className="text-2xl font-bold text-foreground">Painel do Operador</h1>
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total PIX" value={`R$ ${totals.pix.toFixed(2)}`} icon={<Wallet size={20} />} />
-        <StatCard label="Total Credito" value={`R$ ${totals.credit.toFixed(2)}`} icon={<DollarSign size={20} />} />
-        <StatCard label="Total Debito" value={`R$ ${totals.debit.toFixed(2)}`} icon={<DollarSign size={20} />} />
-        <StatCard label="Total Geral" value={`R$ ${totalGeral.toFixed(2)}`} icon={<TrendingUp size={20} />} />
-      </div>
-
-      {/* Main layout */}
-      <div className="grid gap-6 lg:grid-cols-2">
-
-        {/* LEFT - Main actions */}
+      {/* ===== RESUMO DO TURNO ===== */}
+      {show("resumo") && (
         <div className="space-y-6">
-
-          {/* Turno control */}
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Resumo do Turno</h1>
+            <p className="text-sm text-muted">Visao geral do seu turno atual</p>
+          </div>
+          
+          {/* Controle de Turno */}
           <Card>
-            <CardTitle>Controle de turno</CardTitle>
-            {!shift ? (
-              <div className="space-y-4 mt-4">
-                <Select
-                  value={boothId}
-                  onChange={e => setBoothId(e.target.value)}
-                  disabled={operatorBlocked}
-                  label="Selecionar Guiche"
-                >
-                  <option value="">Selecione o guiche</option>
-                  {booths.map(b => (
-                    <option key={b.booth_id} value={b.booth_id}>{b.booth_name}</option>
-                  ))}
-                </Select>
-                {booths.length === 0 && (
-                  <p className="text-amber-600 text-sm">Nenhum guiche vinculado. Contate o admin.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted uppercase tracking-wider mb-1">Status do Turno</p>
+                {shift ? (
+                  <div className="flex items-center gap-2">
+                    <span className="size-2 rounded-full bg-success animate-pulse" />
+                    <span className="font-semibold text-success">Turno Aberto</span>
+                  </div>
+                ) : (
+                  <span className="font-semibold text-muted">Nenhum turno ativo</span>
                 )}
-                <Button
-                  variant="accent"
-                  type="button"
-                  onClick={openShift}
-                  disabled={operatorBlocked || !boothId}
-                  className="w-full"
-                >
-                  Abrir turno
-                </Button>
               </div>
-            ) : (
-              <div className="flex items-center justify-between gap-4 mt-4">
-                <div>
-                  <p className="text-xs text-muted">Guiche ativo</p>
-                  <p className="font-bold text-emerald-600">Turno em andamento</p>
+              {!shift ? (
+                <div className="flex items-center gap-3">
+                  <Select
+                    value={boothId}
+                    onChange={e => setBoothId(e.target.value)}
+                    disabled={operatorBlocked}
+                    className="w-48"
+                  >
+                    <option value="">Selecione guiche</option>
+                    {booths.map(b => (
+                      <option key={b.booth_id} value={b.booth_id}>{b.booth_name}</option>
+                    ))}
+                  </Select>
+                  <Button variant="success" onClick={openShift} disabled={operatorBlocked || !boothId}>
+                    Abrir Turno
+                  </Button>
                 </div>
-                <Button
-                  variant="danger"
-                  type="button"
-                  onClick={openCloseShiftModal}
-                  disabled={operatorBlocked}
-                >
-                  Encerrar turno
+              ) : (
+                <Button variant="danger" onClick={openCloseShiftModal} disabled={operatorBlocked}>
+                  Encerrar Turno
                 </Button>
-              </div>
-            )}
-          </Card>
-
-          {/* Ponto digital */}
-          <Card>
-            <SectionHeader title="Ponto digital" className="mb-4" />
-            <div className="flex flex-wrap gap-2 mb-4">
-              {(["entrada","pausa_inicio","pausa_fim","saida"] as const).map(t=>(
-                <Button
-                  key={t}
-                  variant={t==="entrada"?"primary":"ghost"}
-                  size="sm"
-                  disabled={operatorBlocked}
-                  onClick={()=>registerPunch(t)}
-                  className="flex-1 min-w-[100px]"
-                >
-                  {t==="entrada"?"Entrada":t==="pausa_inicio"?"Inicio pausa":t==="pausa_fim"?"Fim pausa":"Saida"}
-                </Button>
-              ))}
+              )}
             </div>
-            {punches.length > 0 && (
-              <DataTable
-                columns={[
-                  { key: "ponto", header: "Ponto", render: (p) => p.note ?? p.punch_type },
-                  { key: "hora", header: "Hora", render: (p) => <span className="text-muted text-xs">{new Date(p.punched_at).toLocaleString("pt-BR")}</span> },
-                ]}
-                rows={punches.slice(0,10)}
-              />
-            )}
           </Card>
 
-          {/* Comprovantes pendentes */}
+          {/* KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card className="bg-[hsl(var(--card-elevated))]">
+              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total PIX</p>
+              <p className="text-2xl font-bold text-info">{formatCurrency(totals.pix)}</p>
+            </Card>
+            <Card className="bg-[hsl(var(--card-elevated))]">
+              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total Cartoes</p>
+              <p className="text-2xl font-bold text-primary">{formatCurrency(totals.credit + totals.debit)}</p>
+            </Card>
+            <Card className="bg-[hsl(var(--card-elevated))]">
+              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total Dinheiro</p>
+              <p className="text-2xl font-bold text-success">{formatCurrency(totals.cash)}</p>
+            </Card>
+            <Card className="bg-[hsl(var(--card-elevated))]">
+              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total Geral</p>
+              <p className="text-2xl font-bold text-foreground">{formatCurrency(totalGeral)}</p>
+            </Card>
+          </div>
+
+          {/* Ultimos Lancamentos */}
+          <Card>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-foreground">Ultimos Lancamentos</h3>
+              <Badge variant="secondary">{txs.length} registros</Badge>
+            </div>
+            <DataTable
+              columns={[
+                { key: "hora", header: "Hora", render: (tx) => isMounted ? new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "--" },
+                { key: "empresa", header: "Empresa", render: (tx) => tx.company_name },
+                { key: "metodo", header: "Metodo", render: (tx) => <PaymentBadge method={tx.payment_method} /> },
+                { key: "valor", header: "Valor", render: (tx) => <span className="font-bold text-foreground">{formatCurrency(Number(tx.amount))}</span> },
+              ]}
+              rows={txs.slice(0,5)}
+              emptyMessage="Sem lancamentos."
+            />
+          </Card>
+        </div>
+      )}
+
+      {/* ===== CAIXA PDV ===== */}
+      {show("caixa-pdv") && (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Fluxo de Caixa PDV</h1>
+              <p className="text-sm text-muted">Gestao de suprimentos, retiradas e conciliacao fisica.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button 
+                variant="success" 
+                onClick={() => { setCashModalType("suprimento"); setCashType("suprimento"); setShowCashModal(true); }}
+                disabled={!shift || operatorBlocked}
+              >
+                <Plus size={16} className="mr-1" />
+                Suprimento
+              </Button>
+              <Button 
+                variant="danger" 
+                onClick={() => { setCashModalType("sangria"); setCashType("sangria"); setShowCashModal(true); }}
+                disabled={!shift || operatorBlocked}
+              >
+                <Plus size={16} className="mr-1" />
+                Nova Sangria
+              </Button>
+            </div>
+          </div>
+
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Saldo Fisico */}
+            <Card className="bg-[hsl(var(--card-elevated))]">
+              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Saldo Fisico (Especie)</p>
+              <p className="text-3xl font-bold text-success">{formatCurrency(cashTotals.saldo)}</p>
+              <p className="text-xs text-muted mt-2">Montante disponivel em gaveta para troco e sangrias.</p>
+            </Card>
+            
+            {/* Vendas Digitais */}
+            <Card className="bg-[hsl(var(--card-elevated))]">
+              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Vendas Digitais (Nao Fisico)</p>
+              <p className="text-3xl font-bold text-info">{formatCurrency(digitalTotal)}</p>
+              <p className="text-xs text-muted mt-2">Total acumulado via PIX e Cartoes de Credito/Debito.</p>
+            </Card>
+
+            {/* Abrir Novo Turno */}
+            <Card className="bg-[hsl(var(--card-elevated))] flex flex-col items-center justify-center">
+              {!shift ? (
+                <>
+                  <button 
+                    onClick={openShift}
+                    disabled={operatorBlocked || !boothId}
+                    className="size-12 rounded-full border-2 border-dashed border-muted flex items-center justify-center mb-2 hover:border-primary transition-colors disabled:opacity-50"
+                  >
+                    <Plus size={24} className="text-muted" />
+                  </button>
+                  <p className="font-semibold text-foreground">Abrir Novo Turno</p>
+                  <p className="text-[10px] text-muted uppercase tracking-widest">Reiniciar Ciclo PDV</p>
+                </>
+              ) : (
+                <>
+                  <div className="size-12 rounded-full bg-success/20 flex items-center justify-center mb-2">
+                    <RefreshCw size={24} className="text-success" />
+                  </div>
+                  <p className="font-semibold text-success">Turno Ativo</p>
+                  <p className="text-[10px] text-muted uppercase tracking-widest">Caixa Operando</p>
+                </>
+              )}
+            </Card>
+          </div>
+
+          {/* Log de Movimentacoes */}
+          <Card>
+            <div className="flex items-center gap-2 mb-4">
+              <RefreshCw size={18} className="text-muted" />
+              <h3 className="font-semibold text-foreground">Log de Movimentacoes Recentes</h3>
+            </div>
+            <DataTable
+              columns={[
+                { key: "data", header: "Data/Hora", render: (m) => isMounted ? new Date(m.created_at).toLocaleString("pt-BR") : "--" },
+                { key: "tipo", header: "Tipo", render: (m) => (
+                  <Badge variant={m.movement_type === "suprimento" ? "success" : m.movement_type === "sangria" ? "warning" : "secondary"}>
+                    {m.movement_type.toUpperCase()}
+                  </Badge>
+                ) },
+                { key: "descricao", header: "Descricao", render: (m) => m.note || "-" },
+                { key: "valor", header: "Valor", render: (m) => (
+                  <span className={`font-bold ${m.movement_type === "sangria" ? "text-destructive" : "text-success"}`}>
+                    {m.movement_type === "sangria" ? "-" : "+"}{formatCurrency(Number(m.amount))}
+                  </span>
+                ) },
+                { key: "operador", header: "Operador", render: () => "Operador" },
+              ]}
+              rows={cashMovements}
+              emptyMessage="Nenhuma movimentacao registrada."
+            />
+          </Card>
+        </div>
+      )}
+
+      {/* ===== HISTORICO ===== */}
+      {show("historico") && (
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Historico de Lancamentos</h1>
+            <p className="text-sm text-muted">Todos os lancamentos do turno atual</p>
+          </div>
+
+          {/* Comprovantes Pendentes */}
           {pendingReceiptTxs.length > 0 && (
-            <Card className="border-amber-200 bg-amber-50">
+            <Card className="border-warning/30 bg-warning/5">
               <div className="flex items-center gap-2 mb-4">
-                <AlertTriangle className="text-amber-600" size={20} />
-                <h3 className="font-semibold text-amber-800">Comprovantes pendentes ({pendingReceiptTxs.length})</h3>
+                <AlertTriangle className="text-warning" size={20} />
+                <h3 className="font-semibold text-warning">Comprovantes Pendentes ({pendingReceiptTxs.length})</h3>
               </div>
               <div className="space-y-2">
                 {pendingReceiptTxs.slice(0,8).map(tx=>(
-                  <div key={tx.id} className="flex items-center justify-between gap-3 p-3 bg-white rounded-lg border border-amber-200">
+                  <div key={tx.id} className="flex items-center justify-between gap-3 p-3 bg-card rounded-lg border border-border">
                     <div>
-                      <p className="text-sm font-semibold text-foreground">{tx.company_name} - R$ {Number(tx.amount).toFixed(2)}</p>
-                      <p className="text-xs text-muted">{tx.payment_method.toUpperCase()} - {new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</p>
+                      <p className="text-sm font-semibold text-foreground">{tx.company_name} - {formatCurrency(Number(tx.amount))}</p>
+                      <p className="text-xs text-muted">{tx.payment_method.toUpperCase()} - {isMounted ? new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "--"}</p>
                     </div>
                     <label className="cursor-pointer">
-                      <Button variant="ghost" size="sm" as="span">
+                      <Button variant="secondary" size="sm">
                         {uploadingTxId===tx.id ? "Enviando..." : "Anexar"}
                       </Button>
                       <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId===tx.id||operatorBlocked} onChange={e=>handleUploadReceipt(tx.id,e)} />
@@ -351,60 +473,70 @@ export default function OperatorRebuildPage() {
             </Card>
           )}
 
-          {/* Historico de lancamentos */}
+          {/* Tabela de Lancamentos */}
           <Card>
-            <SectionHeader title="Lancamentos do turno" className="mb-4" />
             <DataTable
               columns={[
-                { key: "hora", header: "Hora", render: (tx) => <span className="text-muted text-xs">{new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</span> },
+                { key: "hora", header: "Hora", render: (tx) => isMounted ? new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "--" },
                 { key: "empresa", header: "Empresa", render: (tx) => <span className="font-semibold">{tx.company_name}</span> },
                 { key: "metodo", header: "Metodo", render: (tx) => <PaymentBadge method={tx.payment_method} /> },
-                { key: "valor", header: "Valor", render: (tx) => <span className="font-bold">R$ {Number(tx.amount).toFixed(2)}</span> },
-                { key: "comprovante", header: "Comprovante", render: (tx) => tx.receipt_count>0 ? <Badge variant="success">OK</Badge> : (tx.payment_method==="credit"||tx.payment_method==="debit") ? <Badge variant="warning">PENDENTE</Badge> : "-" },
+                { key: "valor", header: "Valor", render: (tx) => <span className="font-bold text-foreground">{formatCurrency(Number(tx.amount))}</span> },
+                { key: "comprovante", header: "Comprovante", render: (tx) => tx.receipt_count>0 ? <Badge variant="success">OK</Badge> : (tx.payment_method==="credit"||tx.payment_method==="debit") ? <Badge variant="warning">PENDENTE</Badge> : <span className="text-muted">-</span> },
               ]}
               rows={txs}
               emptyMessage="Sem lancamentos neste turno."
             />
           </Card>
-        </div>
 
-        {/* RIGHT - Forms */}
-        <div className="space-y-6">
-
-          {/* Novo lancamento */}
+          {/* Form Novo Lancamento */}
           <Card>
-            <SectionHeader title="Novo lancamento" className="mb-4" />
+            <h3 className="font-semibold text-foreground mb-4">Novo Lancamento</h3>
             <form onSubmit={submitTx} className="space-y-4">
-              <Select
-                label="Empresa"
-                value={companyId}
-                onChange={e=>setCompanyId(e.target.value)}
-                required
-                disabled={!shift||operatorBlocked}
-              >
-                <option value="">Selecione a empresa</option>
-                {companies.map(c=><option key={c.id} value={c.id}>{c.name} ({getCompanyPct(c)}%)</option>)}
-              </Select>
-              <Select
-                label="Categoria"
-                value={categoryId}
-                onChange={e=>{ setCategoryId(e.target.value); const first=subcategories.find(s=>s.category_id===e.target.value); setSubcategoryId(first?.id??""); }}
-                required
-                disabled={!shift||operatorBlocked}
-              >
-                <option value="">Selecione a categoria</option>
-                {categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-              <Select
-                label="Subcategoria"
-                value={subcategoryId}
-                onChange={e=>setSubcategoryId(e.target.value)}
-                required
-                disabled={!shift||operatorBlocked}
-              >
-                <option value="">Selecione</option>
-                {filteredSubs.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-              </Select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Select
+                  label="Empresa"
+                  value={companyId}
+                  onChange={e=>setCompanyId(e.target.value)}
+                  required
+                  disabled={!shift||operatorBlocked}
+                >
+                  <option value="">Selecione a empresa</option>
+                  {companies.map(c=><option key={c.id} value={c.id}>{c.name} ({getCompanyPct(c)}%)</option>)}
+                </Select>
+                <Select
+                  label="Categoria"
+                  value={categoryId}
+                  onChange={e=>{ setCategoryId(e.target.value); const first=subcategories.find(s=>s.category_id===e.target.value); setSubcategoryId(first?.id??""); }}
+                  required
+                  disabled={!shift||operatorBlocked}
+                >
+                  <option value="">Selecione</option>
+                  {categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Select
+                  label="Subcategoria"
+                  value={subcategoryId}
+                  onChange={e=>setSubcategoryId(e.target.value)}
+                  required
+                  disabled={!shift||operatorBlocked}
+                >
+                  <option value="">Selecione</option>
+                  {filteredSubs.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                </Select>
+                <Input
+                  label="Valor (R$)"
+                  value={amount}
+                  onChange={e=>setAmount(e.target.value)}
+                  required
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="0,00"
+                  disabled={!shift||operatorBlocked}
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Forma de pagamento</label>
                 <div className="flex gap-2">
@@ -412,7 +544,7 @@ export default function OperatorRebuildPage() {
                     <Button
                       key={m}
                       type="button"
-                      variant={paymentMethod===m?"primary":"ghost"}
+                      variant={paymentMethod===m?"primary":"secondary"}
                       size="sm"
                       className="flex-1"
                       onClick={()=>setPaymentMethod(m)}
@@ -422,93 +554,96 @@ export default function OperatorRebuildPage() {
                   ))}
                 </div>
               </div>
-              <Input
-                label="Valor (R$)"
-                value={amount}
-                onChange={e=>setAmount(e.target.value)}
-                required
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="0,00"
-                disabled={!shift||operatorBlocked}
-              />
-              <Input
-                label="Referencia / Bilhete"
-                value={ticketReference}
-                onChange={e=>setTicketReference(e.target.value)}
-                placeholder="Ex: 12345"
-                disabled={!shift||operatorBlocked}
-              />
-              <Input
-                label="Observacao"
-                value={note}
-                onChange={e=>setNote(e.target.value)}
-                placeholder="Opcional"
-                disabled={!shift||operatorBlocked}
-              />
-              <Button type="submit" variant="primary" disabled={!shift||operatorBlocked} className="w-full">
-                Registrar lancamento
-              </Button>
-            </form>
-          </Card>
-
-          {/* Caixa PDV */}
-          <Card>
-            <SectionHeader title="Caixa PDV" className="mb-4" />
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <StatCard label="Suprimento" value={`R$ ${cashTotals.suprimento.toFixed(2)}`} className="p-3" />
-              <StatCard label="Sangria" value={`R$ ${cashTotals.sangria.toFixed(2)}`} className="p-3" />
-              <StatCard label="Ajuste" value={`R$ ${cashTotals.ajuste.toFixed(2)}`} className="p-3" />
-              <StatCard label="Saldo" value={`R$ ${cashTotals.saldo.toFixed(2)}`} deltaType="positive" className="p-3" />
-            </div>
-            <form onSubmit={submitCashMovement} className="space-y-4">
-              <Select
-                value={cashType}
-                onChange={e=>setCashType(e.target.value as typeof cashType)}
-                disabled={!shift||operatorBlocked}
-                label="Tipo de movimento"
-              >
-                <option value="suprimento">Suprimento</option>
-                <option value="sangria">Sangria</option>
-                <option value="ajuste">Ajuste</option>
-              </Select>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
-                  value={cashAmount}
-                  onChange={e=>setCashAmount(e.target.value)}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Valor"
+                  label="Referencia / Bilhete"
+                  value={ticketReference}
+                  onChange={e=>setTicketReference(e.target.value)}
+                  placeholder="Ex: 12345"
                   disabled={!shift||operatorBlocked}
-                  label="Valor"
                 />
                 <Input
-                  value={cashNote}
-                  onChange={e=>setCashNote(e.target.value)}
-                  placeholder="Obs (opcional)"
-                  disabled={!shift||operatorBlocked}
                   label="Observacao"
+                  value={note}
+                  onChange={e=>setNote(e.target.value)}
+                  placeholder="Opcional"
+                  disabled={!shift||operatorBlocked}
                 />
               </div>
               <Button type="submit" variant="primary" disabled={!shift||operatorBlocked} className="w-full">
-                Registrar movimento
+                Registrar Lancamento
               </Button>
             </form>
           </Card>
         </div>
-      </div>
+      )}
+
+      {/* ===== PONTO DIGITAL ===== */}
+      {show("ponto") && (
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Ponto Digital</h1>
+            <p className="text-sm text-muted">Registre sua entrada, saida e pausas</p>
+          </div>
+
+          <Card>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {(["entrada","pausa_inicio","pausa_fim","saida"] as const).map(t=>(
+                <Button
+                  key={t}
+                  variant={t==="entrada"?"success":t==="saida"?"danger":"secondary"}
+                  disabled={operatorBlocked}
+                  onClick={()=>registerPunch(t)}
+                  className="py-6"
+                >
+                  <Clock size={20} className="mr-2" />
+                  {t==="entrada"?"Entrada":t==="pausa_inicio"?"Inicio Pausa":t==="pausa_fim"?"Fim Pausa":"Saida"}
+                </Button>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <h3 className="font-semibold text-foreground mb-4">Registros de Ponto</h3>
+            <DataTable
+              columns={[
+                { key: "tipo", header: "Tipo", render: (p) => (
+                  <Badge variant={p.punch_type === "entrada" ? "success" : p.punch_type === "saida" ? "warning" : "secondary"}>
+                    {p.punch_type.toUpperCase().replace("_"," ")}
+                  </Badge>
+                ) },
+                { key: "hora", header: "Data/Hora", render: (p) => isMounted ? new Date(p.punched_at).toLocaleString("pt-BR") : "--" },
+                { key: "obs", header: "Observacao", render: (p) => p.note || "-" },
+              ]}
+              rows={punches}
+              emptyMessage="Nenhum registro de ponto."
+            />
+          </Card>
+        </div>
+      )}
+
+      {/* ===== CONFIGURACOES ===== */}
+      {show("configuracoes") && (
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Configuracoes</h1>
+            <p className="text-sm text-muted">Preferencias do operador</p>
+          </div>
+          <Card>
+            <p className="text-muted">Em breve: configuracoes do operador.</p>
+          </Card>
+        </div>
+      )}
 
       {/* Modal Fechamento */}
       {showCloseModal && shift && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <Card className="w-full max-w-md">
             <h2 className="text-lg font-bold text-foreground mb-4">Fechamento de Caixa</h2>
             <div className="space-y-4">
-              <div className="bg-emerald-50 p-4 rounded-lg flex justify-between items-center border border-emerald-200">
+              <div className="bg-success/10 p-4 rounded-lg flex justify-between items-center border border-success/20">
                 <span className="text-sm text-muted">Valor Esperado Gaveta</span>
-                <span className="text-emerald-700 font-bold">R$ {expectedCashVal.toFixed(2)}</span>
+                <span className="text-success font-bold">{formatCurrency(expectedCashVal)}</span>
               </div>
               <Input
                 label="Valor Contado (Gaveta)"
@@ -531,6 +666,41 @@ export default function OperatorRebuildPage() {
                 {isClosing ? "Encerrando..." : "Confirmar Encerramento"}
               </Button>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Suprimento/Sangria */}
+      {showCashModal && shift && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-md">
+            <h2 className="text-lg font-bold text-foreground mb-4">
+              {cashModalType === "suprimento" ? "Novo Suprimento" : "Nova Sangria"}
+            </h2>
+            <form onSubmit={submitCashMovement} className="space-y-4">
+              <Input
+                label="Valor (R$)"
+                value={cashAmount}
+                onChange={e => setCashAmount(e.target.value)}
+                autoFocus
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+              />
+              <Input
+                label="Observacao (Opcional)"
+                value={cashNote}
+                onChange={e => setCashNote(e.target.value)}
+                placeholder="Motivo ou descricao"
+              />
+              <div className="flex gap-3 justify-end mt-6">
+                <Button type="button" variant="ghost" onClick={() => setShowCashModal(false)}>Cancelar</Button>
+                <Button type="submit" variant={cashModalType === "suprimento" ? "success" : "danger"}>
+                  Confirmar {cashModalType === "suprimento" ? "Suprimento" : "Sangria"}
+                </Button>
+              </div>
+            </form>
           </Card>
         </div>
       )}

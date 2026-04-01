@@ -4,60 +4,75 @@
 
 @layer base {
   :root {
+    /* Dark Mode Premium - Inspired by modern dashboards */
+    
     /* Background & Foreground */
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
+    --background: 230 25% 7%;
+    --foreground: 210 40% 98%;
     
     /* Cards & Surfaces */
-    --card: 0 0% 100%;
-    --card-foreground: 215 25% 27%;
+    --card: 230 20% 10%;
+    --card-foreground: 210 40% 98%;
+    --card-elevated: 230 20% 13%;
     
     /* Borders & Inputs */
-    --border: 214 32% 91%;
-    --input: 210 40% 96%;
+    --border: 230 15% 18%;
+    --input: 230 20% 12%;
     
     /* Primary - Blue */
     --primary: 217 91% 60%;
     --primary-foreground: 0 0% 100%;
     
-    /* Accent - Amber */
-    --accent: 38 92% 50%;
-    --accent-foreground: 222 47% 11%;
+    /* Accent - Emerald/Green */
+    --accent: 160 84% 39%;
+    --accent-foreground: 0 0% 100%;
     
     /* Secondary */
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 215 25% 27%;
+    --secondary: 230 15% 18%;
+    --secondary-foreground: 210 40% 98%;
     
     /* Muted */
-    --muted: 215 16% 47%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 215 20% 55%;
+    --muted-foreground: 215 16% 65%;
     
-    /* Destructive */
-    --destructive: 0 84% 60%;
+    /* Destructive / Coral */
+    --destructive: 14 90% 55%;
     --destructive-foreground: 0 0% 100%;
     
-    /* Success */
+    /* Success - Emerald */
     --success: 160 84% 39%;
     --success-foreground: 0 0% 100%;
     
-    /* Warning */
+    /* Warning - Amber */
     --warning: 38 92% 50%;
-    --warning-foreground: 222 47% 11%;
+    --warning-foreground: 230 25% 7%;
+    
+    /* Info - Cyan */
+    --info: 186 90% 50%;
+    --info-foreground: 230 25% 7%;
     
     /* Ring & Radius */
     --ring: 217 91% 60%;
     --radius: 0.75rem;
     
     /* Sidebar */
-    --sidebar: 0 0% 100%;
-    --sidebar-foreground: 215 25% 27%;
-    --sidebar-border: 214 32% 91%;
-    --sidebar-accent: 217 91% 97%;
-    --sidebar-accent-foreground: 217 91% 60%;
+    --sidebar: 230 25% 9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-border: 230 15% 15%;
+    --sidebar-accent: 217 91% 60%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-muted: 215 20% 55%;
     
     /* Popover */
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover: 230 20% 10%;
+    --popover-foreground: 210 40% 98%;
+    
+    /* Chart Colors */
+    --chart-1: 160 84% 39%;
+    --chart-2: 186 90% 50%;
+    --chart-3: 217 91% 60%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 14 90% 55%;
   }
 
   * {
@@ -74,9 +89,25 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted));
+  }
+
   /* Focus ring utility */
   .focus-ring {
-    @apply outline-none ring-2 ring-offset-2 ring-[hsl(var(--ring))];
+    @apply outline-none ring-2 ring-offset-2 ring-offset-background ring-[hsl(var(--ring))];
   }
 }
 
@@ -84,5 +115,11 @@
   /* Text balance for titles */
   .text-balance {
     text-wrap: balance;
+  }
+  
+  /* Glass effect */
+  .glass {
+    background: hsla(var(--card), 0.8);
+    backdrop-filter: blur(8px);
   }
 }

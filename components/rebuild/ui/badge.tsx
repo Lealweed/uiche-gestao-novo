@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-type BadgeVariant = "success" | "warning" | "danger" | "neutral" | "info";
+type BadgeVariant = "success" | "warning" | "danger" | "neutral" | "info" | "secondary";
 
 type BadgeProps = {
   variant?: BadgeVariant;
@@ -10,11 +10,12 @@ type BadgeProps = {
 };
 
 const variantStyles: Record<BadgeVariant, string> = {
-  success: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  warning: "bg-amber-50 text-amber-700 border-amber-200",
-  danger: "bg-red-50 text-red-700 border-red-200",
-  neutral: "bg-slate-100 text-slate-600 border-slate-200",
-  info: "bg-blue-50 text-blue-700 border-blue-200",
+  success: "bg-success/15 text-success border-success/30",
+  warning: "bg-warning/15 text-warning border-warning/30",
+  danger: "bg-destructive/15 text-destructive border-destructive/30",
+  neutral: "bg-secondary text-muted border-border",
+  info: "bg-info/15 text-info border-info/30",
+  secondary: "bg-secondary text-foreground border-border",
 };
 
 export function Badge({ variant = "neutral", children, className }: BadgeProps) {
@@ -34,8 +35,8 @@ export function Badge({ variant = "neutral", children, className }: BadgeProps) 
 export function PaymentBadge({ method }: { method: string }) {
   const map: Record<string, { variant: BadgeVariant; label: string }> = {
     pix: { variant: "success", label: "PIX" },
-    credit: { variant: "info", label: "Crédito" },
-    debit: { variant: "info", label: "Débito" },
+    credit: { variant: "info", label: "Credito" },
+    debit: { variant: "info", label: "Debito" },
     cash: { variant: "warning", label: "Dinheiro" },
   };
   const item = map[method] ?? { variant: "neutral" as BadgeVariant, label: method };

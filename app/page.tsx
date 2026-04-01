@@ -31,11 +31,11 @@ export default function Home() {
     <main className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8 bg-background">
       <div className="w-full max-w-5xl space-y-8">
         {/* Hero card */}
-        <section className="bg-card rounded-2xl p-8 md:p-12 space-y-6 border border-border shadow-card">
+        <section className="bg-card rounded-2xl p-8 md:p-12 space-y-6 border border-border">
           {/* Eyebrow */}
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-10 rounded-xl bg-primary">
-              <Ticket size={20} className="text-primary-foreground" />
+            <div className="flex items-center justify-center size-10 rounded-xl bg-primary text-primary-foreground font-bold">
+              C
             </div>
             <p className="text-xs font-semibold uppercase tracking-widest text-primary">
               Central Viagens - Plataforma Operacional
@@ -59,7 +59,7 @@ export default function Home() {
             {features.map(({ icon: Icon, label }) => (
               <div
                 key={label}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium bg-slate-100 text-muted border border-border"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium bg-secondary text-muted border border-border"
               >
                 <Icon size={14} aria-hidden="true" />
                 {label}
@@ -71,14 +71,14 @@ export default function Home() {
           <div className="flex flex-wrap gap-3 pt-2">
             <Link
               href="/login"
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-blue-500 transition-all"
             >
               Entrar no sistema
               <ArrowRight size={16} />
             </Link>
             <Link
               href="/rebuild/admin"
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-transparent text-foreground font-semibold rounded-lg border border-border hover:bg-slate-100 transition-colors"
+              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-secondary text-foreground font-semibold rounded-lg border border-border hover:bg-[hsl(var(--card-elevated))] transition-all"
             >
               Ver painel administrativo
             </Link>
@@ -91,7 +91,7 @@ export default function Home() {
             {highlights.map(({ title, description, icon: Icon }) => (
               <article
                 key={title}
-                className="bg-card rounded-xl p-6 space-y-4 border border-border shadow-card hover:shadow-card-hover transition-shadow"
+                className="bg-card rounded-xl p-6 space-y-4 border border-border hover:border-primary/30 transition-colors"
               >
                 <div className="flex items-center justify-center size-12 rounded-xl bg-primary/10 text-primary">
                   <Icon size={24} />
@@ -110,7 +110,7 @@ export default function Home() {
         </section>
 
         {/* Footer */}
-        <footer className="text-center text-xs text-muted-foreground py-4">
+        <footer className="text-center text-xs text-muted py-4">
           <p>Central Viagens - Plataforma B2B de Gestao Operacional</p>
         </footer>
       </div>

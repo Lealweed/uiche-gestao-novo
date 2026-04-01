@@ -13,15 +13,15 @@ type StatCardProps = {
 
 export function StatCard({ label, value, delta, deltaType = "neutral", icon, className }: StatCardProps) {
   const deltaColors = {
-    positive: "text-emerald-600",
-    negative: "text-red-600",
+    positive: "text-success",
+    negative: "text-destructive",
     neutral: "text-muted",
   };
 
   return (
-    <Card className={cn("p-5", className)}>
+    <Card className={cn("p-5 bg-[hsl(var(--card-elevated))]", className)}>
       <div className="flex items-start justify-between">
-        <p className="text-sm font-medium text-muted">{label}</p>
+        <p className="text-[10px] font-semibold text-muted uppercase tracking-widest">{label}</p>
         {icon && (
           <div className="p-2 bg-primary/10 rounded-lg text-primary">
             {icon}

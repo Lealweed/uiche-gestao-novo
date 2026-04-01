@@ -2,16 +2,16 @@ import { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, forw
 import { cn } from "@/lib/utils";
 
 const baseFieldStyles = [
-  "w-full px-3 py-2 text-sm text-foreground",
+  "w-full px-3 py-2.5 text-sm text-foreground",
   "bg-input border border-border rounded-lg",
-  "placeholder:text-muted-foreground",
-  "focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:border-primary",
+  "placeholder:text-muted",
+  "focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background focus:border-primary",
   "disabled:opacity-50 disabled:cursor-not-allowed",
-  "transition-colors",
+  "transition-all duration-200",
 ].join(" ");
 
-const labelStyles = "block text-sm font-medium text-foreground mb-1.5";
-const errorTextStyles = "text-red-600 text-xs mt-1";
+const labelStyles = "block text-sm font-medium text-foreground mb-2";
+const errorTextStyles = "text-destructive text-xs mt-1";
 const hintTextStyles = "text-muted text-xs mt-1";
 
 /* ------------------------------------------------------------------
@@ -38,7 +38,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           className={cn(
             baseFieldStyles,
-            error && "border-red-500 focus:ring-red-500 focus:border-red-500",
+            error && "border-destructive focus:ring-destructive focus:border-destructive",
             className
           )}
           aria-invalid={!!error}
@@ -85,7 +85,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           className={cn(
             baseFieldStyles,
             "cursor-pointer",
-            error && "border-red-500 focus:ring-red-500 focus:border-red-500",
+            error && "border-destructive focus:ring-destructive focus:border-destructive",
             className
           )}
           aria-invalid={!!error}
@@ -128,7 +128,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           className={cn(
             baseFieldStyles,
             "resize-none min-h-[80px]",
-            error && "border-red-500 focus:ring-red-500 focus:border-red-500",
+            error && "border-destructive focus:ring-destructive focus:border-destructive",
             className
           )}
           aria-invalid={!!error}
