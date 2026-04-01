@@ -914,7 +914,7 @@ export default function AdminRebuildPage() {
                             <XAxis dataKey="date" tick={{ fontSize: 12, fill: CHART_COLORS.text }} tickLine={false} axisLine={false} />
                             <YAxis tick={{ fontSize: 12, fill: CHART_COLORS.text }} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v/1000).toFixed(0)}k`} />
                             <Tooltip 
-                              formatter={(value: number) => [formatCurrency(value), "Faturamento"]}
+                              formatter={(value) => [formatCurrency(Number(value)), "Faturamento"]}
                               contentStyle={{ backgroundColor: "hsl(230 20% 13%)", border: "1px solid hsl(230 15% 20%)", borderRadius: "8px", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)", color: "#f1f5f9" }}
                               labelStyle={{ color: "#94a3b8" }}
                             />
