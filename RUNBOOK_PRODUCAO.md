@@ -1,47 +1,58 @@
-# Runbook de Produção (Central Viagens)
+# Runbook de Produção — Central Viagens
 
-Objetivo: impedir deploy errado e recuperar rápido em caso de incidente.
+Objetivo: impedir deploy incorreto e recuperar rápido em caso de incidente.
 
 ## Regra de ouro
 - Produção sai **somente da branch `main`**.
 - Não fazer deploy manual com branch diferente.
 
 ## Deploy seguro (padrão oficial)
-No PowerShell, dentro do projeto:
+No PowerShell, dentro do repositório atual:
 
 ```powershell
-cd "C:\Users\Maico\.openclaw\workspace\guiche-system"
-.\scripts\deploy-safe.ps1
+cd "<caminho-do-repo>\uiche-gestao-novo"
+npm run typecheck
+npm run build
+npm run deploy:safe
 ```
 
-O script bloqueia deploy se:
+O fluxo deve bloquear publicação se:
 - não estiver em `main`
 - houver arquivos locais pendentes
 - `git pull --ff-only` falhar
+- `npm run typecheck` falhar
 - `npm run build` falhar
 
-## Pré-check rápido (30s)
+## Pré-check rápido
 ```powershell
 git branch --show-current
 git status
+npm run typecheck
+npm run build
 ```
 Esperado:
 - branch: `main`
 - status limpo
+- validação local sem erro
+
+## Rotas para validar após deploy
+- `/login`
+- `/rebuild/admin`
+- `/rebuild/operator`
 
 ## Pós-deploy
-- Validar domínio: https://www.centralviagens.site
-- Hard refresh no navegador (`Ctrl + Shift + R`) se necessário
+- Validar domínio/preview publicado
+- Fazer hard refresh no navegador (`Ctrl + Shift + R`) se necessário
 
 ## Incidente / rollback rápido
 1. Identificar commit ruim (ex: `abc1234`)
 2. Reverter com commit novo:
 ```powershell
 git checkout main
-git pull
+git pull --ff-only
 git revert --no-edit abc1234
 git push origin main
-.\scripts\deploy-safe.ps1
+npm run deploy:safe
 ```
 
 ## Guardrails no GitHub (obrigatório)

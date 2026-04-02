@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { getHomeRouteForRole, getRoleLabel } from "@/lib/rbac";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 const supabase = createClient();
@@ -33,7 +34,7 @@ export default function LoginPage() {
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role,active")
       .eq("user_id", data.user.id)
       .single();
 
@@ -43,13 +44,27 @@ export default function LoginPage() {
       return;
     }
 
-    const role = (profile as { role?: string }).role ?? "";
+    const resolvedProfile = profile as { role?: string; active?: boolean };
+    const role = resolvedProfile.role ?? "";
+    const isActive = resolvedProfile.active !== false;
 
-    if (["admin", "tenant_admin", "financeiro"].includes(role)) {
-      router.push("/rebuild/admin");
-    } else {
-      router.push("/rebuild/operator");
+    if (!isActive) {
+      await supabase.auth.signOut();
+      setError("Seu acesso esta inativo. Contacte o administrador.");
+      setLoading(false);
+      return;
     }
+
+    const destination = getHomeRouteForRole(role);
+
+    if (!destination) {
+      await supabase.auth.signOut();
+      setError(`${getRoleLabel(role)} sem rota habilitada no sistema.`);
+      setLoading(false);
+      return;
+    }
+
+    router.replace(destination);
   }
 
   return (

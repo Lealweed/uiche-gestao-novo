@@ -1,22 +1,37 @@
-# Guichê Gestão — MVP Inicial
+# Central Viagens — Base Operacional Atual
 
 Sistema de gestão operacional para guichês de venda de passagem (sem emissão de bilhete), com controle de turno, lançamentos por forma de pagamento, comprovantes e fechamento diário.
 
-## Stack sugerida
-- Frontend: Next.js 14 + Tailwind
+## Stack atual
+- Frontend: Next.js 16 + React 18 + Tailwind CSS
 - Backend/Auth/DB/Storage: Supabase
-- Deploy: Vercel
+- Deploy: Vercel / script seguro via `npm run deploy:safe`
 
-## Escopo deste MVP
-- Perfis: `admin` e `operator`
+## Rotas ativas no build principal
+- `/` — home institucional
+- `/login` — autenticação
+- `/rebuild/admin` — painel administrativo e financeiro
+- `/rebuild/operator` — painel operacional
+- `/api/admin/users`
+- `/api/repasse/baixar`
+
+## Escopo operacional atual
+- Perfis: `admin`, `tenant_admin`, `financeiro` e `operator`
 - Login por e-mail/senha
 - Abertura automática de turno no login do operador
 - Encerramento de turno com resumo e validações
-- Lançamentos: PIX, crédito, débito (dinheiro opcional)
+- Lançamentos: PIX, crédito, débito e dinheiro
 - Comprovante obrigatório para crédito/débito
 - Cadastro de empresas com `%` de comissão/repasse
 - Cálculo automático de comissão por transação
 - Relatórios por guichê, operador, período e empresa
+
+## Estrutura oficial atual
+- A árvore principal ativa do app está em `app/`.
+- As rotas oficiais hoje são: `/`, `/login`, `/rebuild/admin` e `/rebuild/operator`.
+- `src/app/gerencia` permanece como módulo legado/inativo e não faz parte do build operacional atual.
+- Novas rotas ou telas ativas devem ser criadas em `app/`, não em `src/app/`.
+- Referência rápida: veja `PROJECT_STRUCTURE.md`.
 
 ## Banco de dados
 Use o arquivo `supabase/schema.sql` no SQL Editor do Supabase.

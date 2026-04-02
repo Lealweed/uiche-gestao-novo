@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { canManageUsers, type AppRole } from "@/lib/rbac";
 
 type CreateUserBody = {
   name?: string;
   email?: string;
   password?: string;
-  role?: "operator" | "financeiro" | "tenant_admin";
+  role?: AppRole;
   active?: boolean;
   boothId?: string | null;
 };
@@ -54,7 +55,7 @@ async function resolveRequester(req: Request) {
     return { error: NextResponse.json({ error: "Perfil do solicitante não encontrado." }, { status: 403 }) };
   }
 
-  if (!["tenant_admin", "admin"].includes(String(requesterProfile.role))) {
+  if (!canManageUsers(String(requesterProfile.role))) {
     return { error: NextResponse.json({ error: "Sem permissão para gerenciar usuários." }, { status: 403 }) };
   }
 

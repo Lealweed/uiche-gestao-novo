@@ -10,7 +10,7 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Central Viagem · Gestão Operacional", template: "%s · Central Viagem" },
+  title: { default: "Central Viagens · Gestão Operacional", template: "%s · Central Viagens" },
   description: "Plataforma de gestão operacional para equipes de turismo.",
   robots: { index: false, follow: false },
 };

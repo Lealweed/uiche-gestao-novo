@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { canAccessAdminSection, canManageUsers, getDefaultAdminSectionForRole, getRoleLabel } from "@/lib/rbac";
 import {
   Bell,
   Building2,
@@ -85,10 +86,13 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   const [currentDate, setCurrentDate] = useState<string | null>(null);
 
   const isOperator = pathname.startsWith("/rebuild/operator");
-  const mainNav = isOperator ? operatorNav : adminMainNav;
-  const systemNav = isOperator ? [] : adminSystemNav;
+  const effectiveRole = userProfile?.role ?? (isOperator ? "operator" : "admin");
+  const mainNav = isOperator
+    ? operatorNav
+    : adminMainNav.filter((item) => canAccessAdminSection(effectiveRole, item.section));
+  const systemNav = isOperator ? [] : canManageUsers(effectiveRole) ? adminSystemNav : [];
   const sectionLabels = isOperator ? operatorSectionLabels : adminSectionLabels;
-  const defaultSection = isOperator ? "resumo" : "dashboard";
+  const defaultSection = isOperator ? "resumo" : getDefaultAdminSectionForRole(effectiveRole);
 
   useEffect(() => {
     const readHash = () => {
@@ -127,12 +131,19 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   function navigate(href: string, section: string) {
-    setCurrentSection(section);
+    const safeSection = !isOperator && !canAccessAdminSection(effectiveRole, section)
+      ? getDefaultAdminSectionForRole(effectiveRole)
+      : section;
+    const safeHref = !isOperator && safeSection !== section
+      ? `/rebuild/admin#${safeSection}`
+      : href;
+
+    setCurrentSection(safeSection);
     setDrawerOpen(false);
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("rebuild:section-change", { detail: section }));
+      window.dispatchEvent(new CustomEvent("rebuild:section-change", { detail: safeSection }));
     }
-    router.push(href);
+    router.push(safeHref);
   }
 
   async function handleLogout() {
@@ -159,6 +170,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   }
 
   const activeLabel = sectionLabels[currentSection] ?? (isOperator ? "Painel Operador" : "Dashboard");
+  const userRoleLabel = getRoleLabel(effectiveRole);
 
   const SidebarContent = () => (
     <>
@@ -239,7 +251,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
               {userProfile?.name ?? "Operador"}
             </p>
             <p className="text-xs text-sidebar-muted">
-              {isOperator ? "Caixa 01 - Matriz" : "Administrador"}
+              {userRoleLabel}
             </p>
           </div>
         </div>

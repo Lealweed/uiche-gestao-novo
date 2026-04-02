@@ -2,7 +2,9 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { canAccessAdminArea, getHomeRouteForRole } from "@/lib/rbac";
 import { tolerantData, isSchemaToleranceError } from "@/lib/schema-tolerance";
+import { OperatorSummarySection } from "@/components/rebuild/operator/operator-summary-section";
 import { RebuildShell } from "@/components/rebuild/shell/rebuild-shell";
 import { Card, CardTitle } from "@/components/rebuild/ui/card";
 import { Select, Input } from "@/components/rebuild/ui/input";
@@ -120,8 +122,26 @@ export default function OperatorRebuildPage() {
       setUserId(uid);
 
       const { data: profile } = await supabase.from("profiles").select("role,active").eq("user_id",uid).single();
+      const role = (profile as { role?: string; active?: boolean } | null)?.role ?? "";
+      const isActive = (profile as { role?: string; active?: boolean } | null)?.active !== false;
       setOperatorActive((profile as { active?: boolean }|null)?.active ?? null);
-      if ((profile as { role?: string }|null)?.role === "admin") return router.push("/admin");
+
+      if (!isActive) {
+        await supabase.auth.signOut();
+        return router.replace("/login");
+      }
+
+      const destination = getHomeRouteForRole(role);
+      if (!destination) {
+        await supabase.auth.signOut();
+        return router.replace("/login");
+      }
+
+      if (canAccessAdminArea(role)) return router.replace(destination);
+      if (role !== "operator") {
+        await supabase.auth.signOut();
+        return router.replace("/login");
+      }
 
       const [boothLinksRes, companiesRes, categoriesRes, subcategoriesRes, shiftRes, allBoothsRes] = await Promise.all([
         supabase.from("operator_booths").select("booth_id").eq("operator_id",uid).eq("active",true),
@@ -432,101 +452,19 @@ export default function OperatorRebuildPage() {
 
       {/* ===== RESUMO DO TURNO ===== */}
       {show("resumo") && (
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Resumo do Turno</h1>
-            <p className="text-sm text-muted">Visao geral do seu turno atual</p>
-          </div>
-          
-          {/* Controle de Turno */}
-          <Card>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted uppercase tracking-wider mb-1">Status do Turno</p>
-                {shift ? (
-                  <div className="flex items-center gap-2">
-                    <span className="size-2 rounded-full bg-success animate-pulse" />
-                    <span className="font-semibold text-success">Turno Aberto</span>
-                  </div>
-                ) : (
-                  <span className="font-semibold text-muted">Nenhum turno ativo</span>
-                )}
-              </div>
-              {!shift ? (
-                <div className="flex items-center gap-3">
-                  <Select
-                    value={boothId}
-                    onChange={e => setBoothId(e.target.value)}
-                    disabled={operatorBlocked}
-                    className="w-48"
-                  >
-                    <option value="">Selecione guiche</option>
-                    {booths.map(b => (
-                      <option key={b.booth_id} value={b.booth_id}>{b.booth_name}</option>
-                    ))}
-                  </Select>
-                  <Button variant="success" onClick={openShift} disabled={operatorBlocked || !boothId}>
-                    Abrir Turno
-                  </Button>
-                </div>
-              ) : (
-                <Button variant="danger" onClick={openCloseShiftModal} disabled={operatorBlocked}>
-                  Encerrar Turno
-                </Button>
-              )}
-            </div>
-          </Card>
-
-          {/* KPIs */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Card className="bg-[hsl(var(--card-elevated))]">
-              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total PIX</p>
-              <p className="text-2xl font-bold text-info">{formatCurrency(totals.pix)}</p>
-            </Card>
-            <Card className="bg-[hsl(var(--card-elevated))]">
-              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total Cartoes</p>
-              <p className="text-2xl font-bold text-primary">{formatCurrency(totals.credit + totals.debit)}</p>
-            </Card>
-            <Card className="bg-[hsl(var(--card-elevated))]">
-              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total Dinheiro</p>
-              <p className="text-2xl font-bold text-success">{formatCurrency(totals.cash)}</p>
-            </Card>
-            {totals.taxState > 0 && (
-              <Card className="bg-indigo-500/10">
-                <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Taxa Estadual</p>
-                <p className="text-2xl font-bold text-indigo-400">{formatCurrency(totals.taxState)}</p>
-              </Card>
-            )}
-            {totals.taxFederal > 0 && (
-              <Card className="bg-rose-500/10">
-                <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Taxa Federal</p>
-                <p className="text-2xl font-bold text-rose-400">{formatCurrency(totals.taxFederal)}</p>
-              </Card>
-            )}
-            <Card className="bg-[hsl(var(--card-elevated))]">
-              <p className="text-[10px] text-muted uppercase tracking-widest mb-2">Total Geral</p>
-              <p className="text-2xl font-bold text-foreground">{formatCurrency(totalGeral)}</p>
-            </Card>
-          </div>
-
-          {/* Ultimos Lancamentos */}
-          <Card>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Ultimos Lancamentos</h3>
-              <Badge variant="secondary">{txs.length} registros</Badge>
-            </div>
-            <DataTable
-              columns={[
-                { key: "hora", header: "Hora", render: (tx) => isMounted ? new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "--" },
-                { key: "empresa", header: "Empresa", render: (tx) => tx.company_name },
-                { key: "metodo", header: "Metodo", render: (tx) => <PaymentBadge method={tx.payment_method} /> },
-                { key: "valor", header: "Valor", render: (tx) => <span className="font-bold text-foreground">{formatCurrency(Number(tx.amount))}</span> },
-              ]}
-              rows={txs.slice(0,5)}
-              emptyMessage="Sem lancamentos."
-            />
-          </Card>
-        </div>
+        <OperatorSummarySection
+          shift={shift}
+          boothId={boothId}
+          booths={booths}
+          operatorBlocked={operatorBlocked}
+          totals={totals}
+          totalGeral={totalGeral}
+          txs={txs}
+          isMounted={isMounted}
+          onBoothChange={setBoothId}
+          onOpenShift={openShift}
+          onOpenCloseShiftModal={openCloseShiftModal}
+        />
       )}
 
       {/* ===== CAIXA PDV ===== */}

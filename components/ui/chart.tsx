@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import * as RechartsPrimitive from "recharts"
 
 const THEMES = { light: "", dark: ".dark" } as const
 
@@ -35,7 +36,7 @@ const ChartContainer = React.forwardRef<
   React.ComponentProps<"div"> & {
     config: ChartConfig
     children: React.ComponentProps<
-      typeof import("recharts").ResponsiveContainer
+      typeof RechartsPrimitive.ResponsiveContainer
     >["children"]
   }
 >(({ id, className, children, config, ...props }, ref) => {
@@ -51,9 +52,9 @@ const ChartContainer = React.forwardRef<
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <import("recharts").ResponsiveContainer>
+        <RechartsPrimitive.ResponsiveContainer>
           {children}
-        </import>
+        </RechartsPrimitive.ResponsiveContainer>
       </div>
     </ChartContext.Provider>
   )
@@ -93,18 +94,26 @@ ${colorConfig
   )
 }
 
-const ChartTooltip = import("recharts").Tooltip
+const ChartTooltip = RechartsPrimitive.Tooltip
+
+type ChartTooltipContentProps = React.ComponentProps<"div"> & {
+  active?: boolean
+  payload?: Array<Record<string, any>>
+  label?: React.ReactNode
+  labelFormatter?: (value: React.ReactNode, payload: Array<Record<string, any>>) => React.ReactNode
+  labelClassName?: string
+  formatter?: (value: unknown, name: string, item: Record<string, any>, index: number, payload: unknown) => React.ReactNode
+  color?: string
+  hideLabel?: boolean
+  hideIndicator?: boolean
+  indicator?: "line" | "dot" | "dashed"
+  nameKey?: string
+  labelKey?: string
+}
 
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof import("recharts").Tooltip> &
-    React.ComponentProps<"div"> & {
-      hideLabel?: boolean
-      hideIndicator?: boolean
-      indicator?: "line" | "dot" | "dashed"
-      nameKey?: string
-      labelKey?: string
-    }
+  ChartTooltipContentProps
 >(
   (
     {
@@ -247,15 +256,18 @@ const ChartTooltipContent = React.forwardRef<
 )
 ChartTooltipContent.displayName = "ChartTooltipContent"
 
-const ChartLegend = import("recharts").Legend
+const ChartLegend = RechartsPrimitive.Legend
+
+type ChartLegendContentProps = React.ComponentProps<"div"> & {
+  payload?: Array<Record<string, any>>
+  verticalAlign?: "top" | "bottom"
+  hideIcon?: boolean
+  nameKey?: string
+}
 
 const ChartLegendContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<"div"> &
-    Pick<import("recharts").LegendProps, "payload" | "verticalAlign"> & {
-      hideIcon?: boolean
-      nameKey?: string
-    }
+  ChartLegendContentProps
 >(
   (
     { className, hideIcon = false, payload, verticalAlign = "bottom", nameKey },

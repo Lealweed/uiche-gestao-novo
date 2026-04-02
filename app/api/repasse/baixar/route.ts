@@ -1,13 +1,32 @@
 import { createClient } from "@/lib/supabase/server";
+import { canAccessAdminArea } from "@/lib/rbac";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   const formData = await req.formData();
-  const company = formData.get("company");
+  const company = String(formData.get("company") ?? "").trim();
   if (!company) return NextResponse.json({ error: "Empresa não informada" }, { status: 400 });
 
   const supabase = createClient();
-  // Busca todas as transactions 'posted' da empresa
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !authData.user) {
+    return NextResponse.json({ error: "Sessao invalida." }, { status: 401 });
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role,active")
+    .eq("user_id", authData.user.id)
+    .single();
+
+  const role = (profile as { role?: string; active?: boolean } | null)?.role ?? "";
+  const isActive = (profile as { role?: string; active?: boolean } | null)?.active !== false;
+
+  if (profileError || !profile || !isActive || !canAccessAdminArea(role)) {
+    return NextResponse.json({ error: "Sem permissao para baixar repasse." }, { status: 403 });
+  }
+
   const { data: txs, error } = await supabase
     .from("transactions")
     .select("id")
@@ -18,7 +37,6 @@ export async function POST(req: Request) {
   const ids = (txs || []).map((t) => t.id);
   if (ids.length === 0) return NextResponse.json({ ok: true });
 
-  // Atualiza status para 'settled'
   const { error: updateError } = await supabase
     .from("transactions")
     .update({ status: "settled" })

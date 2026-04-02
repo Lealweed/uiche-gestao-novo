@@ -15,11 +15,12 @@
 - Mantida robustez contra tabela ausente com mensagens amigáveis e fallback (já existente no rebuild).
 
 ## F3 Admin/Financeiro
-- Novo módulo financeiro: `app/rebuild/financeiro/page.tsx`
+- Financeiro atual exposto como seção interna em `/rebuild/admin#financeiro`.
   - Dashboard executivo financeiro
   - Conciliação de caixa
   - Ajustes/conciliação (aprovar/rejeitar em `adjustment_requests`)
 - Shell atualizada para navegação financeira: `components/rebuild/shell/rebuild-shell.tsx`.
+- Observação: `src/app/gerencia` permanece como módulo legado/inativo, fora do build principal atual.
 
 ## F4 Relatórios + Go-live
 - Relatórios admin com filtros por período (início/fim), agrupamentos existentes e export CSV.

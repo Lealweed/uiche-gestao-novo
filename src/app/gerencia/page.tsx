@@ -1,6 +1,9 @@
 import React from "react";
 import { getGerenciaDashboardData } from "@/lib/gerencia-dashboard";
 import { LoadingState } from "@/components/rebuild/ui/loading-state";
+
+// LEGADO: página mantida apenas como referência histórica.
+// O fluxo principal ativo do sistema está em `app/` com `/rebuild/admin` e `/rebuild/operator`.
 import { ErrorState } from "@/components/rebuild/ui/error-state";
 import { DataTable } from "@/components/rebuild/ui/table";
 

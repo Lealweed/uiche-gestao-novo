@@ -1,6 +1,9 @@
 import React from "react";
 import Link from "next/link";
 
+// LEGADO: módulo mantido apenas como referência.
+// Não faz parte da navegação principal nem do build operacional atual (`app/rebuild/*`).
+
 const menuLinks = [
   { href: "/gerencia", label: "Visão Geral" },
   { href: "/gerencia/comissoes", label: "Comissões e Repasses" },
