@@ -14,6 +14,7 @@ import { DataTable } from "@/components/rebuild/ui/table";
 type ProfileOption = {
   user_id: string;
   full_name: string;
+  email?: string | null;
   cpf?: string | null;
   address?: string | null;
   phone?: string | null;
@@ -269,6 +270,7 @@ export function AdminSettingsSection({
               header: "Cadastro",
               render: (profile) => (
                 <div className="space-y-0.5 text-sm text-foreground/90">
+                  <div>E-mail: {profile.email ?? "-"}</div>
                   <div>CPF: {profile.cpf ?? "-"}</div>
                   <div>Telefone: {profile.phone ?? "-"}</div>
                 </div>

@@ -15,6 +15,18 @@ type DeleteUserBody = {
   userId?: string;
 };
 
+type ListUserRow = {
+  user_id: string;
+  full_name: string;
+  email: string | null;
+  cpf: string | null;
+  address: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  role: AppRole;
+  active: boolean;
+};
+
 function envOrThrow(name: string, aliases: string[] = []) {
   const candidates = [name, ...aliases];
 
@@ -60,6 +72,94 @@ async function resolveRequester(req: Request) {
   }
 
   return { requesterProfile, requesterId };
+}
+
+export async function GET(req: Request) {
+  try {
+    const requester = await resolveRequester(req);
+    if ("error" in requester) return requester.error;
+
+    const url = envOrThrow("NEXT_PUBLIC_SUPABASE_URL");
+    const serviceRole = envOrThrow("SUPABASE_SERVICE_ROLE_KEY", ["SUPABASE_SERVICE_KEY", "SUPABASE_SECRET_KEY"]);
+    const adminClient = createClient(url, serviceRole, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const isRootAdmin = String(requester.requesterProfile.role) === "admin";
+    let profilesQuery = adminClient
+      .from("profiles")
+      .select("user_id,full_name,cpf,address,phone,avatar_url,role,active,tenant_id");
+
+    if (!isRootAdmin && requester.requesterProfile.tenant_id) {
+      profilesQuery = profilesQuery.eq("tenant_id", requester.requesterProfile.tenant_id);
+    }
+
+    const { data: profileRows, error: profileError } = await profilesQuery.order("full_name");
+    if (profileError) {
+      return NextResponse.json({ error: `Falha ao carregar perfis: ${profileError.message}` }, { status: 400 });
+    }
+
+    const { data: authListData, error: authListError } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (authListError) {
+      return NextResponse.json({ error: `Falha ao listar usuários do Auth: ${authListError.message}` }, { status: 400 });
+    }
+
+    const authUsers = ((authListData?.users ?? []) as Array<{
+      id: string;
+      email?: string | null;
+      user_metadata?: { full_name?: string; avatar_url?: string } | null;
+    }>);
+    const authById = new Map(authUsers.map((user) => [user.id, user]));
+
+    const profileUsers: ListUserRow[] = (((profileRows ?? []) as Array<{
+      user_id: string;
+      full_name: string;
+      cpf: string | null;
+      address: string | null;
+      phone: string | null;
+      avatar_url: string | null;
+      role: AppRole;
+      active: boolean;
+    }>)).map((profile) => {
+      const authUser = authById.get(profile.user_id);
+      return {
+        user_id: profile.user_id,
+        full_name: profile.full_name?.trim() || authUser?.user_metadata?.full_name?.trim() || authUser?.email || profile.user_id,
+        email: authUser?.email ?? null,
+        cpf: profile.cpf ?? null,
+        address: profile.address ?? null,
+        phone: profile.phone ?? null,
+        avatar_url: profile.avatar_url ?? authUser?.user_metadata?.avatar_url ?? null,
+        role: profile.role,
+        active: profile.active,
+      };
+    });
+
+    const profileIds = new Set(profileUsers.map((profile) => profile.user_id));
+    const authOnlyUsers: ListUserRow[] = isRootAdmin
+      ? authUsers
+          .filter((user) => !profileIds.has(user.id))
+          .map((user) => ({
+            user_id: user.id,
+            full_name: user.user_metadata?.full_name?.trim() || user.email || user.id,
+            email: user.email ?? null,
+            cpf: null,
+            address: null,
+            phone: null,
+            avatar_url: user.user_metadata?.avatar_url ?? null,
+            role: "operator",
+            active: true,
+          }))
+      : [];
+
+    const users = [...profileUsers, ...authOnlyUsers].sort(
+      (a, b) => Number(b.active) - Number(a.active) || a.full_name.localeCompare(b.full_name, "pt-BR"),
+    );
+
+    return NextResponse.json({ users });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Erro inesperado." }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {

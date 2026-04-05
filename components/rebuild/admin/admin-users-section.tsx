@@ -13,6 +13,7 @@ import { DataTable } from "@/components/rebuild/ui/table";
 type UserRow = {
   user_id: string;
   full_name: string;
+  email?: string | null;
   cpf: string | null;
   address: string | null;
   phone: string | null;
@@ -116,10 +117,11 @@ export function AdminUsersSection({
       </div>
 
       <SectionCard title="Usuarios Cadastrados">
-        <Input value={profileSearch} onChange={onProfileSearchChange} placeholder="Buscar por nome, CPF ou perfil..." className="mb-4" />
+        <Input value={profileSearch} onChange={onProfileSearchChange} placeholder="Buscar por nome, e-mail, CPF ou perfil..." className="mb-4" />
         <DataTable
           columns={[
             { key: "nome", header: "Nome", render: (p) => <span className="font-semibold">{p.full_name}</span> },
+            { key: "email", header: "E-mail", render: (p) => p.email ?? "-" },
             { key: "cpf", header: "CPF", render: (p) => p.cpf ?? "-" },
             { key: "telefone", header: "Telefone", render: (p) => p.phone ?? "-" },
             { key: "perfil", header: "Perfil", render: (p) => <Badge variant="info">{p.role}</Badge> },

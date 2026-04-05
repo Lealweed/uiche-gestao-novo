@@ -90,7 +90,7 @@ type Company = {
   active: boolean;
 };
 type Booth   = { id: string; code: string; name: string; active: boolean };
-type Profile = { user_id: string; full_name: string; cpf: string|null; address: string|null; phone: string|null; avatar_url: string|null; role: AppRole; active: boolean };
+type Profile = { user_id: string; full_name: string; email?: string | null; cpf: string|null; address: string|null; phone: string|null; avatar_url: string|null; role: AppRole; active: boolean };
 type Category    = { id: string; name: string; active: boolean };
 type Subcategory = { id: string; name: string; active: boolean; category_id: string; transaction_categories?: { name: string }|{ name: string }[]|null };
 type OperatorBoothLink = { id: string; active: boolean; operator_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { name: string; code: string }|{ name: string; code: string }[]|null };
@@ -359,6 +359,39 @@ export default function AdminRebuildPage() {
     await supabase.from("audit_logs").insert({ created_by: data.user.id, action, entity: entity ?? null, entity_id: entityId ?? null, details: details ?? {} });
   }
 
+  async function loadVisibleProfiles() {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+
+    if (accessToken) {
+      try {
+        const response = await fetch("/api/admin/users", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          cache: "no-store",
+        });
+
+        if (response.ok) {
+          const payload = (await response.json()) as { users?: Profile[] };
+          if (Array.isArray(payload.users)) {
+            return payload.users;
+          }
+        }
+      } catch {
+        // fallback silencioso para a consulta direta em profiles
+      }
+    }
+
+    const { data } = await supabase
+      .from("profiles")
+      .select("user_id,full_name,cpf,address,phone,avatar_url,role,active")
+      .order("full_name");
+
+    return (data as Profile[]) ?? [];
+  }
+
   async function refreshData(from?: string, to?: string) {
     setLoading(true);
     setIsLoading(true);
@@ -407,7 +440,7 @@ export default function AdminRebuildPage() {
         shiftQ,
         supabase.from("companies").select("*").order("name"),
         supabase.from("booths").select("id,code,name,active").order("name"),
-        supabase.from("profiles").select("user_id,full_name,cpf,address,phone,avatar_url,role,active").order("full_name"),
+        loadVisibleProfiles(),
         supabase.from("transaction_categories").select("id,name,active").order("name"),
         supabase.from("transaction_subcategories").select("id,name,active,category_id").order("name"),
         supabase.from("boarding_taxes").select("id,name,amount,tax_type,active,created_at").order("tax_type").order("name"),
@@ -424,7 +457,7 @@ export default function AdminRebuildPage() {
       const shiftsData   = (shiftRes.data as ShiftTotal[]) ?? [];
       const companiesData= (compRes.data as Company[]) ?? [];
       const boothsData   = (boothRes.data as Booth[]) ?? [];
-      const profilesData = (profileRes.data as Profile[]) ?? [];
+      const profilesData = (profileRes as Profile[]) ?? [];
       const catsData     = (catRes.data as Category[]) ?? [];
       const subsData     = (subRes.data as unknown as Subcategory[]) ?? [];
       const boardingTaxesData = !boardingTaxRes.error
@@ -844,7 +877,7 @@ export default function AdminRebuildPage() {
     await refreshData("", "");
   }
 
-  const filteredProfiles = useMemo(() => { const t = profileSearch.trim().toLowerCase(); return t ? profiles.filter(p => [p.full_name, p.cpf??"", p.phone??"", p.role].join(" ").toLowerCase().includes(t)) : profiles; }, [profiles, profileSearch]);
+  const filteredProfiles = useMemo(() => { const t = profileSearch.trim().toLowerCase(); return t ? profiles.filter(p => [p.full_name, p.email??"", p.cpf??"", p.phone??"", p.role].join(" ").toLowerCase().includes(t)) : profiles; }, [profiles, profileSearch]);
   const filteredBooths   = useMemo(() => { const t = boothSearch.trim().toLowerCase(); return t ? booths.filter(b => `${b.code} ${b.name}`.toLowerCase().includes(t)) : booths; }, [booths, boothSearch]);
   const normalizeConfigText = (value: string) => value.trim().toLowerCase();
 
