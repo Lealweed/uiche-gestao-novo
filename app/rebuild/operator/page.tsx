@@ -664,16 +664,52 @@ export default function OperatorRebuildPage() {
 
   async function handleUploadReceipt(txId: string, ev: ChangeEvent<HTMLInputElement>) {
     if (!userId) return;
-    const file = ev.target.files?.[0]; if (!file) return;
+    const file = ev.target.files?.[0];
+    if (!file) return;
+
+    const isImage = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isImage && !isPdf) {
+      setMessage("Envie o comprovante em imagem ou PDF.");
+      ev.target.value = "";
+      return;
+    }
+
     setUploadingTxId(txId);
-    const ext = file.name.split(".").pop()||"jpg";
-    const path = `${userId}/${txId}.${ext}`;
-    const up = await supabase.storage.from("payment-receipts").upload(path,file,{upsert:true,contentType:file.type||"image/jpeg"});
-    if (up.error) { setMessage(`Erro upload: ${up.error.message}`); setUploadingTxId(null); ev.target.value = ""; return; }
-    const { error: receiptError } = await supabase.from("transaction_receipts").upsert({ transaction_id:txId, storage_path:path, mime_type:file.type||"image/jpeg", uploaded_by:userId });
-    if (receiptError) { setMessage(`Erro ao registrar comprovante: ${receiptError.message}`); setUploadingTxId(null); ev.target.value = ""; return; }
-    await logAction("UPLOAD_RECEIPT","transactions",txId,{path});
-    setMessage("Comprovante enviado."); if (shift) await loadTxs(shift.id); setUploadingTxId(null); ev.target.value = "";
+    const ext = (file.name.split(".").pop() || (isPdf ? "pdf" : "jpg")).toLowerCase();
+    const contentType = isPdf ? "application/pdf" : file.type || "image/jpeg";
+    const path = `${userId}/${txId}-${Date.now()}.${ext}`;
+
+    const up = await supabase.storage.from("payment-receipts").upload(path, file, {
+      upsert: true,
+      contentType,
+    });
+    if (up.error) {
+      setMessage(`Erro upload: ${up.error.message}`);
+      setUploadingTxId(null);
+      ev.target.value = "";
+      return;
+    }
+
+    const { error: receiptError } = await supabase
+      .from("transaction_receipts")
+      .upsert(
+        { transaction_id: txId, storage_path: path, mime_type: contentType, uploaded_by: userId },
+        { onConflict: "transaction_id" },
+      );
+
+    if (receiptError) {
+      setMessage(`Erro ao registrar comprovante: ${receiptError.message}`);
+      setUploadingTxId(null);
+      ev.target.value = "";
+      return;
+    }
+
+    await logAction("UPLOAD_RECEIPT", "transactions", txId, { path, mime_type: contentType });
+    setMessage("Comprovante enviado com sucesso.");
+    if (shift) await loadTxs(shift.id);
+    setUploadingTxId(null);
+    ev.target.value = "";
   }
 
   const totals = useMemo(()=>txs.reduce((acc,tx)=>{ acc[tx.payment_method]+=Number(tx.amount||0); acc.taxState+=Number(tx.boarding_tax_state||0); acc.taxFederal+=Number(tx.boarding_tax_federal||0); return acc; },{pix:0,credit:0,debit:0,cash:0,taxState:0,taxFederal:0}),[txs]);
@@ -1155,12 +1191,25 @@ export default function OperatorRebuildPage() {
                       <p className="text-sm font-semibold text-foreground">{tx.company_name} - {formatCurrency(Number(tx.amount))}</p>
                       <p className="text-xs text-muted">{tx.payment_method.toUpperCase()} - {isMounted ? new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "--"}</p>
                     </div>
-                    <label className="cursor-pointer">
-                      <Button variant="secondary" size="sm">
-                        {uploadingTxId===tx.id ? "Enviando..." : "Anexar"}
+                    <div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={uploadingTxId===tx.id||operatorBlocked}
+                        onClick={() => document.getElementById(`receipt-input-${tx.id}`)?.click()}
+                      >
+                        {uploadingTxId===tx.id ? "Enviando..." : "Anexar Comprovante"}
                       </Button>
-                      <input type="file" accept="image/*" className="hidden" disabled={uploadingTxId===tx.id||operatorBlocked} onChange={e=>handleUploadReceipt(tx.id,e)} />
-                    </label>
+                      <input
+                        id={`receipt-input-${tx.id}`}
+                        type="file"
+                        accept="image/*,.pdf,application/pdf"
+                        className="hidden"
+                        disabled={uploadingTxId===tx.id||operatorBlocked}
+                        onChange={e=>handleUploadReceipt(tx.id,e)}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
