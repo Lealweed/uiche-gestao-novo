@@ -97,6 +97,7 @@ export default function OperatorRebuildPage() {
   const [pdvCompanyId, setPdvCompanyId] = useState("");
   const [pdvTicketRef, setPdvTicketRef] = useState("");
   const [pdvNote, setPdvNote] = useState("");
+  const [pdvInstallments, setPdvInstallments] = useState("1");
   const [pdvBoardingTaxState, setPdvBoardingTaxState] = useState("");
   const [pdvBoardingTaxFederal, setPdvBoardingTaxFederal] = useState("");
   const [showPdvConfirm, setShowPdvConfirm] = useState(false);
@@ -406,6 +407,7 @@ export default function OperatorRebuildPage() {
     setPdvDisplay("0");
     setPdvBoardingTaxState("");
     setPdvBoardingTaxFederal("");
+    setPdvInstallments("1");
     setPdvAccumulator(null);
     setPdvPendingOperation(null);
     setPdvResetOnNextDigit(false);
@@ -472,6 +474,12 @@ export default function OperatorRebuildPage() {
     const taxState = parseMoneyInput(pdvBoardingTaxState);
     const taxFederal = parseMoneyInput(pdvBoardingTaxFederal);
     const totalAmount = Number((baseAmount + taxState + taxFederal).toFixed(2));
+    const parsedInstallments = Math.min(12, Math.max(1, Number.parseInt(pdvInstallments, 10) || 1));
+    const composedNote = [
+      pdvPaymentMethod === "link" ? "Link de Pagamento" : null,
+      pdvPaymentMethod === "credit" ? `Parcelado em ${parsedInstallments}x` : null,
+      pdvNote.trim() || null,
+    ].filter(Boolean).join(" - ") || null;
 
     const { data: inserted, error } = await supabase.from("transactions").insert({
       shift_id: shift.id,
@@ -483,7 +491,7 @@ export default function OperatorRebuildPage() {
       amount: totalAmount,
       payment_method: pdvPaymentMethod === "link" ? "pix" : pdvPaymentMethod,
       ticket_reference: pdvTicketRef || null,
-      note: pdvPaymentMethod === "link" ? `Link de Pagamento - ${pdvNote}` : pdvNote || null,
+      note: composedNote,
       boarding_tax_state: taxState,
       boarding_tax_federal: taxFederal,
     }).select("id").single();
@@ -493,6 +501,7 @@ export default function OperatorRebuildPage() {
       amount: totalAmount,
       base_amount: baseAmount,
       payment_method: pdvPaymentMethod,
+      installments: pdvPaymentMethod === "credit" ? parsedInstallments : 1,
       boarding_tax_state: taxState,
       boarding_tax_federal: taxFederal,
     });
@@ -501,6 +510,7 @@ export default function OperatorRebuildPage() {
     setPdvDisplay("0");
     setPdvTicketRef("");
     setPdvNote("");
+    setPdvInstallments("1");
     setPdvBoardingTaxState("");
     setPdvBoardingTaxFederal("");
     setPdvAccumulator(null);
@@ -694,6 +704,7 @@ export default function OperatorRebuildPage() {
   const pdvBaseAmount = useMemo(() => parseMoneyInput(pdvDisplay), [pdvDisplay]);
   const pdvTaxStateValue = useMemo(() => parseMoneyInput(pdvBoardingTaxState), [pdvBoardingTaxState]);
   const pdvTaxFederalValue = useMemo(() => parseMoneyInput(pdvBoardingTaxFederal), [pdvBoardingTaxFederal]);
+  const pdvInstallmentsValue = useMemo(() => Math.min(12, Math.max(1, Number.parseInt(pdvInstallments, 10) || 1)), [pdvInstallments]);
   const pdvTotalAmount = pdvBaseAmount + pdvTaxStateValue + pdvTaxFederalValue;
   const digitalTotal = totals.pix + totals.credit + totals.debit;
   const filteredSubs = useMemo(()=>subcategories.filter(s=>s.category_id===categoryId),[subcategories,categoryId]);
@@ -926,7 +937,7 @@ export default function OperatorRebuildPage() {
                   </div>
 
                   {/* Campos adicionais */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Input
                       label="Ref. Bilhete"
                       value={pdvTicketRef}
@@ -942,6 +953,28 @@ export default function OperatorRebuildPage() {
                       disabled={!shift || operatorBlocked}
                     />
                   </div>
+
+                  {pdvPaymentMethod === "credit" && (
+                    <div>
+                      <label className="mb-2 block text-xs uppercase tracking-wider text-muted">Parcelamento no credito</label>
+                      <Select
+                        value={pdvInstallments}
+                        onChange={e => setPdvInstallments(e.target.value)}
+                        disabled={!shift || operatorBlocked}
+                        className="w-full"
+                      >
+                        {Array.from({ length: 12 }, (_, index) => {
+                          const installment = String(index + 1);
+                          return (
+                            <option key={installment} value={installment}>
+                              {installment}x {index === 0 ? "sem parcelamento" : "no cartao"}
+                            </option>
+                          );
+                        })}
+                      </Select>
+                      <p className="mt-2 text-xs text-muted">Informe em quantas vezes o cliente parcelou a compra no cartao de credito.</p>
+                    </div>
+                  )}
                   {/* Taxas de Embarque */}
                   <div className="grid grid-cols-2 gap-4">
                     <Input
@@ -1399,6 +1432,9 @@ export default function OperatorRebuildPage() {
                 <div className="bg-slate-800/50 p-3 rounded-lg">
                   <p className="text-muted text-xs">Pagamento</p>
                   <p className="font-semibold text-foreground capitalize">{pdvPaymentMethod === "cash" ? "Dinheiro" : pdvPaymentMethod === "link" ? "Link Pag." : pdvPaymentMethod.toUpperCase()}</p>
+                  {pdvPaymentMethod === "credit" && (
+                    <p className="mt-1 text-xs text-purple-300">Parcelado em {pdvInstallmentsValue}x</p>
+                  )}
                 </div>
               </div>
               {pdvTicketRef && (
