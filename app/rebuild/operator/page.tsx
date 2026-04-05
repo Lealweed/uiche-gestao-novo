@@ -26,6 +26,13 @@ type BoothLink  = { booth_id: string; booth_name: string };
 type Punch      = { id: string; punch_type: "entrada"|"saida"|"pausa_inicio"|"pausa_fim"; punched_at: string; note: string|null };
 type CashMovement={ id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_name?: string };
 type TaxaEmbarque = { id: string; name: string; amount: number; tax_type: "estadual" | "federal"; active: boolean };
+type LastCloseResult = {
+  expectedCash: number;
+  declaredCash: number;
+  difference: number;
+  note: string | null;
+  closedAt: string;
+};
 
 const DEFAULT_BOARDING_TAXES: TaxaEmbarque[] = [
   { id: "fallback-goiania", name: "Goiania", amount: 8.5, tax_type: "estadual", active: true },
@@ -76,6 +83,7 @@ export default function OperatorRebuildPage() {
   const [closeObs, setCloseObs] = useState("");
   const [expectedCashVal, setExpectedCashVal] = useState(0);
   const [isClosing, setIsClosing] = useState(false);
+  const [lastCloseResult, setLastCloseResult] = useState<LastCloseResult | null>(null);
   
   const [showCashModal, setShowCashModal] = useState(false);
   const [cashModalType, setCashModalType] = useState<"suprimento"|"sangria">("suprimento");
@@ -289,19 +297,16 @@ export default function OperatorRebuildPage() {
     const { data, error } = await supabase.rpc("open_shift",{p_booth_id:boothId,p_ip:null});
     if (error) return setMessage(`Erro: ${error.message}`);
     await logAction("OPEN_SHIFT","shifts",(data as Shift).id,{booth_id:boothId});
+    setLastCloseResult(null);
     setShift(data as Shift); setMessage("Turno aberto.");
     await loadTxs((data as Shift).id); await loadCashMovements((data as Shift).id);
   }
 
   async function openCloseShiftModal() {
     if (!shift||!userId) return;
-    const pending = txs.filter(t=>(t.payment_method==="credit"||t.payment_method==="debit")&&t.receipt_count===0).length;
-    if (pending>0) return setMessage(`${pending} lancamento(s) sem comprovante.`);
-    const cashSales = txs.filter(t=>t.payment_method==="cash").reduce((a,t)=>a+Number(t.amount||0),0);
-    const sup=cashMovements.filter(m=>m.movement_type==="suprimento").reduce((a,m)=>a+Number(m.amount||0),0);
-    const sang=cashMovements.filter(m=>m.movement_type==="sangria").reduce((a,m)=>a+Number(m.amount||0),0);
-    const ajust=cashMovements.filter(m=>m.movement_type==="ajuste").reduce((a,m)=>a+Number(m.amount||0),0);
-    setExpectedCashVal(cashSales+sup-sang+ajust);
+    const pending = pendingReceiptTxs.length;
+    if (pending>0) return setMessage(`${pending} lancamento(s) sem comprovante. Envie os comprovantes antes de fechar o caixa.`);
+    setExpectedCashVal(Number(cashTotals.saldo.toFixed(2)));
     setCloseDeclared("");
     setCloseObs("");
     setShowCloseModal(true);
@@ -315,12 +320,15 @@ export default function OperatorRebuildPage() {
       if (Number.isNaN(declaredCash) || declaredCash < 0) { setMessage("Informe um valor contado valido."); return; }
       const difference = Number((declaredCash-expectedCashVal).toFixed(2));
       const obs = closeObs.trim() || null;
-      const { error: saveClosingError } = await supabase.from("shift_cash_closings").upsert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, expected_cash:Number(expectedCashVal.toFixed(2)), declared_cash:Number(declaredCash.toFixed(2)), difference, note:obs });
+      const normalizedExpected = Number(expectedCashVal.toFixed(2));
+      const normalizedDeclared = Number(declaredCash.toFixed(2));
+      const { error: saveClosingError } = await supabase.from("shift_cash_closings").upsert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, expected_cash:normalizedExpected, declared_cash:normalizedDeclared, difference, note:obs });
       if (saveClosingError) { setMessage(`Erro ao registrar fechamento: ${saveClosingError.message}`); return; }
       const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_ip:null,p_notes:obs});
       if (error) { setMessage(`Erro: ${error.message}`); return; }
       await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCashVal,declared_cash:declaredCash,difference});
-      setShift(null); setTxs([]); setCashMovements([]); setShowCloseModal(false); setMessage(`Turno encerrado. Diferenca: R$ ${difference.toFixed(2)}.`);
+      setLastCloseResult({ expectedCash: normalizedExpected, declaredCash: normalizedDeclared, difference, note: obs, closedAt: new Date().toISOString() });
+      setShift(null); setTxs([]); setCashMovements([]); setShowCloseModal(false); setSection("resumo"); setMessage(`Fechamento concluido. Resultado: ${difference === 0 ? "caixa conferido" : difference > 0 ? `sobra de ${formatCurrency(difference)}` : `falta de ${formatCurrency(Math.abs(difference))}`}.`);
     } finally {
       setIsClosing(false);
     }
@@ -666,6 +674,23 @@ export default function OperatorRebuildPage() {
     const j=cashMovements.filter(m=>m.movement_type==="ajuste").reduce((a,m)=>a+Number(m.amount||0),0);
     return {suprimento:s,sangria:g,ajuste:j,saldo:totals.cash+s-g+j};
   },[cashMovements, totals.cash]);
+  const closeDeclaredValue = useMemo(() => parseMoneyInput(closeDeclared), [closeDeclared]);
+  const closeDifferencePreview = useMemo(() => Number((closeDeclaredValue - expectedCashVal).toFixed(2)), [closeDeclaredValue, expectedCashVal]);
+  const closeDifferenceStatus = closeDeclared.trim() === ""
+    ? { label: "Aguardando contagem", variant: "neutral" as const }
+    : closeDifferencePreview === 0
+      ? { label: "Conferido", variant: "success" as const }
+      : closeDifferencePreview > 0
+        ? { label: "Sobra", variant: "warning" as const }
+        : { label: "Falta", variant: "danger" as const };
+  const closeDifferenceToneClass = closeDeclared.trim() === ""
+    ? "border-border bg-slate-800/60 text-foreground"
+    : closeDifferencePreview === 0
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+      : closeDifferencePreview > 0
+        ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+        : "border-rose-500/30 bg-rose-500/10 text-rose-400";
+  const recentCashMovements = useMemo(() => cashMovements.slice(0, 4), [cashMovements]);
   const pdvBaseAmount = useMemo(() => parseMoneyInput(pdvDisplay), [pdvDisplay]);
   const pdvTaxStateValue = useMemo(() => parseMoneyInput(pdvBoardingTaxState), [pdvBoardingTaxState]);
   const pdvTaxFederalValue = useMemo(() => parseMoneyInput(pdvBoardingTaxFederal), [pdvBoardingTaxFederal]);
@@ -689,8 +714,10 @@ export default function OperatorRebuildPage() {
           booths={booths}
           operatorBlocked={operatorBlocked}
           totals={totals}
+          cashTotals={cashTotals}
           totalGeral={totalGeral}
           txs={txs}
+          lastCloseResult={lastCloseResult}
           unreadChatCount={unreadChatCount}
           isMounted={isMounted}
           onBoothChange={setBoothId}
@@ -709,11 +736,11 @@ export default function OperatorRebuildPage() {
               <h1 className="text-2xl font-bold text-foreground">Caixa PDV</h1>
               <p className="text-sm text-muted">Sistema de venda rapida</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 md:justify-end">
               <Button 
                 variant="ghost" 
                 size="sm"
-                className="relative"
+                className="relative w-full sm:w-auto"
                 onClick={() => { void openChatPanel(); }}
               >
                 <MessageSquare size={16} className="mr-1" />
@@ -727,6 +754,7 @@ export default function OperatorRebuildPage() {
               <Button 
                 variant="success" 
                 size="sm"
+                className="w-full sm:w-auto"
                 onClick={() => { setCashModalType("suprimento"); setCashType("suprimento"); setShowCashModal(true); }}
                 disabled={!shift || operatorBlocked}
               >
@@ -736,10 +764,21 @@ export default function OperatorRebuildPage() {
               <Button 
                 variant="danger" 
                 size="sm"
+                className="w-full sm:w-auto"
                 onClick={() => { setCashModalType("sangria"); setCashType("sangria"); setShowCashModal(true); }}
                 disabled={!shift || operatorBlocked}
               >
                 Sangria
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full sm:w-auto"
+                onClick={() => { void openCloseShiftModal(); }}
+                disabled={!shift || operatorBlocked}
+              >
+                <Wallet size={16} className="mr-1" />
+                Fechar Caixa PDV
               </Button>
             </div>
           </div>
@@ -1018,15 +1057,16 @@ export default function OperatorRebuildPage() {
                     <ChevronRight size={16} className="mr-2" />
                     Ver Historico Completo
                   </Button>
-                  {shift && (
-                    <Button 
-                      variant="danger" 
-                      className="w-full" 
-                      onClick={openCloseShiftModal}
-                      disabled={operatorBlocked}
-                    >
-                      Encerrar Turno
-                    </Button>
+                  <Button 
+                    variant="danger" 
+                    className="w-full" 
+                    onClick={openCloseShiftModal}
+                    disabled={!shift || operatorBlocked}
+                  >
+                    Fechar Caixa PDV
+                  </Button>
+                  {!shift && (
+                    <p className="text-xs text-muted">Abra um turno para habilitar o fechamento do caixa.</p>
                   )}
                 </div>
               </Card>
@@ -1177,33 +1217,127 @@ export default function OperatorRebuildPage() {
       {/* Modal Fechamento */}
       {showCloseModal && shift && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <Card className="w-full max-w-md">
-            <h2 className="text-lg font-bold text-foreground mb-4">Fechamento de Caixa</h2>
-            <div className="space-y-4">
-              <div className="bg-success/10 p-4 rounded-lg flex justify-between items-center border border-success/20">
-                <span className="text-sm text-muted">Valor Esperado Gaveta</span>
-                <span className="text-success font-bold">{formatCurrency(expectedCashVal)}</span>
+          <Card className="w-full max-w-3xl">
+            <div className="mb-4 flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Fechamento de Caixa do Turno</h2>
+                <p className="text-sm text-muted">
+                  Confira o resumo financeiro do guiche {booths.find((item) => item.booth_id === shift.booth_id)?.booth_name ?? "atual"} antes de encerrar o turno.
+                </p>
               </div>
-              <Input
-                label="Valor Contado (Gaveta)"
-                value={closeDeclared}
-                onChange={e => setCloseDeclared(e.target.value)}
-                autoFocus
-                type="number"
-                min="0"
-                step="0.01"
-              />
-              <Input
-                label="Observacoes do Fechamento (Opcional)"
-                value={closeObs}
-                onChange={e => setCloseObs(e.target.value)}
-              />
+              <Badge variant={closeDifferenceStatus.variant}>{closeDifferenceStatus.label}</Badge>
             </div>
-            <div className="flex gap-3 justify-end mt-6">
-              <Button type="button" variant="ghost" onClick={() => setShowCloseModal(false)}>Cancelar</Button>
-              <Button type="button" variant="primary" onClick={confirmCloseShift} disabled={isClosing || !closeDeclared}>
-                {isClosing ? "Encerrando..." : "Confirmar Encerramento"}
-              </Button>
+
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-success/20 bg-success/10 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted">Total esperado em caixa</p>
+                  <p className="mt-1 text-2xl font-bold text-success">{formatCurrency(expectedCashVal)}</p>
+                  <p className="text-xs text-muted">Dinheiro + suprimentos - sangrias ± ajustes</p>
+                </div>
+                <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted">Valor contado</p>
+                  <p className="mt-1 text-xl font-bold text-foreground">{closeDeclared.trim() ? formatCurrency(closeDeclaredValue) : "A informar"}</p>
+                  <p className="text-xs text-muted">Informe o valor real contado na gaveta</p>
+                </div>
+                <div className={`rounded-lg border p-4 ${closeDifferenceToneClass}`}>
+                  <p className="text-xs uppercase tracking-wide">Diferenca projetada</p>
+                  <p className="mt-1 text-2xl font-bold">{closeDeclared.trim() ? formatCurrency(closeDifferencePreview) : formatCurrency(0)}</p>
+                  <p className="text-xs opacity-80">
+                    {closeDeclared.trim() ? (closeDifferencePreview === 0 ? "Caixa conferido" : closeDifferencePreview > 0 ? "Valor declarado acima do esperado" : "Valor declarado abaixo do esperado") : "Aguardando valor contado manual"}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs uppercase tracking-wider text-muted">Totais por forma de pagamento</p>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                  <div className="rounded-lg bg-emerald-500/10 p-3">
+                    <p className="text-xs text-muted">Dinheiro</p>
+                    <p className="text-lg font-bold text-emerald-400">{formatCurrency(totals.cash)}</p>
+                  </div>
+                  <div className="rounded-lg bg-cyan-500/10 p-3">
+                    <p className="text-xs text-muted">PIX</p>
+                    <p className="text-lg font-bold text-cyan-400">{formatCurrency(totals.pix)}</p>
+                  </div>
+                  <div className="rounded-lg bg-purple-500/10 p-3">
+                    <p className="text-xs text-muted">Credito</p>
+                    <p className="text-lg font-bold text-purple-400">{formatCurrency(totals.credit)}</p>
+                  </div>
+                  <div className="rounded-lg bg-blue-500/10 p-3">
+                    <p className="text-xs text-muted">Debito</p>
+                    <p className="text-lg font-bold text-blue-400">{formatCurrency(totals.debit)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs uppercase tracking-wider text-muted">Movimentos de caixa relevantes</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                    <p className="text-xs text-muted">Suprimento</p>
+                    <p className="text-lg font-bold text-emerald-400">{formatCurrency(cashTotals.suprimento)}</p>
+                  </div>
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                    <p className="text-xs text-muted">Sangria</p>
+                    <p className="text-lg font-bold text-amber-400">{formatCurrency(cashTotals.sangria)}</p>
+                  </div>
+                  <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-3">
+                    <p className="text-xs text-muted">Ajuste</p>
+                    <p className="text-lg font-bold text-sky-400">{formatCurrency(cashTotals.ajuste)}</p>
+                  </div>
+                </div>
+                {recentCashMovements.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3">
+                    <p className="mb-2 text-xs uppercase tracking-wider text-muted">Ultimos movimentos</p>
+                    <div className="space-y-2">
+                      {recentCashMovements.map((movement) => (
+                        <div key={movement.id} className="flex items-center justify-between gap-3 text-sm">
+                          <div>
+                            <p className="font-medium text-foreground">{movement.movement_type === "suprimento" ? "Suprimento" : movement.movement_type === "sangria" ? "Sangria" : "Ajuste"}</p>
+                            <p className="text-xs text-muted">{movement.note ?? "Sem observacao"}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold text-foreground">{formatCurrency(Number(movement.amount || 0))}</p>
+                            <p className="text-xs text-muted">{isMounted ? new Date(movement.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--"}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Input
+                  label="Valor contado manual (gaveta)"
+                  value={closeDeclared}
+                  onChange={e => setCloseDeclared(e.target.value)}
+                  autoFocus
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder={expectedCashVal ? expectedCashVal.toFixed(2) : "0,00"}
+                />
+                <Input
+                  label="Observacoes do fechamento (opcional)"
+                  value={closeObs}
+                  onChange={e => setCloseObs(e.target.value)}
+                  placeholder="Ex.: troco inicial, divergencia identificada, observacoes finais"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
+              <p className="text-xs text-muted">
+                Ao confirmar, o sistema registra o fechamento em `shift_cash_closings` e encerra o turno atual com seguranca.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <Button type="button" variant="ghost" onClick={() => setShowCloseModal(false)}>Continuar operando</Button>
+                <Button type="button" variant="danger" onClick={confirmCloseShift} disabled={isClosing || !closeDeclared.trim()}>
+                  {isClosing ? "Concluindo fechamento..." : "Concluir fechamento e encerrar turno"}
+                </Button>
+              </div>
             </div>
           </Card>
         </div>

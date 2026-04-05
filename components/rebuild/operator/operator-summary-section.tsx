@@ -36,14 +36,31 @@ type Totals = {
   taxFederal: number;
 };
 
+type CashTotals = {
+  suprimento: number;
+  sangria: number;
+  ajuste: number;
+  saldo: number;
+};
+
+type LastCloseResult = {
+  expectedCash: number;
+  declaredCash: number;
+  difference: number;
+  note: string | null;
+  closedAt: string;
+};
+
 type OperatorSummarySectionProps = {
   shift: Shift | null;
   boothId: string;
   booths: BoothLink[];
   operatorBlocked: boolean;
   totals: Totals;
+  cashTotals: CashTotals;
   totalGeral: number;
   txs: TxRow[];
+  lastCloseResult: LastCloseResult | null;
   unreadChatCount: number;
   isMounted: boolean;
   onBoothChange: (value: string) => void;
@@ -62,8 +79,10 @@ export function OperatorSummarySection({
   booths,
   operatorBlocked,
   totals,
+  cashTotals,
   totalGeral,
   txs,
+  lastCloseResult,
   unreadChatCount,
   isMounted,
   onBoothChange,
@@ -71,6 +90,13 @@ export function OperatorSummarySection({
   onOpenCloseShiftModal,
   onOpenChat,
 }: OperatorSummarySectionProps) {
+  const lastCloseBadge = !lastCloseResult
+    ? { label: shift ? "Aguardando fechamento" : "Sem fechamento recente", variant: "secondary" as const }
+    : lastCloseResult.difference === 0
+      ? { label: "Conferido", variant: "success" as const }
+      : lastCloseResult.difference > 0
+        ? { label: "Sobra", variant: "warning" as const }
+        : { label: "Falta", variant: "danger" as const };
   return (
     <div className="space-y-6">
       <div>
@@ -122,7 +148,7 @@ export function OperatorSummarySection({
               </>
             ) : (
               <Button variant="danger" onClick={() => void onOpenCloseShiftModal()} disabled={operatorBlocked}>
-                Encerrar Turno
+                Fechar Caixa PDV
               </Button>
             )}
           </div>
@@ -159,6 +185,61 @@ export function OperatorSummarySection({
           <p className="text-2xl font-bold text-foreground">{formatCurrency(totalGeral)}</p>
         </Card>
       </div>
+
+      <Card>
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="font-semibold text-foreground">Fechamento de Caixa</h3>
+            <p className="text-sm text-muted">Resumo operacional para conferir o caixa do turno e acompanhar o ultimo encerramento.</p>
+          </div>
+          <Badge variant={lastCloseBadge.variant}>{lastCloseBadge.label}</Badge>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-lg bg-emerald-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Caixa esperado</p>
+            <p className="text-lg font-bold text-emerald-400">{formatCurrency(cashTotals.saldo)}</p>
+          </div>
+          <div className="rounded-lg bg-sky-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Suprimento</p>
+            <p className="text-lg font-bold text-sky-400">{formatCurrency(cashTotals.suprimento)}</p>
+          </div>
+          <div className="rounded-lg bg-amber-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Sangria</p>
+            <p className="text-lg font-bold text-amber-400">{formatCurrency(cashTotals.sangria)}</p>
+          </div>
+          <div className="rounded-lg bg-indigo-500/10 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Ajuste</p>
+            <p className="text-lg font-bold text-indigo-400">{formatCurrency(cashTotals.ajuste)}</p>
+          </div>
+        </div>
+
+        {lastCloseResult && (
+          <div className="mt-4 rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-muted">Esperado</p>
+                <p className="font-semibold text-foreground">{formatCurrency(lastCloseResult.expectedCash)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-muted">Declarado</p>
+                <p className="font-semibold text-foreground">{formatCurrency(lastCloseResult.declaredCash)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-muted">Diferenca</p>
+                <p className="font-semibold text-foreground">{formatCurrency(lastCloseResult.difference)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-muted">Fechado em</p>
+                <p className="font-semibold text-foreground">{isMounted ? new Date(lastCloseResult.closedAt).toLocaleString("pt-BR") : "--"}</p>
+              </div>
+            </div>
+            {lastCloseResult.note && (
+              <p className="mt-3 text-sm text-muted">Obs: {lastCloseResult.note}</p>
+            )}
+          </div>
+        )}
+      </Card>
 
       <Card>
         <div className="mb-4 flex items-center justify-between">

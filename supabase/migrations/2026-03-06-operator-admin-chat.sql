@@ -19,7 +19,10 @@ create index if not exists idx_operator_admin_messages_sender
 alter table public.operator_admin_messages enable row level security;
 
 -- Leitura: usuários do mesmo tenant; operadores veem mensagens do tenant para viabilizar a conversa
-create policy if not exists "operator_admin_messages_select"
+drop policy if exists "operator_admin_messages_select"
+  on public.operator_admin_messages;
+
+create policy "operator_admin_messages_select"
   on public.operator_admin_messages
   for select
   using (
@@ -28,7 +31,10 @@ create policy if not exists "operator_admin_messages_select"
   );
 
 -- Escrita: usuário autenticado escreve apenas no próprio user_id e tenant atual
-create policy if not exists "operator_admin_messages_insert"
+drop policy if exists "operator_admin_messages_insert"
+  on public.operator_admin_messages;
+
+create policy "operator_admin_messages_insert"
   on public.operator_admin_messages
   for insert
   with check (
@@ -37,15 +43,18 @@ create policy if not exists "operator_admin_messages_insert"
     and auth.uid() is not null
   );
 
--- Atualização de leitura: apenas perfis administrativos
-create policy if not exists "operator_admin_messages_update_admin"
+-- Atualização de leitura: apenas perfis administrativos do tenant (admin, tenant_admin e financeiro)
+drop policy if exists "operator_admin_messages_update_admin"
+  on public.operator_admin_messages;
+
+create policy "operator_admin_messages_update_admin"
   on public.operator_admin_messages
   for update
   using (
     tenant_id = public.current_tenant_id()
-    and public.has_role(array['tenant_admin', 'admin'])
+    and public.has_role(array['tenant_admin', 'admin', 'financeiro'])
   )
   with check (
     tenant_id = public.current_tenant_id()
-    and public.has_role(array['tenant_admin', 'admin'])
+    and public.has_role(array['tenant_admin', 'admin', 'financeiro'])
   );
