@@ -4,7 +4,7 @@ import { useMemo, type ChangeEventHandler, type FormEventHandler } from "react";
 import { Check, Pencil, Power, X } from "lucide-react";
 
 import { boothOf, formatCurrency, nameOf } from "@/lib/admin/admin-helpers";
-import { type AppRole } from "@/lib/rbac";
+import { getRoleLabel, type AppRole } from "@/lib/rbac";
 import { SectionCard, StatusBadge } from "@/components/rebuild/admin/admin-common";
 import { Badge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
@@ -14,6 +14,9 @@ import { DataTable } from "@/components/rebuild/ui/table";
 type ProfileOption = {
   user_id: string;
   full_name: string;
+  cpf?: string | null;
+  address?: string | null;
+  phone?: string | null;
   role: AppRole;
   active: boolean;
 };
@@ -111,6 +114,19 @@ type AdminSettingsSectionProps = {
   onToggleBoardingTax: (tax: BoardingTaxRow) => void;
 };
 
+function getRoleBadgeVariant(role: AppRole) {
+  switch (role) {
+    case "admin":
+      return "warning" as const;
+    case "tenant_admin":
+      return "info" as const;
+    case "financeiro":
+      return "success" as const;
+    default:
+      return "secondary" as const;
+  }
+}
+
 export function AdminSettingsSection({
   selectedOperatorId,
   selectedBoothId,
@@ -195,24 +211,84 @@ export function AdminSettingsSection({
     [boardingTaxes]
   );
 
+  const sortedProfiles = useMemo(
+    () => [...profiles].sort((a, b) => Number(b.active) - Number(a.active) || a.full_name.localeCompare(b.full_name)),
+    [profiles]
+  );
+
   const activeLinksCount = sortedLinks.filter((link) => link.active).length;
   const activeCategoriesCount = sortedCategories.filter((category) => category.active).length;
   const activeSubcategoriesCount = sortedSubcategories.filter((subcategory) => subcategory.active).length;
   const activeBoardingTaxesCount = sortedBoardingTaxes.filter((tax) => tax.active).length;
+  const activeProfilesCount = sortedProfiles.filter((profile) => profile.active).length;
+  const inactiveProfilesCount = sortedProfiles.length - activeProfilesCount;
 
   return (
     <div className="space-y-6">
       <SectionHeader
         title="Configuracoes Operacionais"
-        subtitle="Gerencie vinculos, categorias, subcategorias e taxas de embarque com fluxos prontos para uso real."
+        subtitle="Gerencie usuarios, vinculos, categorias, subcategorias e taxas de embarque com mais clareza administrativa."
       />
 
       <div className="flex flex-wrap gap-2">
+        <Badge variant="secondary">{sortedProfiles.length} usuario(s) cadastrado(s)</Badge>
+        <Badge variant="secondary">{activeProfilesCount} usuario(s) ativo(s)</Badge>
+        <Badge variant="secondary">{inactiveProfilesCount} usuario(s) inativo(s)</Badge>
         <Badge variant="secondary">{activeLinksCount} vinculo(s) ativo(s)</Badge>
         <Badge variant="secondary">{activeCategoriesCount} categoria(s) ativa(s)</Badge>
         <Badge variant="secondary">{activeSubcategoriesCount} subcategoria(s) ativa(s)</Badge>
         <Badge variant="secondary">{activeBoardingTaxesCount} taxa(s) de embarque ativa(s)</Badge>
       </div>
+
+      <SectionCard title="Usuarios Cadastrados">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted">
+            Visualize com rapidez todos os usuarios da base, com nome, perfil e principais dados cadastrais para governanca diaria.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">{sortedProfiles.length} total</Badge>
+            <Badge variant="secondary">{activeProfilesCount} ativos</Badge>
+            <Badge variant="secondary">{inactiveProfilesCount} inativos</Badge>
+          </div>
+        </div>
+
+        <DataTable
+          columns={[
+            {
+              key: "nome",
+              header: "Nome",
+              render: (profile) => <span className="font-semibold">{profile.full_name || "-"}</span>,
+            },
+            {
+              key: "perfil",
+              header: "Perfil",
+              render: (profile) => <Badge variant={getRoleBadgeVariant(profile.role)}>{getRoleLabel(profile.role)}</Badge>,
+            },
+            {
+              key: "cadastro",
+              header: "Cadastro",
+              render: (profile) => (
+                <div className="space-y-0.5 text-sm text-foreground/90">
+                  <div>CPF: {profile.cpf ?? "-"}</div>
+                  <div>Telefone: {profile.phone ?? "-"}</div>
+                </div>
+              ),
+            },
+            {
+              key: "endereco",
+              header: "Endereco",
+              render: (profile) => <span className="text-sm text-foreground/90">{profile.address ?? "-"}</span>,
+            },
+            {
+              key: "status",
+              header: "Status",
+              render: (profile) => <StatusBadge active={profile.active} />,
+            },
+          ]}
+          rows={sortedProfiles}
+          emptyMessage="Nenhum usuario cadastrado."
+        />
+      </SectionCard>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <SectionCard title="Vinculos Operador - Guiche" className="h-full">

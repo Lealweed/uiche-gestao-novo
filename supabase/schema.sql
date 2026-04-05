@@ -45,6 +45,7 @@ create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
   commission_percent numeric(6,3) not null check (commission_percent >= 0 and commission_percent <= 100),
+  dia_repasse smallint check (dia_repasse is null or (dia_repasse between 1 and 31)),
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

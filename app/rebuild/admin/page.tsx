@@ -81,7 +81,14 @@ type ShiftTotal = {
   total_cash: string;
   missing_card_receipts: number;
 };
-type Company = { id: string; name: string; commission_percent?: number | null; comission_percent?: number | null; active: boolean };
+type Company = {
+  id: string;
+  name: string;
+  commission_percent?: number | null;
+  comission_percent?: number | null;
+  dia_repasse?: number | null;
+  active: boolean;
+};
 type Booth   = { id: string; code: string; name: string; active: boolean };
 type Profile = { user_id: string; full_name: string; cpf: string|null; address: string|null; phone: string|null; avatar_url: string|null; role: AppRole; active: boolean };
 type Category    = { id: string; name: string; active: boolean };
@@ -112,6 +119,21 @@ type MessageConversation = {
   boothId: string | null;
   operatorName: string;
   boothName: string;
+};
+
+type FinanceByBoothSummary = {
+  boothId: string;
+  boothLabel: string;
+  cashSales: number;
+  suprimento: number;
+  sangria: number;
+  ajuste: number;
+  saldo: number;
+  expected: number;
+  declared: number;
+  difference: number;
+  movementCount: number;
+  closingCount: number;
 };
 
 const DEFAULT_BOARDING_TAXES: BoardingTax[] = [
@@ -145,6 +167,7 @@ export default function AdminRebuildPage() {
   const [boothSearch, setBoothSearch]     = useState("");
   const [companyName, setCompanyName]     = useState("");
   const [companyPct, setCompanyPct]       = useState("6");
+  const [companyRepasseDay, setCompanyRepasseDay] = useState("");
   const [boothCode, setBoothCode]         = useState("");
   const [boothName, setBoothName]         = useState("");
   const [categoryName, setCategoryName]   = useState("");
@@ -180,6 +203,7 @@ export default function AdminRebuildPage() {
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [editingCompanyName, setEditingCompanyName] = useState("");
   const [editingCompanyPct, setEditingCompanyPct] = useState("");
+  const [editingCompanyRepasseDay, setEditingCompanyRepasseDay] = useState("");
   const [editingBoothId, setEditingBoothId] = useState<string | null>(null);
   const [editingBoothCode, setEditingBoothCode] = useState("");
   const [editingBoothName, setEditingBoothName] = useState("");
@@ -741,6 +765,70 @@ export default function AdminRebuildPage() {
     difference: shiftCashClosingRows.reduce((a,r)=>a+Number(r.difference||0),0),
   }), [shiftCashClosingRows]);
 
+  const financeByBooth = useMemo<FinanceByBoothSummary[]>(() => {
+    const summaryMap = new Map<string, FinanceByBoothSummary>();
+
+    const ensureSummary = (
+      boothId?: string | null,
+      boothValue?: { code: string; name: string } | { code: string; name: string }[] | null
+    ) => {
+      const normalizedBoothId = boothId ?? "sem-guiche";
+      if (!summaryMap.has(normalizedBoothId)) {
+        const booth = boothOf(boothValue ?? null);
+        const boothLabel = booth ? `${booth.code} - ${booth.name}` : "Sem guiche";
+
+        summaryMap.set(normalizedBoothId, {
+          boothId: normalizedBoothId,
+          boothLabel,
+          cashSales: 0,
+          suprimento: 0,
+          sangria: 0,
+          ajuste: 0,
+          saldo: 0,
+          expected: 0,
+          declared: 0,
+          difference: 0,
+          movementCount: 0,
+          closingCount: 0,
+        });
+      }
+
+      return summaryMap.get(normalizedBoothId)!;
+    };
+
+    for (const tx of reportTxs) {
+      if ((tx.payment_method ?? "").toLowerCase() !== "cash") continue;
+      const summaryRow = ensureSummary(tx.booth_id, tx.booths ?? null);
+      summaryRow.cashSales += Number(tx.amount || 0);
+    }
+
+    for (const movement of cashMovementRows) {
+      const summaryRow = ensureSummary(movement.booth_id, movement.booths ?? null);
+      const amount = Number(movement.amount || 0);
+
+      if (movement.movement_type === "suprimento") summaryRow.suprimento += amount;
+      else if (movement.movement_type === "sangria") summaryRow.sangria += amount;
+      else summaryRow.ajuste += amount;
+
+      summaryRow.movementCount += 1;
+    }
+
+    for (const closing of shiftCashClosingRows) {
+      const summaryRow = ensureSummary(closing.booth_id, closing.booths ?? null);
+      summaryRow.expected += Number(closing.expected_cash || 0);
+      summaryRow.declared += Number(closing.declared_cash || 0);
+      summaryRow.difference += Number(closing.difference || 0);
+      summaryRow.closingCount += 1;
+    }
+
+    return Array.from(summaryMap.values())
+      .map((summaryRow) => ({
+        ...summaryRow,
+        saldo: summaryRow.cashSales + summaryRow.suprimento - summaryRow.sangria + summaryRow.ajuste,
+      }))
+      .sort((a, b) => a.boothLabel.localeCompare(b.boothLabel));
+  }, [cashMovementRows, reportTxs, shiftCashClosingRows]);
+
   async function applyDateFilters() {
     if (dateFrom && dateTo && dateFrom > dateTo) {
       setToastType("warning");
@@ -760,16 +848,113 @@ export default function AdminRebuildPage() {
   const filteredBooths   = useMemo(() => { const t = boothSearch.trim().toLowerCase(); return t ? booths.filter(b => `${b.code} ${b.name}`.toLowerCase().includes(t)) : booths; }, [booths, boothSearch]);
   const normalizeConfigText = (value: string) => value.trim().toLowerCase();
 
+  function parseRepasseDayInput(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const parsed = Number(trimmed);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 31) {
+      return Number.NaN;
+    }
+
+    return parsed;
+  }
+
+  async function persistCompanyRecord({
+    companyId,
+    name,
+    commissionPercent,
+    diaRepasse,
+    active,
+  }: {
+    companyId?: string;
+    name: string;
+    commissionPercent: number;
+    diaRepasse: number | null;
+    active?: boolean;
+  }) {
+    const sharedPayload = {
+      name,
+      ...(active === undefined ? {} : { active }),
+    };
+
+    const payloads: Record<string, unknown>[] = [
+      { ...sharedPayload, commission_percent: commissionPercent, dia_repasse: diaRepasse },
+      { ...sharedPayload, comission_percent: commissionPercent, dia_repasse: diaRepasse },
+      { ...sharedPayload, commission_percent: commissionPercent },
+      { ...sharedPayload, comission_percent: commissionPercent },
+    ];
+
+    let lastError: { message?: string; code?: string } | null = null;
+
+    for (const payload of payloads) {
+      const result = companyId
+        ? await supabase.from("companies").update(payload).eq("id", companyId)
+        : await supabase.from("companies").insert(payload);
+
+      if (!result.error) {
+        return {
+          error: null,
+          omittedDiaRepasse: !Object.prototype.hasOwnProperty.call(payload, "dia_repasse"),
+        };
+      }
+
+      lastError = result.error;
+      if (!isSchemaToleranceError(result.error)) break;
+    }
+
+    return { error: lastError, omittedDiaRepasse: false };
+  }
+
   async function createCompany(e: FormEvent) {
     e.preventDefault();
-    let { error } = await supabase.from("companies").insert({ name: companyName.trim(), commission_percent: Number(companyPct), active: true });
-    if (error?.message?.toLowerCase().includes("commission_percent")) {
-      const r = await supabase.from("companies").insert({ name: companyName.trim(), comission_percent: Number(companyPct), active: true } as any);
-      error = r.error;
+
+    const name = companyName.trim();
+    const pct = Number(companyPct.replace(",", "."));
+    const diaRepasse = parseRepasseDayInput(companyRepasseDay);
+
+    if (!name) {
+      setToastType("warning");
+      return setMessage("Informe o nome da empresa.");
     }
-    if (error) { setToastType("error"); return setMessage(`Erro: ${error.message}`); }
-    setCompanyName(""); setCompanyPct("6");
-    setToastType("success"); setMessage("Empresa cadastrada com sucesso!"); await refreshData();
+
+    if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+      setToastType("warning");
+      return setMessage("Informe um percentual de comissao valido entre 0 e 100.");
+    }
+
+    if (Number.isNaN(diaRepasse)) {
+      setToastType("warning");
+      return setMessage("Informe um dia de repasse valido entre 1 e 31.");
+    }
+
+    if (companies.some((company) => normalizeConfigText(company.name) === normalizeConfigText(name))) {
+      setToastType("warning");
+      return setMessage(`A empresa "${name}" ja existe.`);
+    }
+
+    const { error, omittedDiaRepasse } = await persistCompanyRecord({
+      name,
+      commissionPercent: Number(pct.toFixed(3)),
+      diaRepasse,
+      active: true,
+    });
+
+    if (error) {
+      setToastType(error.code === "23505" ? "warning" : "error");
+      return setMessage(error.code === "23505" ? `A empresa "${name}" ja existe.` : `Erro: ${error.message}`);
+    }
+
+    setCompanyName("");
+    setCompanyPct("6");
+    setCompanyRepasseDay("");
+    setToastType("success");
+    setMessage(
+      omittedDiaRepasse && diaRepasse !== null
+        ? "Empresa cadastrada com sucesso! Aplique a migration de dia de repasse para persistir esse campo no banco atual."
+        : "Empresa cadastrada com sucesso!"
+    );
+    await refreshData();
   }
 
   async function createBooth(e: FormEvent) {
@@ -1199,20 +1384,68 @@ export default function AdminRebuildPage() {
     setEditingCompanyId(c.id);
     setEditingCompanyName(c.name);
     setEditingCompanyPct(getCompanyPct(c).toString());
+    setEditingCompanyRepasseDay(c.dia_repasse ? String(c.dia_repasse) : "");
   }
   async function saveEditCompany() {
     if (!editingCompanyId) return;
-    await supabase.from("companies").update({ name: editingCompanyName, commission_percentage: parseFloat(editingCompanyPct) }).eq("id", editingCompanyId);
+
+    const nextName = editingCompanyName.trim();
+    const nextPct = Number(editingCompanyPct.replace(",", "."));
+    const nextDiaRepasse = parseRepasseDayInput(editingCompanyRepasseDay);
+
+    if (!nextName) {
+      setToastType("warning");
+      return setMessage("Informe o nome da empresa antes de salvar.");
+    }
+
+    if (Number.isNaN(nextPct) || nextPct < 0 || nextPct > 100) {
+      setToastType("warning");
+      return setMessage("Informe um percentual de comissao valido entre 0 e 100.");
+    }
+
+    if (Number.isNaN(nextDiaRepasse)) {
+      setToastType("warning");
+      return setMessage("Informe um dia de repasse valido entre 1 e 31.");
+    }
+
+    const alreadyExists = companies.some(
+      (company) => company.id !== editingCompanyId && normalizeConfigText(company.name) === normalizeConfigText(nextName)
+    );
+
+    if (alreadyExists) {
+      setToastType("warning");
+      return setMessage(`A empresa "${nextName}" ja existe.`);
+    }
+
+    const { error, omittedDiaRepasse } = await persistCompanyRecord({
+      companyId: editingCompanyId,
+      name: nextName,
+      commissionPercent: Number(nextPct.toFixed(3)),
+      diaRepasse: nextDiaRepasse,
+    });
+
+    if (error) {
+      setToastType(error.code === "23505" ? "warning" : "error");
+      return setMessage(error.code === "23505" ? `A empresa "${nextName}" ja existe.` : `Erro: ${error.message}`);
+    }
+
     setEditingCompanyId(null);
     setEditingCompanyName("");
     setEditingCompanyPct("");
+    setEditingCompanyRepasseDay("");
     await refreshData();
-    setToastType("success"); setMessage("Empresa atualizada!");
+    setToastType("success");
+    setMessage(
+      omittedDiaRepasse && nextDiaRepasse !== null
+        ? "Empresa atualizada! Aplique a migration de dia de repasse para persistir esse campo no banco atual."
+        : "Empresa atualizada!"
+    );
   }
   function cancelEditCompany() {
     setEditingCompanyId(null);
     setEditingCompanyName("");
     setEditingCompanyPct("");
+    setEditingCompanyRepasseDay("");
   }
 
   function startEditBooth(b: Booth) {
@@ -1382,6 +1615,7 @@ export default function AdminRebuildPage() {
             dateTo={dateTo}
             cashMovementTotals={cashMovementTotals}
             cashClosingTotals={cashClosingTotals}
+            financeByBooth={financeByBooth}
             cashMovementRows={cashMovementRows}
             shiftCashClosingRows={shiftCashClosingRows}
             onDateFromChange={setDateFrom}
@@ -1392,7 +1626,14 @@ export default function AdminRebuildPage() {
         )}
 
         {/* RELATORIOS */}
-        {show("relatorios") && <AdminReportsSection auditLogs={auditLogs} />}
+        {show("relatorios") && (
+          <AdminReportsSection
+            auditLogs={auditLogs}
+            reportTxs={reportTxs}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+          />
+        )}
 
         {/* USUARIOS */}
         {show("usuarios") && (
@@ -1429,6 +1670,7 @@ export default function AdminRebuildPage() {
           <AdminCompaniesSection
             companyName={companyName}
             companyPct={companyPct}
+            companyRepasseDay={companyRepasseDay}
             boothCode={boothCode}
             boothName={boothName}
             boothSearch={boothSearch}
@@ -1437,16 +1679,19 @@ export default function AdminRebuildPage() {
             editingCompanyId={editingCompanyId}
             editingCompanyName={editingCompanyName}
             editingCompanyPct={editingCompanyPct}
+            editingCompanyRepasseDay={editingCompanyRepasseDay}
             editingBoothId={editingBoothId}
             editingBoothCode={editingBoothCode}
             editingBoothName={editingBoothName}
             onCompanyNameChange={(e) => setCompanyName(e.target.value)}
             onCompanyPctChange={(e) => setCompanyPct(e.target.value)}
+            onCompanyRepasseDayChange={(e) => setCompanyRepasseDay(e.target.value)}
             onBoothCodeChange={(e) => setBoothCode(e.target.value)}
             onBoothNameChange={(e) => setBoothName(e.target.value)}
             onBoothSearchChange={(e) => setBoothSearch(e.target.value)}
             onEditingCompanyNameChange={(e) => setEditingCompanyName(e.target.value)}
             onEditingCompanyPctChange={(e) => setEditingCompanyPct(e.target.value)}
+            onEditingCompanyRepasseDayChange={(e) => setEditingCompanyRepasseDay(e.target.value)}
             onEditingBoothCodeChange={(e) => setEditingBoothCode(e.target.value)}
             onEditingBoothNameChange={(e) => setEditingBoothName(e.target.value)}
             onCreateCompany={createCompany}

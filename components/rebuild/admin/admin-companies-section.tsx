@@ -14,6 +14,7 @@ type CompanyRow = {
   name: string;
   commission_percent?: number | null;
   comission_percent?: number | null;
+  dia_repasse?: number | null;
   active: boolean;
 };
 
@@ -27,6 +28,7 @@ type BoothRow = {
 type AdminCompaniesSectionProps = {
   companyName: string;
   companyPct: string;
+  companyRepasseDay: string;
   boothCode: string;
   boothName: string;
   boothSearch: string;
@@ -35,16 +37,19 @@ type AdminCompaniesSectionProps = {
   editingCompanyId: string | null;
   editingCompanyName: string;
   editingCompanyPct: string;
+  editingCompanyRepasseDay: string;
   editingBoothId: string | null;
   editingBoothCode: string;
   editingBoothName: string;
   onCompanyNameChange: ChangeEventHandler<HTMLInputElement>;
   onCompanyPctChange: ChangeEventHandler<HTMLInputElement>;
+  onCompanyRepasseDayChange: ChangeEventHandler<HTMLInputElement>;
   onBoothCodeChange: ChangeEventHandler<HTMLInputElement>;
   onBoothNameChange: ChangeEventHandler<HTMLInputElement>;
   onBoothSearchChange: ChangeEventHandler<HTMLInputElement>;
   onEditingCompanyNameChange: ChangeEventHandler<HTMLInputElement>;
   onEditingCompanyPctChange: ChangeEventHandler<HTMLInputElement>;
+  onEditingCompanyRepasseDayChange: ChangeEventHandler<HTMLInputElement>;
   onEditingBoothCodeChange: ChangeEventHandler<HTMLInputElement>;
   onEditingBoothNameChange: ChangeEventHandler<HTMLInputElement>;
   onCreateCompany: FormEventHandler<HTMLFormElement>;
@@ -59,9 +64,14 @@ type AdminCompaniesSectionProps = {
   onToggleBooth: (booth: BoothRow) => void;
 };
 
+function formatRepasseDay(day: number | null | undefined) {
+  return typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= 31 ? `Dia ${day}` : "Nao definido";
+}
+
 export function AdminCompaniesSection({
   companyName,
   companyPct,
+  companyRepasseDay,
   boothCode,
   boothName,
   boothSearch,
@@ -70,16 +80,19 @@ export function AdminCompaniesSection({
   editingCompanyId,
   editingCompanyName,
   editingCompanyPct,
+  editingCompanyRepasseDay,
   editingBoothId,
   editingBoothCode,
   editingBoothName,
   onCompanyNameChange,
   onCompanyPctChange,
+  onCompanyRepasseDayChange,
   onBoothCodeChange,
   onBoothNameChange,
   onBoothSearchChange,
   onEditingCompanyNameChange,
   onEditingCompanyPctChange,
+  onEditingCompanyRepasseDayChange,
   onEditingBoothCodeChange,
   onEditingBoothNameChange,
   onCreateCompany,
@@ -100,6 +113,7 @@ export function AdminCompaniesSection({
           <form onSubmit={onCreateCompany} className="space-y-4">
             <Input value={companyName} onChange={onCompanyNameChange} required placeholder="Nome da empresa / viacao" />
             <Input value={companyPct} onChange={onCompanyPctChange} required type="number" min="0" step="0.001" placeholder="% Comissao Central" />
+            <Input value={companyRepasseDay} onChange={onCompanyRepasseDayChange} type="number" min="1" max="31" step="1" placeholder="Dia de repasse (1-31)" />
             <Button type="submit" className="w-full">
               Cadastrar Empresa
             </Button>
@@ -149,6 +163,25 @@ export function AdminCompaniesSection({
                   />
                 ) : (
                   `${getCompanyPct(c).toFixed(3)}%`
+                ),
+            },
+            {
+              key: "repasse",
+              header: "Dia Repasse",
+              render: (c) =>
+                editingCompanyId === c.id ? (
+                  <input
+                    value={editingCompanyRepasseDay}
+                    onChange={onEditingCompanyRepasseDayChange}
+                    type="number"
+                    min="1"
+                    max="31"
+                    step="1"
+                    placeholder="1-31"
+                    className="w-20 rounded border border-border bg-input px-2 py-1 text-sm text-foreground"
+                  />
+                ) : (
+                  <span className="text-sm text-foreground/90">{formatRepasseDay(c.dia_repasse)}</span>
                 ),
             },
             { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
