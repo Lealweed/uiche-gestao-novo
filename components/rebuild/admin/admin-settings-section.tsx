@@ -1,12 +1,14 @@
 "use client";
 
-import type { ChangeEventHandler, FormEventHandler } from "react";
+import { useMemo, type ChangeEventHandler, type FormEventHandler } from "react";
 import { Check, Pencil, Power, X } from "lucide-react";
 
-import { boothOf, nameOf } from "@/lib/admin/admin-helpers";
+import { boothOf, formatCurrency, nameOf } from "@/lib/admin/admin-helpers";
 import { type AppRole } from "@/lib/rbac";
 import { SectionCard, StatusBadge } from "@/components/rebuild/admin/admin-common";
+import { Badge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
+import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { DataTable } from "@/components/rebuild/ui/table";
 
 type ProfileOption = {
@@ -37,6 +39,14 @@ type SubcategoryRow = {
   transaction_categories?: { name: string } | { name: string }[] | null;
 };
 
+type BoardingTaxRow = {
+  id: string;
+  name: string;
+  amount: number;
+  tax_type: "estadual" | "federal";
+  active: boolean;
+};
+
 type OperatorBoothLinkRow = {
   id: string;
   active: boolean;
@@ -52,25 +62,40 @@ type AdminSettingsSectionProps = {
   categoryName: string;
   subcategoryName: string;
   subcategoryCategoryId: string;
+  boardingTaxName: string;
+  boardingTaxAmount: string;
+  boardingTaxType: "estadual" | "federal";
   profiles: ProfileOption[];
   booths: BoothOption[];
   categories: CategoryRow[];
   subcategories: SubcategoryRow[];
+  boardingTaxes: BoardingTaxRow[];
   operatorBoothLinks: OperatorBoothLinkRow[];
   editingCategoryId: string | null;
   editingCategoryName: string;
   editingSubcategoryId: string | null;
   editingSubcategoryName: string;
+  editingBoardingTaxId: string | null;
+  editingBoardingTaxName: string;
+  editingBoardingTaxAmount: string;
+  editingBoardingTaxType: "estadual" | "federal";
   onSelectedOperatorChange: ChangeEventHandler<HTMLSelectElement>;
   onSelectedBoothChange: ChangeEventHandler<HTMLSelectElement>;
   onCategoryNameChange: ChangeEventHandler<HTMLInputElement>;
   onSubcategoryNameChange: ChangeEventHandler<HTMLInputElement>;
   onSubcategoryCategoryChange: ChangeEventHandler<HTMLSelectElement>;
+  onBoardingTaxNameChange: ChangeEventHandler<HTMLInputElement>;
+  onBoardingTaxAmountChange: ChangeEventHandler<HTMLInputElement>;
+  onBoardingTaxTypeChange: ChangeEventHandler<HTMLSelectElement>;
   onEditingCategoryNameChange: ChangeEventHandler<HTMLInputElement>;
   onEditingSubcategoryNameChange: ChangeEventHandler<HTMLInputElement>;
+  onEditingBoardingTaxNameChange: ChangeEventHandler<HTMLInputElement>;
+  onEditingBoardingTaxAmountChange: ChangeEventHandler<HTMLInputElement>;
+  onEditingBoardingTaxTypeChange: ChangeEventHandler<HTMLSelectElement>;
   onLinkOperatorToBooth: FormEventHandler<HTMLFormElement>;
   onCreateCategory: FormEventHandler<HTMLFormElement>;
   onCreateSubcategory: FormEventHandler<HTMLFormElement>;
+  onCreateBoardingTax: FormEventHandler<HTMLFormElement>;
   onToggleOperatorBoothLink: (link: OperatorBoothLinkRow) => void | Promise<void>;
   onStartEditCategory: (category: CategoryRow) => void;
   onSaveEditCategory: () => void | Promise<void>;
@@ -80,6 +105,10 @@ type AdminSettingsSectionProps = {
   onSaveEditSubcategory: () => void | Promise<void>;
   onCancelEditSubcategory: () => void;
   onToggleSubcategory: (subcategory: SubcategoryRow) => void;
+  onStartEditBoardingTax: (tax: BoardingTaxRow) => void;
+  onSaveEditBoardingTax: () => void | Promise<void>;
+  onCancelEditBoardingTax: () => void;
+  onToggleBoardingTax: (tax: BoardingTaxRow) => void;
 };
 
 export function AdminSettingsSection({
@@ -88,25 +117,40 @@ export function AdminSettingsSection({
   categoryName,
   subcategoryName,
   subcategoryCategoryId,
+  boardingTaxName,
+  boardingTaxAmount,
+  boardingTaxType,
   profiles,
   booths,
   categories,
   subcategories,
+  boardingTaxes,
   operatorBoothLinks,
   editingCategoryId,
   editingCategoryName,
   editingSubcategoryId,
   editingSubcategoryName,
+  editingBoardingTaxId,
+  editingBoardingTaxName,
+  editingBoardingTaxAmount,
+  editingBoardingTaxType,
   onSelectedOperatorChange,
   onSelectedBoothChange,
   onCategoryNameChange,
   onSubcategoryNameChange,
   onSubcategoryCategoryChange,
+  onBoardingTaxNameChange,
+  onBoardingTaxAmountChange,
+  onBoardingTaxTypeChange,
   onEditingCategoryNameChange,
   onEditingSubcategoryNameChange,
+  onEditingBoardingTaxNameChange,
+  onEditingBoardingTaxAmountChange,
+  onEditingBoardingTaxTypeChange,
   onLinkOperatorToBooth,
   onCreateCategory,
   onCreateSubcategory,
+  onCreateBoardingTax,
   onToggleOperatorBoothLink,
   onStartEditCategory,
   onSaveEditCategory,
@@ -116,76 +160,142 @@ export function AdminSettingsSection({
   onSaveEditSubcategory,
   onCancelEditSubcategory,
   onToggleSubcategory,
+  onStartEditBoardingTax,
+  onSaveEditBoardingTax,
+  onCancelEditBoardingTax,
+  onToggleBoardingTax,
 }: AdminSettingsSectionProps) {
+  const operatorOptions = useMemo(
+    () => profiles.filter((profile) => profile.role === "operator" && profile.active).sort((a, b) => a.full_name.localeCompare(b.full_name)),
+    [profiles]
+  );
+
+  const boothOptions = useMemo(
+    () => booths.filter((booth) => booth.active).sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`)),
+    [booths]
+  );
+
+  const sortedLinks = useMemo(
+    () => [...operatorBoothLinks].sort((a, b) => Number(b.active) - Number(a.active) || (nameOf(a.profiles) ?? "").localeCompare(nameOf(b.profiles) ?? "")),
+    [operatorBoothLinks]
+  );
+
+  const sortedCategories = useMemo(
+    () => [...categories].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)),
+    [categories]
+  );
+
+  const sortedSubcategories = useMemo(
+    () => [...subcategories].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)),
+    [subcategories]
+  );
+
+  const sortedBoardingTaxes = useMemo(
+    () => [...boardingTaxes].sort((a, b) => Number(b.active) - Number(a.active) || a.tax_type.localeCompare(b.tax_type) || a.name.localeCompare(b.name)),
+    [boardingTaxes]
+  );
+
+  const activeLinksCount = sortedLinks.filter((link) => link.active).length;
+  const activeCategoriesCount = sortedCategories.filter((category) => category.active).length;
+  const activeSubcategoriesCount = sortedSubcategories.filter((subcategory) => subcategory.active).length;
+  const activeBoardingTaxesCount = sortedBoardingTaxes.filter((tax) => tax.active).length;
+
   return (
     <div className="space-y-6">
+      <SectionHeader
+        title="Configuracoes Operacionais"
+        subtitle="Gerencie vinculos, categorias, subcategorias e taxas de embarque com fluxos prontos para uso real."
+      />
+
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="secondary">{activeLinksCount} vinculo(s) ativo(s)</Badge>
+        <Badge variant="secondary">{activeCategoriesCount} categoria(s) ativa(s)</Badge>
+        <Badge variant="secondary">{activeSubcategoriesCount} subcategoria(s) ativa(s)</Badge>
+        <Badge variant="secondary">{activeBoardingTaxesCount} taxa(s) de embarque ativa(s)</Badge>
+      </div>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <SectionCard
-          title="Vinculos Operador - Guiche"
-          action={
-            <form onSubmit={onLinkOperatorToBooth} className="flex gap-2">
-              <select
-                className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
-                value={selectedOperatorId}
-                onChange={onSelectedOperatorChange}
-                required
-              >
-                <option value="">Operador</option>
-                {profiles
-                  .filter((p) => p.role === "operator")
-                  .map((p) => (
-                    <option key={p.user_id} value={p.user_id}>
-                      {p.full_name}
-                    </option>
-                  ))}
-              </select>
-              <select
-                className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
-                value={selectedBoothId}
-                onChange={onSelectedBoothChange}
-                required
-              >
-                <option value="">Guiche</option>
-                {booths
-                  .filter((b) => b.active)
-                  .map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.code} - {b.name}
-                    </option>
-                  ))}
-              </select>
-              <Button type="submit">Vincular</Button>
-            </form>
-          }
-        >
+        <SectionCard title="Vinculos Operador - Guiche" className="h-full">
+          <p className="mb-4 text-sm text-muted">
+            Associe operadores aos guiches disponiveis e reative vinculos quando necessario.
+          </p>
+
+          <form onSubmit={onLinkOperatorToBooth} className="mb-4 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto]">
+            <select
+              className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+              value={selectedOperatorId}
+              onChange={onSelectedOperatorChange}
+              required
+              disabled={operatorOptions.length === 0}
+            >
+              <option value="">Operador ativo</option>
+              {operatorOptions.map((profile) => (
+                <option key={profile.user_id} value={profile.user_id}>
+                  {profile.full_name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+              value={selectedBoothId}
+              onChange={onSelectedBoothChange}
+              required
+              disabled={boothOptions.length === 0}
+            >
+              <option value="">Guiche ativo</option>
+              {boothOptions.map((booth) => (
+                <option key={booth.id} value={booth.id}>
+                  {booth.code} - {booth.name}
+                </option>
+              ))}
+            </select>
+
+            <Button type="submit" disabled={operatorOptions.length === 0 || boothOptions.length === 0}>
+              Salvar vinculo
+            </Button>
+          </form>
+
+          {(operatorOptions.length === 0 || boothOptions.length === 0) && (
+            <div className="mb-4 rounded-lg border border-border bg-[hsl(var(--card-elevated))] px-3 py-2 text-sm text-muted">
+              {operatorOptions.length === 0
+                ? "Nao ha operadores ativos disponiveis para vinculo."
+                : "Nao ha guiches ativos disponiveis para vinculo."}
+            </div>
+          )}
+
           <DataTable
             columns={[
-              { key: "operador", header: "Operador", render: (l) => nameOf(l.profiles) ?? "-" },
+              { key: "operador", header: "Operador", render: (link) => nameOf(link.profiles) ?? "-" },
               {
                 key: "guiche",
                 header: "Guiche",
-                render: (l) => {
-                  const booth = boothOf(l.booths);
+                render: (link) => {
+                  const booth = boothOf(link.booths);
                   return booth ? `${booth.code} - ${booth.name}` : "-";
                 },
               },
-              { key: "status", header: "Status", render: (l) => <StatusBadge active={l.active} /> },
+              { key: "status", header: "Status", render: (link) => <StatusBadge active={link.active} /> },
               {
                 key: "acao",
                 header: "Acao",
-                render: (l) => (
-                  <Button variant="ghost" size="sm" onClick={() => onToggleOperatorBoothLink(l)}>
-                    {l.active ? "Desvincular" : "Reativar"}
+                render: (link) => (
+                  <Button variant="ghost" size="sm" onClick={() => void onToggleOperatorBoothLink(link)}>
+                    {link.active ? "Desativar vinculo" : "Reativar vinculo"}
                   </Button>
                 ),
               },
             ]}
-            rows={operatorBoothLinks}
-            emptyMessage="Nenhum vinculo encontrado."
+            rows={sortedLinks}
+            emptyMessage="Nenhum vinculo cadastrado."
           />
         </SectionCard>
 
-        <SectionCard title="Categorias de Transacao">
+        <SectionCard title="Categorias de Transacao" className="h-full">
+          <p className="mb-4 text-sm text-muted">
+            Use categorias para organizar os lancamentos principais e manter os relatorios claros.
+          </p>
+
           <form onSubmit={onCreateCategory} className="mb-4 flex gap-2">
             <input
               value={categoryName}
@@ -194,15 +304,16 @@ export function AdminSettingsSection({
               placeholder="Nome da categoria"
               className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
-            <Button type="submit">+</Button>
+            <Button type="submit">Nova categoria</Button>
           </form>
+
           <DataTable
             columns={[
               {
                 key: "nome",
                 header: "Nome",
-                render: (c) =>
-                  editingCategoryId === c.id ? (
+                render: (category) =>
+                  editingCategoryId === category.id ? (
                     <input
                       value={editingCategoryName}
                       onChange={onEditingCategoryNameChange}
@@ -210,17 +321,17 @@ export function AdminSettingsSection({
                       autoFocus
                     />
                   ) : (
-                    c.name
+                    category.name
                   ),
               },
-              { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },
+              { key: "status", header: "Status", render: (category) => <StatusBadge active={category.active} /> },
               {
                 key: "acao",
                 header: "Acao",
-                render: (c) =>
-                  editingCategoryId === c.id ? (
+                render: (category) =>
+                  editingCategoryId === category.id ? (
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={onSaveEditCategory}>
+                      <Button variant="ghost" size="sm" onClick={() => void onSaveEditCategory()}>
                         <Check className="h-4 w-4 text-emerald-400" />
                       </Button>
                       <Button variant="ghost" size="sm" onClick={onCancelEditCategory}>
@@ -229,39 +340,48 @@ export function AdminSettingsSection({
                     </div>
                   ) : (
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => onStartEditCategory(c)}>
+                      <Button variant="ghost" size="sm" onClick={() => onStartEditCategory(category)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => onToggleCategory(c)} title={c.active ? "Inativar" : "Ativar"}>
-                        <Power className={`h-4 w-4 ${c.active ? "text-amber-400" : "text-emerald-400"}`} />
+                      <Button variant="ghost" size="sm" onClick={() => onToggleCategory(category)} title={category.active ? "Inativar" : "Ativar"}>
+                        <Power className={`h-4 w-4 ${category.active ? "text-amber-400" : "text-emerald-400"}`} />
                       </Button>
                     </div>
                   ),
               },
             ]}
-            rows={categories}
-            emptyMessage="Nenhuma categoria encontrada."
+            rows={sortedCategories}
+            emptyMessage="Nenhuma categoria cadastrada."
           />
         </SectionCard>
       </div>
 
       <SectionCard title="Subcategorias de Transacao">
-        <form onSubmit={onCreateSubcategory} className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted">
+            Detalhe as categorias com subcategorias operacionais e mantenha a classificacao consistente.
+          </p>
+          <Badge variant="secondary">{sortedSubcategories.length} cadastrada(s)</Badge>
+        </div>
+
+        <form onSubmit={onCreateSubcategory} className="mb-4 grid grid-cols-1 gap-2 md:grid-cols-[220px_1fr_auto]">
           <select
             value={subcategoryCategoryId}
             onChange={onSubcategoryCategoryChange}
             required
+            disabled={activeCategoriesCount === 0}
             className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
           >
             <option value="">Categoria pai</option>
-            {categories
-              .filter((c) => c.active)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+            {sortedCategories
+              .filter((category) => category.active)
+              .map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
                 </option>
               ))}
           </select>
+
           <input
             value={subcategoryName}
             onChange={onSubcategoryNameChange}
@@ -269,15 +389,25 @@ export function AdminSettingsSection({
             placeholder="Nome da subcategoria"
             className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
-          <Button type="submit">+</Button>
+
+          <Button type="submit" disabled={activeCategoriesCount === 0}>
+            Nova subcategoria
+          </Button>
         </form>
+
+        {activeCategoriesCount === 0 && (
+          <div className="mb-4 rounded-lg border border-border bg-[hsl(var(--card-elevated))] px-3 py-2 text-sm text-muted">
+            Cadastre e ative uma categoria antes de criar subcategorias.
+          </div>
+        )}
+
         <DataTable
           columns={[
             {
               key: "nome",
               header: "Nome",
-              render: (s) =>
-                editingSubcategoryId === s.id ? (
+              render: (subcategory) =>
+                editingSubcategoryId === subcategory.id ? (
                   <input
                     value={editingSubcategoryName}
                     onChange={onEditingSubcategoryNameChange}
@@ -285,25 +415,25 @@ export function AdminSettingsSection({
                     autoFocus
                   />
                 ) : (
-                  s.name
+                  subcategory.name
                 ),
             },
             {
               key: "categoria",
               header: "Categoria",
-              render: (s) => {
-                const category = s.transaction_categories;
+              render: (subcategory) => {
+                const category = subcategory.transaction_categories;
                 return Array.isArray(category) ? category[0]?.name : category?.name ?? "-";
               },
             },
-            { key: "status", header: "Status", render: (s) => <StatusBadge active={s.active} /> },
+            { key: "status", header: "Status", render: (subcategory) => <StatusBadge active={subcategory.active} /> },
             {
               key: "acao",
               header: "Acao",
-              render: (s) =>
-                editingSubcategoryId === s.id ? (
+              render: (subcategory) =>
+                editingSubcategoryId === subcategory.id ? (
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={onSaveEditSubcategory}>
+                    <Button variant="ghost" size="sm" onClick={() => void onSaveEditSubcategory()}>
                       <Check className="h-4 w-4 text-emerald-400" />
                     </Button>
                     <Button variant="ghost" size="sm" onClick={onCancelEditSubcategory}>
@@ -312,18 +442,142 @@ export function AdminSettingsSection({
                   </div>
                 ) : (
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => onStartEditSubcategory(s)}>
+                    <Button variant="ghost" size="sm" onClick={() => onStartEditSubcategory(subcategory)}>
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => onToggleSubcategory(s)} title={s.active ? "Inativar" : "Ativar"}>
-                      <Power className={`h-4 w-4 ${s.active ? "text-amber-400" : "text-emerald-400"}`} />
+                    <Button variant="ghost" size="sm" onClick={() => onToggleSubcategory(subcategory)} title={subcategory.active ? "Inativar" : "Ativar"}>
+                      <Power className={`h-4 w-4 ${subcategory.active ? "text-amber-400" : "text-emerald-400"}`} />
                     </Button>
                   </div>
                 ),
             },
           ]}
-          rows={subcategories.slice(0, 20)}
-          emptyMessage="Nenhuma subcategoria encontrada."
+          rows={sortedSubcategories}
+          emptyMessage="Nenhuma subcategoria cadastrada."
+        />
+      </SectionCard>
+
+      <SectionCard title="Taxas de Embarque">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="text-sm text-muted">
+            Defina os valores oficiais usados pelo operador no PDV como fonte unica de verdade.
+          </p>
+          <Badge variant="secondary">{sortedBoardingTaxes.length} cadastrada(s)</Badge>
+        </div>
+
+        <form onSubmit={onCreateBoardingTax} className="mb-4 grid grid-cols-1 gap-2 md:grid-cols-[180px_1fr_140px_auto]">
+          <select
+            value={boardingTaxType}
+            onChange={onBoardingTaxTypeChange}
+            className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+          >
+            <option value="estadual">Estadual</option>
+            <option value="federal">Federal</option>
+          </select>
+
+          <input
+            value={boardingTaxName}
+            onChange={onBoardingTaxNameChange}
+            required
+            placeholder="Nome da taxa"
+            className="flex-1 rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+
+          <input
+            value={boardingTaxAmount}
+            onChange={onBoardingTaxAmountChange}
+            required
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="0,00"
+            className="rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+          />
+
+          <Button type="submit">Nova taxa</Button>
+        </form>
+
+        <DataTable
+          columns={[
+            {
+              key: "nome",
+              header: "Nome",
+              render: (tax) =>
+                editingBoardingTaxId === tax.id ? (
+                  <input
+                    value={editingBoardingTaxName}
+                    onChange={onEditingBoardingTaxNameChange}
+                    className="w-full rounded border border-border bg-input px-2 py-1 text-sm text-foreground"
+                    autoFocus
+                  />
+                ) : (
+                  tax.name
+                ),
+            },
+            {
+              key: "tipo",
+              header: "Tipo",
+              render: (tax) =>
+                editingBoardingTaxId === tax.id ? (
+                  <select
+                    value={editingBoardingTaxType}
+                    onChange={onEditingBoardingTaxTypeChange}
+                    className="rounded border border-border bg-input px-2 py-1 text-sm text-foreground"
+                  >
+                    <option value="estadual">Estadual</option>
+                    <option value="federal">Federal</option>
+                  </select>
+                ) : (
+                  <Badge variant={tax.tax_type === "estadual" ? "warning" : "info"}>
+                    {tax.tax_type === "estadual" ? "Estadual" : "Federal"}
+                  </Badge>
+                ),
+            },
+            {
+              key: "valor",
+              header: "Valor",
+              render: (tax) =>
+                editingBoardingTaxId === tax.id ? (
+                  <input
+                    value={editingBoardingTaxAmount}
+                    onChange={onEditingBoardingTaxAmountChange}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full rounded border border-border bg-input px-2 py-1 text-sm text-foreground"
+                  />
+                ) : (
+                  formatCurrency(Number(tax.amount || 0))
+                ),
+            },
+            { key: "status", header: "Status", render: (tax) => <StatusBadge active={tax.active} /> },
+            {
+              key: "acao",
+              header: "Acao",
+              render: (tax) =>
+                editingBoardingTaxId === tax.id ? (
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => void onSaveEditBoardingTax()}>
+                      <Check className="h-4 w-4 text-emerald-400" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={onCancelEditBoardingTax}>
+                      <X className="h-4 w-4 text-red-400" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => onStartEditBoardingTax(tax)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => onToggleBoardingTax(tax)} title={tax.active ? "Inativar" : "Ativar"}>
+                      <Power className={`h-4 w-4 ${tax.active ? "text-amber-400" : "text-emerald-400"}`} />
+                    </Button>
+                  </div>
+                ),
+            },
+          ]}
+          rows={sortedBoardingTaxes}
+          emptyMessage="Nenhuma taxa de embarque cadastrada."
         />
       </SectionCard>
     </div>

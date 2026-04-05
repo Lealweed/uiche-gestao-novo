@@ -3,6 +3,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { canAccessAdminArea, canAccessAdminSection, getDefaultAdminSectionForRole, getHomeRouteForRole, type AppRole } from "@/lib/rbac";
+import { isSchemaToleranceError } from "@/lib/schema-tolerance";
 
 import { AdminAttendanceSection } from "@/components/rebuild/admin/admin-attendance-section";
 import { AdminCompaniesSection } from "@/components/rebuild/admin/admin-companies-section";
@@ -64,9 +65,20 @@ import {
 const supabase = createClient();
 
 type ShiftTotal = {
-  shift_id: string; booth_name: string; operator_name: string;
-  status: "open" | "closed"; gross_amount: string; commission_amount: string;
-  total_pix: string; total_credit: string; total_debit: string; total_cash: string;
+  shift_id: string;
+  booth_id?: string;
+  operator_id?: string;
+  booth_name: string;
+  operator_name: string;
+  opened_at?: string;
+  closed_at?: string;
+  status: "open" | "closed";
+  gross_amount: string;
+  commission_amount: string;
+  total_pix: string;
+  total_credit: string;
+  total_debit: string;
+  total_cash: string;
   missing_card_receipts: number;
 };
 type Company = { id: string; name: string; commission_percent?: number | null; comission_percent?: number | null; active: boolean };
@@ -82,8 +94,30 @@ type TimePunchRow = { id: string; punch_type: string; punched_at: string; note: 
 type CashMovementRow = { id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type ShiftCashClosingRow = { id: string; expected_cash: number; declared_cash: number; difference: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"relatorios"|"usuarios"|"empresas"|"configuracoes"|"mensagens"|"ponto";
-type OperatorMessage = { id: string; message: string; read: boolean; created_at: string; operator_id: string; profiles: { full_name: string }|{ full_name: string }[]|null };
+type OperatorMessage = {
+  id: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+  operator_id: string;
+  booth_id: string | null;
+  sender_role: "operator" | "admin";
+  profiles: { full_name: string }|{ full_name: string }[]|null;
+  booths: { name: string; code: string }|{ name: string; code: string }[]|null;
+};
 type AttendanceRow = { id: string; user_id: string; clock_in: string; clock_out: string | null; full_name: string };
+type BoardingTax = { id: string; name: string; amount: number; tax_type: "estadual" | "federal"; active: boolean; created_at?: string };
+type MessageConversation = {
+  operatorId: string;
+  boothId: string | null;
+  operatorName: string;
+  boothName: string;
+};
+
+const DEFAULT_BOARDING_TAXES: BoardingTax[] = [
+  { id: "fallback-goiania", name: "Goiania", amount: 8.5, tax_type: "estadual", active: true },
+  { id: "fallback-belem", name: "Belem", amount: 12, tax_type: "estadual", active: true },
+];
 
 export default function AdminRebuildPage() {
   const router = useRouter();
@@ -93,6 +127,7 @@ export default function AdminRebuildPage() {
   const [profiles, setProfiles]   = useState<Profile[]>([]);
   const [categories, setCategories]       = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [boardingTaxes, setBoardingTaxes] = useState<BoardingTax[]>([]);
   const [operatorBoothLinks, setOperatorBoothLinks] = useState<OperatorBoothLink[]>([]);
   const [auditLogs, setAuditLogs]           = useState<AuditLog[]>([]);
   const [timePunchRows, setTimePunchRows]   = useState<TimePunchRow[]>([]);
@@ -115,6 +150,9 @@ export default function AdminRebuildPage() {
   const [categoryName, setCategoryName]   = useState("");
   const [subcategoryName, setSubcategoryName]         = useState("");
   const [subcategoryCategoryId, setSubcategoryCategoryId] = useState("");
+  const [boardingTaxName, setBoardingTaxName] = useState("");
+  const [boardingTaxAmount, setBoardingTaxAmount] = useState("");
+  const [boardingTaxType, setBoardingTaxType] = useState<BoardingTax["tax_type"]>("estadual");
   const [selectedOperatorId, setSelectedOperatorId]   = useState("");
   const [selectedBoothId, setSelectedBoothId]         = useState("");
   const [newProfileUserId, setNewProfileUserId]       = useState("");
@@ -135,6 +173,10 @@ export default function AdminRebuildPage() {
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [editingSubcategoryId, setEditingSubcategoryId] = useState<string | null>(null);
   const [editingSubcategoryName, setEditingSubcategoryName] = useState("");
+  const [editingBoardingTaxId, setEditingBoardingTaxId] = useState<string | null>(null);
+  const [editingBoardingTaxName, setEditingBoardingTaxName] = useState("");
+  const [editingBoardingTaxAmount, setEditingBoardingTaxAmount] = useState("");
+  const [editingBoardingTaxType, setEditingBoardingTaxType] = useState<BoardingTax["tax_type"]>("estadual");
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [editingCompanyName, setEditingCompanyName] = useState("");
   const [editingCompanyPct, setEditingCompanyPct] = useState("");
@@ -165,7 +207,7 @@ export default function AdminRebuildPage() {
   // Estados de mensagens dos operadores
   const [operatorMessages, setOperatorMessages] = useState<OperatorMessage[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [activeConversation, setActiveConversation] = useState<MessageConversation | null>(null);
   const [adminReply, setAdminReply] = useState("");
   const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
   const [currentRole, setCurrentRole] = useState<AppRole | "">("");
@@ -175,10 +217,37 @@ export default function AdminRebuildPage() {
   menuRef.current = menu;
   const profilesRef = useRef(profiles);
   profilesRef.current = profiles;
+  const boothsRef = useRef(booths);
+  boothsRef.current = booths;
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (activeConversation) return;
+
+    const linkedConversation = operatorBoothLinks.find((link) => link.active && link.operator_id);
+    if (linkedConversation?.operator_id) {
+      setActiveConversation({
+        operatorId: linkedConversation.operator_id,
+        boothId: linkedConversation.booth_id ?? null,
+        operatorName: nameOf(linkedConversation.profiles) ?? "Operador",
+        boothName: boothOf(linkedConversation.booths)?.name ?? "Guiche",
+      });
+      return;
+    }
+
+    const firstMessage = operatorMessages[0];
+    if (firstMessage) {
+      setActiveConversation({
+        operatorId: firstMessage.operator_id,
+        boothId: firstMessage.booth_id,
+        operatorName: nameOf(firstMessage.profiles) ?? "Operador",
+        boothName: boothOf(firstMessage.booths)?.name ?? "Guiche",
+      });
+    }
+  }, [activeConversation, operatorBoothLinks, operatorMessages]);
 
   // Auto-refresh every 60 seconds when enabled
   useEffect(() => {
@@ -274,24 +343,58 @@ export default function AdminRebuildPage() {
     const eI = t ? `${t}T23:59:59.999Z` : null;
     try {
       let shiftQ = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
-      let txQ    = supabase.from("transactions").select("id,status,amount,sold_at,payment_method,operator_id,booth_id,company_id,category_id,subcategory_id").eq("status","posted").order("sold_at",{ascending:false}).limit(5000);
-      if (sI) { shiftQ = shiftQ.gte("opened_at", sI); txQ = txQ.gte("sold_at", sI); }
-      if (eI) { shiftQ = shiftQ.lte("opened_at", eI); txQ = txQ.lte("sold_at", eI); }
+      let txQ = supabase
+        .from("transactions")
+        .select("id,status,amount,sold_at,payment_method,operator_id,booth_id,company_id,category_id,subcategory_id")
+        .eq("status", "posted")
+        .order("sold_at", { ascending: false })
+        .limit(5000);
+      let cashQ = supabase
+        .from("cash_movements")
+        .select("id,movement_type,amount,note,created_at,user_id,booth_id")
+        .order("created_at", { ascending: false })
+        .limit(5000);
+      let closeQ = supabase
+        .from("shift_cash_closings")
+        .select("id,expected_cash,declared_cash,difference,note,created_at,user_id,booth_id")
+        .order("created_at", { ascending: false })
+        .limit(5000);
 
-      const [shiftRes,compRes,boothRes,profileRes,catRes,subRes,linkRes,auditRes,punchRes,cashRes,closeRes,txRes,adjRes] = await Promise.all([
+      if (sI) {
+        shiftQ = shiftQ.gte("opened_at", sI);
+        txQ = txQ.gte("sold_at", sI);
+        cashQ = cashQ.gte("created_at", sI);
+        closeQ = closeQ.gte("created_at", sI);
+      }
+
+      if (eI) {
+        shiftQ = shiftQ.lte("opened_at", eI);
+        txQ = txQ.lte("sold_at", eI);
+        cashQ = cashQ.lte("created_at", eI);
+        closeQ = closeQ.lte("created_at", eI);
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const [shiftRes,compRes,boothRes,profileRes,catRes,subRes,boardingTaxRes,linkRes,auditRes,punchRes,cashRes,closeRes,txRes,adjRes,attendanceRes] = await Promise.all([
         shiftQ,
         supabase.from("companies").select("*").order("name"),
         supabase.from("booths").select("id,code,name,active").order("name"),
         supabase.from("profiles").select("user_id,full_name,cpf,address,phone,avatar_url,role,active").order("full_name"),
         supabase.from("transaction_categories").select("id,name,active").order("name"),
         supabase.from("transaction_subcategories").select("id,name,active,category_id").order("name"),
+        supabase.from("boarding_taxes").select("id,name,amount,tax_type,active,created_at").order("tax_type").order("name"),
         supabase.from("operator_booths").select("id,active,operator_id,booth_id").limit(200),
         supabase.from("audit_logs").select("id,action,entity,details,created_at,created_by").order("created_at",{ascending:false}).limit(50),
         supabase.from("time_punches").select("id,punch_type,punched_at,note,user_id,booth_id").order("punched_at",{ascending:false}).limit(200),
-        supabase.from("cash_movements").select("id,movement_type,amount,note,created_at,user_id,booth_id").order("created_at",{ascending:false}).limit(300),
-        supabase.from("shift_cash_closings").select("id,expected_cash,declared_cash,difference,note,created_at,user_id,booth_id").order("created_at",{ascending:false}).limit(300),
+        cashQ,
+        closeQ,
         txQ,
         supabase.from("adjustment_requests").select("id,transaction_id,reason,status,created_at,requested_by").eq("status","pending").order("created_at",{ascending:false}).limit(40),
+        supabase.from("user_attendance").select("id,user_id,clock_in,clock_out").gte("clock_in", today.toISOString()).lt("clock_in", tomorrow.toISOString()).order("clock_in", { ascending: true }),
       ]);
 
       const shiftsData   = (shiftRes.data as ShiftTotal[]) ?? [];
@@ -300,6 +403,11 @@ export default function AdminRebuildPage() {
       const profilesData = (profileRes.data as Profile[]) ?? [];
       const catsData     = (catRes.data as Category[]) ?? [];
       const subsData     = (subRes.data as unknown as Subcategory[]) ?? [];
+      const boardingTaxesData = !boardingTaxRes.error
+        ? ((boardingTaxRes.data as BoardingTax[]) ?? [])
+        : isSchemaToleranceError(boardingTaxRes.error)
+          ? DEFAULT_BOARDING_TAXES
+          : [];
       const profileMap   = new Map(profilesData.map(p => [p.user_id, p.full_name]));
       const boothMap     = new Map(boothsData.map(b => [b.id, { name: b.name, code: b.code }]));
       const companyMap   = new Map(companiesData.map(c => [c.id, c.name]));
@@ -312,53 +420,116 @@ export default function AdminRebuildPage() {
       const hydratedCash    = ((cashRes.data ?? []) as unknown as CashMovementRow[]).map(c => ({ ...c, profiles: c.user_id ? { full_name: profileMap.get(c.user_id) ?? "-" } : null, booths: c.booth_id ? boothMap.get(c.booth_id) ?? null : null }));
       const hydratedClosings= ((closeRes.data ?? []) as unknown as ShiftCashClosingRow[]).map(c => ({ ...c, profiles: c.user_id ? { full_name: profileMap.get(c.user_id) ?? "-" } : null, booths: c.booth_id ? boothMap.get(c.booth_id) ?? null : null }));
       const hydratedTxs     = ((txRes.data ?? []) as unknown as TxForReport[]).map(tx => ({ ...tx, profiles: tx.operator_id ? { full_name: profileMap.get(tx.operator_id) ?? "-" } : null, booths: tx.booth_id ? boothMap.get(tx.booth_id) ?? null : null, companies: tx.company_id ? { name: companyMap.get(tx.company_id) ?? "-" } : null, transaction_categories: tx.category_id ? { name: catMap.get(tx.category_id) ?? "-" } : null, transaction_subcategories: tx.subcategory_id ? { name: subMap.get(tx.subcategory_id) ?? "-" } : null }));
+      const hydratedAttendance = ((attendanceRes.data ?? []) as { id: string; user_id: string; clock_in: string; clock_out: string | null }[]).map((row) => ({
+        ...row,
+        full_name: profileMap.get(row.user_id) ?? "Operador",
+      }));
       const txById = new Map(hydratedTxs.map(tx => [tx.id, tx]));
       const hydratedAdj = ((adjRes.data ?? []) as unknown as Adjustment[]).map(a => { const tx = txById.get(a.transaction_id); return { ...a, profiles: a.requested_by ? { full_name: profileMap.get(a.requested_by) ?? "-" } : null, transactions: tx ? { amount: Number(tx.amount||0), payment_method: tx.payment_method ?? "-", companies: tx.company_id ? { name: companyMap.get(tx.company_id) ?? "-" } : null } : null } as Adjustment; });
 
       setRows(shiftsData); setCompanies(companiesData); setBooths(boothsData); setProfiles(profilesData);
-      setCategories(catsData); setSubcategories(subsData as unknown as Subcategory[]);
+      setCategories(catsData); setSubcategories(subsData as unknown as Subcategory[]); setBoardingTaxes(boardingTaxesData);
       setOperatorBoothLinks(hydratedLinks as unknown as OperatorBoothLink[]);
       setAuditLogs(hydratedAudit as unknown as AuditLog[]);
       setTimePunchRows(hydratedPunch as unknown as TimePunchRow[]);
       setCashMovementRows(hydratedCash as unknown as CashMovementRow[]);
       setShiftCashClosingRows(hydratedClosings as unknown as ShiftCashClosingRow[]);
-      setReportTxs(hydratedTxs as unknown as TxForReport[]); setAdjustments(hydratedAdj as unknown as Adjustment[]);
+      setReportTxs(hydratedTxs as unknown as TxForReport[]);
+      setAdjustments(hydratedAdj as unknown as Adjustment[]);
+      setAttendanceRows(hydratedAttendance);
     } finally { setLoading(false); setIsLoading(false); setLastUpdate(new Date()); }
   }
 
   // ===== FUNCOES MENSAGENS OPERADORES =====
   const loadOperatorMessages = useCallback(async () => {
-    const profileMap = new Map(profilesRef.current.map(p => [p.user_id, p.full_name]));
-    const { data, error } = await supabase
+    const profileMap = new Map(profilesRef.current.map((p) => [p.user_id, p.full_name]));
+    const boothMap = new Map(boothsRef.current.map((b) => [b.id, { name: b.name, code: b.code }]));
+    const normalizeMessage = (m: { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null; }): OperatorMessage => ({
+      ...m,
+      booth_id: m.booth_id ?? null,
+      sender_role: m.sender_role === "admin" ? "admin" : "operator",
+      profiles: { full_name: profileMap.get(m.operator_id) ?? "Operador" },
+      booths: m.booth_id ? boothMap.get(m.booth_id) ?? null : null,
+    });
+
+    const query = await supabase
       .from("operator_messages")
-      .select("id, message, read, created_at, operator_id")
+      .select("id, message, read, created_at, operator_id, booth_id, sender_role")
       .order("created_at", { ascending: false })
-      .limit(100);
-    
-    if (!error && data) {
-      const hydratedMessages = data.map((m: { id: string; message: string; read: boolean; created_at: string; operator_id: string }) => ({
-        ...m,
-        profiles: { full_name: profileMap.get(m.operator_id) ?? "Operador" }
-      }));
+      .limit(200);
+
+    if (!query.error && query.data) {
+      const hydratedMessages = query.data.map(normalizeMessage);
       setOperatorMessages(hydratedMessages);
-      setUnreadCount(hydratedMessages.filter((m: OperatorMessage) => !m.read).length);
+      setUnreadCount(hydratedMessages.filter((m) => !m.read && m.sender_role === "operator").length);
+      return;
+    }
+
+    if (isSchemaToleranceError(query.error)) {
+      const fallback = await supabase
+        .from("operator_messages")
+        .select("id, message, read, created_at, operator_id")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (!fallback.error && fallback.data) {
+        const hydratedMessages = fallback.data.map((m: { id: string; message: string; read: boolean; created_at: string; operator_id: string }) =>
+          normalizeMessage({ ...m, booth_id: null, sender_role: "operator" })
+        );
+        setOperatorMessages(hydratedMessages);
+        setUnreadCount(hydratedMessages.filter((m) => !m.read && m.sender_role === "operator").length);
+      }
     }
   }, []);
 
-  // Realtime: escutar operator_messages (inserts de qualquer operador)
+  // Realtime: escutar operator_messages (inserts/updates do chat privado)
   useEffect(() => {
     const channel = supabase
       .channel("admin-messages")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "operator_messages" }, (payload) => {
-        const raw = payload.new as { id: string; message: string; read: boolean; created_at: string; operator_id: string };
-        const profileMap = new Map(profilesRef.current.map(p => [p.user_id, p.full_name]));
-        const hydrated: OperatorMessage = { ...raw, profiles: { full_name: profileMap.get(raw.operator_id) ?? "Operador" } };
-        setOperatorMessages(prev => [hydrated, ...prev]);
-        setUnreadCount(prev => prev + 1);
-        if (menuRef.current !== "mensagens") {
-          setToastType("info");
-          setMessage(`Nova mensagem de ${hydrated.profiles && !Array.isArray(hydrated.profiles) ? hydrated.profiles.full_name : "Operador"}.`);
+        const raw = payload.new as { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null };
+        const profileMap = new Map(profilesRef.current.map((p) => [p.user_id, p.full_name]));
+        const boothMap = new Map(boothsRef.current.map((b) => [b.id, { name: b.name, code: b.code }]));
+        const hydrated: OperatorMessage = {
+          ...raw,
+          booth_id: raw.booth_id ?? null,
+          sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+          profiles: { full_name: profileMap.get(raw.operator_id) ?? "Operador" },
+          booths: raw.booth_id ? boothMap.get(raw.booth_id) ?? null : null,
+        };
+
+        setOperatorMessages((prev) => (prev.some((message) => message.id === hydrated.id) ? prev : [hydrated, ...prev]));
+
+        if (!hydrated.read && hydrated.sender_role === "operator") {
+          setUnreadCount((prev) => prev + 1);
+          if (menuRef.current !== "mensagens") {
+            setToastType("info");
+            setMessage(`Nova mensagem de ${nameOf(hydrated.profiles) ?? "Operador"}.`);
+          }
         }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "operator_messages" }, (payload) => {
+        const updated = payload.new as { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null };
+        const boothMap = new Map(boothsRef.current.map((b) => [b.id, { name: b.name, code: b.code }]));
+
+        setOperatorMessages((prev) => {
+          const next: OperatorMessage[] = prev.map((message): OperatorMessage =>
+            message.id === updated.id
+              ? {
+                  ...message,
+                  message: updated.message,
+                  read: updated.read,
+                  created_at: updated.created_at,
+                  operator_id: updated.operator_id,
+                  booth_id: updated.booth_id ?? null,
+                  sender_role: updated.sender_role === "admin" ? "admin" : "operator",
+                  booths: updated.booth_id ? boothMap.get(updated.booth_id) ?? null : message.booths,
+                }
+              : message
+          );
+          setUnreadCount(next.filter((message) => !message.read && message.sender_role === "operator").length);
+          return next;
+        });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -366,17 +537,80 @@ export default function AdminRebuildPage() {
   }, []);
 
   async function markMessageAsRead(msgId: string) {
-    await supabase.from("operator_messages").update({ read: true }).eq("id", msgId);
-    setOperatorMessages(prev => prev.map(m => m.id === msgId ? { ...m, read: true } : m));
-    setUnreadCount(prev => Math.max(0, prev - 1));
+    const { data } = await supabase.auth.getUser();
+    await supabase
+      .from("operator_messages")
+      .update({ read: true, read_at: new Date().toISOString(), read_by: data.user?.id ?? null })
+      .eq("id", msgId);
+    const nextMessages = operatorMessages.map((m) => (m.id === msgId ? { ...m, read: true } : m));
+    setOperatorMessages(nextMessages);
+    setUnreadCount(nextMessages.filter((m) => !m.read && m.sender_role === "operator").length);
   }
 
   async function markAllMessagesAsRead() {
-    await supabase.from("operator_messages").update({ read: true }).eq("read", false);
-    setOperatorMessages(prev => prev.map(m => ({ ...m, read: true })));
+    const { data } = await supabase.auth.getUser();
+    await supabase
+      .from("operator_messages")
+      .update({ read: true, read_at: new Date().toISOString(), read_by: data.user?.id ?? null })
+      .eq("read", false);
+    const nextMessages = operatorMessages.map((m) => ({ ...m, read: true }));
+    setOperatorMessages(nextMessages);
     setUnreadCount(0);
     setToastType("success");
     setMessage("Todas as mensagens foram marcadas como lidas.");
+  }
+
+  async function openMessageConversation(conversation: MessageConversation) {
+    setActiveConversation(conversation);
+    setAdminReply("");
+
+    const { data } = await supabase.auth.getUser();
+    let query = supabase
+      .from("operator_messages")
+      .update({ read: true, read_at: new Date().toISOString(), read_by: data.user?.id ?? null })
+      .eq("operator_id", conversation.operatorId)
+      .eq("sender_role", "operator")
+      .eq("read", false);
+
+    query = conversation.boothId ? query.eq("booth_id", conversation.boothId) : query.is("booth_id", null);
+
+    const { error } = await query;
+    if (error && !isSchemaToleranceError(error)) {
+      setToastType("error");
+      setMessage(`Erro ao abrir conversa: ${error.message}`);
+      return;
+    }
+
+    await loadOperatorMessages();
+  }
+
+  async function sendAdminReply() {
+    if (!activeConversation || !adminReply.trim()) return;
+
+    const payload = {
+      operator_id: activeConversation.operatorId,
+      booth_id: activeConversation.boothId,
+      sender_role: "admin" as const,
+      message: adminReply.trim(),
+      read: false,
+    };
+
+    const { error } = await supabase.from("operator_messages").insert(payload);
+
+    if (error) {
+      setToastType("error");
+      setMessage(
+        isSchemaToleranceError(error)
+          ? "Chat privado requer a migration de mensagens por guiche antes do envio do admin."
+          : `Erro: ${error.message}`
+      );
+      return;
+    }
+
+    setAdminReply("");
+    setToastType("success");
+    setMessage(`Mensagem enviada para ${activeConversation.boothName}.`);
+    await loadOperatorMessages();
   }
 
   // ===== FUNCOES FOLHA DE PONTO =====
@@ -485,11 +719,21 @@ export default function AdminRebuildPage() {
   }, [repassesComputed.viacoes]);
 
   const cashMovementTotals = useMemo(() => {
-    const s = cashMovementRows.filter(m => m.movement_type==="suprimento").reduce((a,m)=>a+Number(m.amount||0),0);
-    const g = cashMovementRows.filter(m => m.movement_type==="sangria").reduce((a,m)=>a+Number(m.amount||0),0);
-    const j = cashMovementRows.filter(m => m.movement_type==="ajuste").reduce((a,m)=>a+Number(m.amount||0),0);
-    return { suprimento: s, sangria: g, ajuste: j, saldo: s - g + j };
-  }, [cashMovementRows]);
+    const s = cashMovementRows.filter((movement) => movement.movement_type === "suprimento").reduce((acc, movement) => acc + Number(movement.amount || 0), 0);
+    const g = cashMovementRows.filter((movement) => movement.movement_type === "sangria").reduce((acc, movement) => acc + Number(movement.amount || 0), 0);
+    const j = cashMovementRows.filter((movement) => movement.movement_type === "ajuste").reduce((acc, movement) => acc + Number(movement.amount || 0), 0);
+    const cashSales = reportTxs
+      .filter((tx) => (tx.payment_method ?? "").toLowerCase() === "cash")
+      .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+
+    return {
+      suprimento: s,
+      sangria: g,
+      ajuste: j,
+      cashSales,
+      saldo: cashSales + s - g + j,
+    };
+  }, [cashMovementRows, reportTxs]);
 
   const cashClosingTotals = useMemo(() => ({
     expected:   shiftCashClosingRows.reduce((a,r)=>a+Number(r.expected_cash||0),0),
@@ -497,8 +741,24 @@ export default function AdminRebuildPage() {
     difference: shiftCashClosingRows.reduce((a,r)=>a+Number(r.difference||0),0),
   }), [shiftCashClosingRows]);
 
+  async function applyDateFilters() {
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      setToastType("warning");
+      return setMessage("A data inicial nao pode ser maior que a data final.");
+    }
+
+    await refreshData(dateFrom, dateTo);
+  }
+
+  async function clearDateFilters() {
+    setDateFrom("");
+    setDateTo("");
+    await refreshData("", "");
+  }
+
   const filteredProfiles = useMemo(() => { const t = profileSearch.trim().toLowerCase(); return t ? profiles.filter(p => [p.full_name, p.cpf??"", p.phone??"", p.role].join(" ").toLowerCase().includes(t)) : profiles; }, [profiles, profileSearch]);
   const filteredBooths   = useMemo(() => { const t = boothSearch.trim().toLowerCase(); return t ? booths.filter(b => `${b.code} ${b.name}`.toLowerCase().includes(t)) : booths; }, [booths, boothSearch]);
+  const normalizeConfigText = (value: string) => value.trim().toLowerCase();
 
   async function createCompany(e: FormEvent) {
     e.preventDefault();
@@ -521,23 +781,157 @@ export default function AdminRebuildPage() {
 
   async function createCategory(e: FormEvent) {
     e.preventDefault();
-    const { error } = await supabase.from("transaction_categories").insert({ name: categoryName.trim(), active: true });
-    if (error) { setToastType("error"); return setMessage(`Erro: ${error.message}`); }
-    setCategoryName(""); setToastType("success"); setMessage("Categoria cadastrada com sucesso!"); await refreshData();
+    const name = categoryName.trim();
+
+    if (!name) {
+      setToastType("warning");
+      return setMessage("Informe o nome da categoria.");
+    }
+
+    if (categories.some((category) => normalizeConfigText(category.name) === normalizeConfigText(name))) {
+      setToastType("warning");
+      return setMessage(`A categoria "${name}" ja existe.`);
+    }
+
+    const { error } = await supabase.from("transaction_categories").insert({ name, active: true });
+    if (error) {
+      setToastType(error.code === "23505" ? "warning" : "error");
+      return setMessage(error.code === "23505" ? `A categoria "${name}" ja existe.` : `Erro: ${error.message}`);
+    }
+
+    setCategoryName("");
+    setToastType("success");
+    setMessage("Categoria cadastrada com sucesso!");
+    await refreshData();
   }
 
   async function createSubcategory(e: FormEvent) {
     e.preventDefault();
-    const { error } = await supabase.from("transaction_subcategories").insert({ category_id: subcategoryCategoryId, name: subcategoryName.trim(), active: true });
-    if (error) { setToastType("error"); return setMessage(`Erro: ${error.message}`); }
-    setSubcategoryName(""); setSubcategoryCategoryId(""); setToastType("success"); setMessage("Subcategoria cadastrada com sucesso!"); await refreshData();
+    const name = subcategoryName.trim();
+    const parentCategory = categories.find((category) => category.id === subcategoryCategoryId);
+
+    if (!subcategoryCategoryId) {
+      setToastType("warning");
+      return setMessage("Selecione a categoria pai da subcategoria.");
+    }
+
+    if (!name) {
+      setToastType("warning");
+      return setMessage("Informe o nome da subcategoria.");
+    }
+
+    const alreadyExists = subcategories.some(
+      (subcategory) =>
+        subcategory.category_id === subcategoryCategoryId &&
+        normalizeConfigText(subcategory.name) === normalizeConfigText(name)
+    );
+
+    if (alreadyExists) {
+      setToastType("warning");
+      return setMessage(`A subcategoria "${name}" ja existe em ${parentCategory?.name ?? "categoria"}.`);
+    }
+
+    const { error } = await supabase.from("transaction_subcategories").insert({ category_id: subcategoryCategoryId, name, active: true });
+    if (error) {
+      setToastType(error.code === "23505" ? "warning" : "error");
+      return setMessage(error.code === "23505" ? `A subcategoria "${name}" ja existe nessa categoria.` : `Erro: ${error.message}`);
+    }
+
+    setSubcategoryName("");
+    setSubcategoryCategoryId("");
+    setToastType("success");
+    setMessage(`Subcategoria cadastrada em ${parentCategory?.name ?? "categoria"} com sucesso!`);
+    await refreshData();
+  }
+
+  async function createBoardingTax(e: FormEvent) {
+    e.preventDefault();
+    const name = boardingTaxName.trim();
+    const amount = Number(boardingTaxAmount.replace(",", "."));
+
+    if (!name) {
+      setToastType("warning");
+      return setMessage("Informe o nome da taxa de embarque.");
+    }
+
+    if (Number.isNaN(amount) || amount < 0) {
+      setToastType("warning");
+      return setMessage("Informe um valor valido para a taxa de embarque.");
+    }
+
+    const alreadyExists = boardingTaxes.some(
+      (tax) => tax.tax_type === boardingTaxType && normalizeConfigText(tax.name) === normalizeConfigText(name)
+    );
+
+    if (alreadyExists) {
+      setToastType("warning");
+      return setMessage(`A taxa "${name}" ja existe em ${boardingTaxType}.`);
+    }
+
+    const { error } = await supabase.from("boarding_taxes").insert({
+      name,
+      amount: Number(amount.toFixed(2)),
+      tax_type: boardingTaxType,
+      active: true,
+    });
+
+    if (error) {
+      setToastType(error.code === "23505" ? "warning" : "error");
+      return setMessage(error.code === "23505" ? `A taxa "${name}" ja existe em ${boardingTaxType}.` : `Erro: ${error.message}`);
+    }
+
+    setBoardingTaxName("");
+    setBoardingTaxAmount("");
+    setBoardingTaxType("estadual");
+    setToastType("success");
+    setMessage("Taxa de embarque cadastrada com sucesso!");
+    await refreshData();
   }
 
   async function linkOperatorToBooth(e: FormEvent) {
     e.preventDefault();
-    const { error } = await supabase.from("operator_booths").upsert({ operator_id: selectedOperatorId, booth_id: selectedBoothId, active: true });
-    if (error) { setToastType("error"); return setMessage(`Erro: ${error.message}`); }
-    setToastType("success"); setMessage("Operador vinculado com sucesso!"); await refreshData();
+
+    if (!selectedOperatorId || !selectedBoothId) {
+      setToastType("warning");
+      return setMessage("Selecione um operador e um guiche para salvar o vinculo.");
+    }
+
+    const operator = profiles.find((profile) => profile.user_id === selectedOperatorId);
+    const booth = booths.find((item) => item.id === selectedBoothId);
+    const { error } = await supabase
+      .from("operator_booths")
+      .upsert(
+        { operator_id: selectedOperatorId, booth_id: selectedBoothId, active: true },
+        { onConflict: "operator_id,booth_id" }
+      );
+
+    if (error) {
+      setToastType("error");
+      return setMessage(`Erro: ${error.message}`);
+    }
+
+    setSelectedOperatorId("");
+    setSelectedBoothId("");
+    setToastType("success");
+    setMessage(`Vinculo salvo: ${operator?.full_name ?? "Operador"} -> ${booth ? `${booth.code} - ${booth.name}` : "Guiche"}.`);
+    await refreshData();
+  }
+
+  async function toggleOperatorBoothLink(link: OperatorBoothLink) {
+    const nextActive = !link.active;
+    const { error } = await supabase.from("operator_booths").update({ active: nextActive }).eq("id", link.id);
+
+    if (error) {
+      setToastType("error");
+      return setMessage(`Erro: ${error.message}`);
+    }
+
+    const booth = boothOf(link.booths);
+    setToastType("success");
+    setMessage(
+      `Vinculo ${nextActive ? "reativado" : "desativado"}: ${nameOf(link.profiles) ?? "Operador"}${booth ? ` -> ${booth.code} - ${booth.name}` : ""}.`
+    );
+    await refreshData();
   }
 
   async function saveProfile(e: FormEvent) {
@@ -632,6 +1026,21 @@ export default function AdminRebuildPage() {
     });
   }
 
+  function confirmToggleBoardingTax(tax: BoardingTax) {
+    setConfirmDialog({
+      open: true,
+      title: tax.active ? "Inativar Taxa de Embarque" : "Reativar Taxa de Embarque",
+      description: `Tem certeza que deseja ${tax.active ? "inativar" : "reativar"} a taxa "${tax.name}"?`,
+      variant: tax.active ? "warning" : "info",
+      onConfirm: async () => {
+        await supabase.from("boarding_taxes").update({ active: !tax.active }).eq("id", tax.id);
+        await refreshData();
+        setToastType("success");
+        setMessage(`Taxa ${tax.active ? "inativada" : "reativada"} com sucesso!`);
+      },
+    });
+  }
+
   async function handleConfirmAction() {
     setConfirmLoading(true);
     try {
@@ -649,7 +1058,28 @@ export default function AdminRebuildPage() {
   }
   async function saveEditCategory() {
     if (!editingCategoryId) return;
-    await supabase.from("transaction_categories").update({ name: editingCategoryName }).eq("id", editingCategoryId);
+
+    const nextName = editingCategoryName.trim();
+    if (!nextName) {
+      setToastType("warning");
+      return setMessage("Informe o nome da categoria antes de salvar.");
+    }
+
+    const alreadyExists = categories.some(
+      (category) => category.id !== editingCategoryId && normalizeConfigText(category.name) === normalizeConfigText(nextName)
+    );
+
+    if (alreadyExists) {
+      setToastType("warning");
+      return setMessage(`A categoria "${nextName}" ja existe.`);
+    }
+
+    const { error } = await supabase.from("transaction_categories").update({ name: nextName }).eq("id", editingCategoryId);
+    if (error) {
+      setToastType(error.code === "23505" ? "warning" : "error");
+      return setMessage(error.code === "23505" ? `A categoria "${nextName}" ja existe.` : `Erro: ${error.message}`);
+    }
+
     setEditingCategoryId(null);
     setEditingCategoryName("");
     await refreshData();
@@ -666,7 +1096,33 @@ export default function AdminRebuildPage() {
   }
   async function saveEditSubcategory() {
     if (!editingSubcategoryId) return;
-    await supabase.from("transaction_subcategories").update({ name: editingSubcategoryName }).eq("id", editingSubcategoryId);
+
+    const nextName = editingSubcategoryName.trim();
+    const currentSubcategory = subcategories.find((subcategory) => subcategory.id === editingSubcategoryId);
+
+    if (!nextName) {
+      setToastType("warning");
+      return setMessage("Informe o nome da subcategoria antes de salvar.");
+    }
+
+    const alreadyExists = subcategories.some(
+      (subcategory) =>
+        subcategory.id !== editingSubcategoryId &&
+        subcategory.category_id === currentSubcategory?.category_id &&
+        normalizeConfigText(subcategory.name) === normalizeConfigText(nextName)
+    );
+
+    if (alreadyExists) {
+      setToastType("warning");
+      return setMessage(`A subcategoria "${nextName}" ja existe nessa categoria.`);
+    }
+
+    const { error } = await supabase.from("transaction_subcategories").update({ name: nextName }).eq("id", editingSubcategoryId);
+    if (error) {
+      setToastType(error.code === "23505" ? "warning" : "error");
+      return setMessage(error.code === "23505" ? `A subcategoria "${nextName}" ja existe nessa categoria.` : `Erro: ${error.message}`);
+    }
+
     setEditingSubcategoryId(null);
     setEditingSubcategoryName("");
     await refreshData();
@@ -675,6 +1131,68 @@ export default function AdminRebuildPage() {
   function cancelEditSubcategory() {
     setEditingSubcategoryId(null);
     setEditingSubcategoryName("");
+  }
+
+  function startEditBoardingTax(tax: BoardingTax) {
+    setEditingBoardingTaxId(tax.id);
+    setEditingBoardingTaxName(tax.name);
+    setEditingBoardingTaxAmount(String(Number(tax.amount ?? 0)));
+    setEditingBoardingTaxType(tax.tax_type);
+  }
+
+  async function saveEditBoardingTax() {
+    if (!editingBoardingTaxId) return;
+
+    const nextName = editingBoardingTaxName.trim();
+    const nextAmount = Number(editingBoardingTaxAmount.replace(",", "."));
+
+    if (!nextName) {
+      setToastType("warning");
+      return setMessage("Informe o nome da taxa antes de salvar.");
+    }
+
+    if (Number.isNaN(nextAmount) || nextAmount < 0) {
+      setToastType("warning");
+      return setMessage("Informe um valor valido para a taxa de embarque.");
+    }
+
+    const alreadyExists = boardingTaxes.some(
+      (tax) =>
+        tax.id !== editingBoardingTaxId &&
+        tax.tax_type === editingBoardingTaxType &&
+        normalizeConfigText(tax.name) === normalizeConfigText(nextName)
+    );
+
+    if (alreadyExists) {
+      setToastType("warning");
+      return setMessage(`A taxa "${nextName}" ja existe em ${editingBoardingTaxType}.`);
+    }
+
+    const { error } = await supabase.from("boarding_taxes").update({
+      name: nextName,
+      amount: Number(nextAmount.toFixed(2)),
+      tax_type: editingBoardingTaxType,
+    }).eq("id", editingBoardingTaxId);
+
+    if (error) {
+      setToastType(error.code === "23505" ? "warning" : "error");
+      return setMessage(error.code === "23505" ? `A taxa "${nextName}" ja existe em ${editingBoardingTaxType}.` : `Erro: ${error.message}`);
+    }
+
+    setEditingBoardingTaxId(null);
+    setEditingBoardingTaxName("");
+    setEditingBoardingTaxAmount("");
+    setEditingBoardingTaxType("estadual");
+    await refreshData();
+    setToastType("success");
+    setMessage("Taxa de embarque atualizada!");
+  }
+
+  function cancelEditBoardingTax() {
+    setEditingBoardingTaxId(null);
+    setEditingBoardingTaxName("");
+    setEditingBoardingTaxAmount("");
+    setEditingBoardingTaxType("estadual");
   }
 
   function startEditCompany(c: Company) {
@@ -812,12 +1330,8 @@ export default function AdminRebuildPage() {
             dateTo={dateTo}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
-            onApplyFilters={() => refreshData()}
-            onClearFilters={() => {
-              setDateFrom("");
-              setDateTo("");
-              refreshData("", "");
-            }}
+            onApplyFilters={applyDateFilters}
+            onClearFilters={clearDateFilters}
             repassesComputed={repassesComputed}
             reportTxCount={reportTxs.length}
             summary={summary}
@@ -839,11 +1353,25 @@ export default function AdminRebuildPage() {
         {/* OPERADORES */}
         {show("operadores") && (
           <AdminOperatorsSection
+            booths={booths}
+            operatorBoothLinks={operatorBoothLinks}
+            shiftRows={rows}
             timePunchRows={timePunchRows}
+            attendanceRows={attendanceRows}
+            reportTxs={reportTxs}
+            isMounted={isMounted}
             punchPage={punchPage}
             punchPerPage={PUNCH_PER_PAGE}
             onPreviousPage={() => setPunchPage((p) => Math.max(1, p - 1))}
             onNextPage={() => setPunchPage((p) => p + 1)}
+            onOpenConversation={({ operatorId, operatorName, boothName, boothId }) => {
+              setActiveConversation({ operatorId, operatorName, boothName, boothId });
+              setMenu("mensagens");
+              if (typeof window !== "undefined") {
+                window.location.hash = "mensagens";
+              }
+              void loadOperatorMessages();
+            }}
           />
         )}
 
@@ -858,12 +1386,8 @@ export default function AdminRebuildPage() {
             shiftCashClosingRows={shiftCashClosingRows}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
-            onApplyFilters={() => refreshData()}
-            onClearFilters={() => {
-              setDateFrom("");
-              setDateTo("");
-              refreshData("", "");
-            }}
+            onApplyFilters={applyDateFilters}
+            onClearFilters={clearDateFilters}
           />
         )}
 
@@ -946,29 +1470,41 @@ export default function AdminRebuildPage() {
             categoryName={categoryName}
             subcategoryName={subcategoryName}
             subcategoryCategoryId={subcategoryCategoryId}
+            boardingTaxName={boardingTaxName}
+            boardingTaxAmount={boardingTaxAmount}
+            boardingTaxType={boardingTaxType}
             profiles={profiles}
             booths={booths}
             categories={categories}
             subcategories={subcategories}
+            boardingTaxes={boardingTaxes}
             operatorBoothLinks={operatorBoothLinks}
             editingCategoryId={editingCategoryId}
             editingCategoryName={editingCategoryName}
             editingSubcategoryId={editingSubcategoryId}
             editingSubcategoryName={editingSubcategoryName}
+            editingBoardingTaxId={editingBoardingTaxId}
+            editingBoardingTaxName={editingBoardingTaxName}
+            editingBoardingTaxAmount={editingBoardingTaxAmount}
+            editingBoardingTaxType={editingBoardingTaxType}
             onSelectedOperatorChange={(e) => setSelectedOperatorId(e.target.value)}
             onSelectedBoothChange={(e) => setSelectedBoothId(e.target.value)}
             onCategoryNameChange={(e) => setCategoryName(e.target.value)}
             onSubcategoryNameChange={(e) => setSubcategoryName(e.target.value)}
             onSubcategoryCategoryChange={(e) => setSubcategoryCategoryId(e.target.value)}
+            onBoardingTaxNameChange={(e) => setBoardingTaxName(e.target.value)}
+            onBoardingTaxAmountChange={(e) => setBoardingTaxAmount(e.target.value)}
+            onBoardingTaxTypeChange={(e) => setBoardingTaxType(e.target.value as BoardingTax["tax_type"])}
             onEditingCategoryNameChange={(e) => setEditingCategoryName(e.target.value)}
             onEditingSubcategoryNameChange={(e) => setEditingSubcategoryName(e.target.value)}
+            onEditingBoardingTaxNameChange={(e) => setEditingBoardingTaxName(e.target.value)}
+            onEditingBoardingTaxAmountChange={(e) => setEditingBoardingTaxAmount(e.target.value)}
+            onEditingBoardingTaxTypeChange={(e) => setEditingBoardingTaxType(e.target.value as BoardingTax["tax_type"])}
             onLinkOperatorToBooth={linkOperatorToBooth}
             onCreateCategory={createCategory}
             onCreateSubcategory={createSubcategory}
-            onToggleOperatorBoothLink={async (link) => {
-              await supabase.from("operator_booths").update({ active: !link.active }).eq("id", link.id);
-              await refreshData();
-            }}
+            onCreateBoardingTax={createBoardingTax}
+            onToggleOperatorBoothLink={toggleOperatorBoothLink}
             onStartEditCategory={startEditCategory}
             onSaveEditCategory={saveEditCategory}
             onCancelEditCategory={cancelEditCategory}
@@ -977,6 +1513,10 @@ export default function AdminRebuildPage() {
             onSaveEditSubcategory={saveEditSubcategory}
             onCancelEditSubcategory={cancelEditSubcategory}
             onToggleSubcategory={confirmToggleSubcategory}
+            onStartEditBoardingTax={startEditBoardingTax}
+            onSaveEditBoardingTax={saveEditBoardingTax}
+            onCancelEditBoardingTax={cancelEditBoardingTax}
+            onToggleBoardingTax={confirmToggleBoardingTax}
           />
         )}
 
@@ -985,10 +1525,16 @@ export default function AdminRebuildPage() {
           <AdminMessagesSection
             unreadCount={unreadCount}
             operatorMessages={operatorMessages}
+            operatorBoothLinks={operatorBoothLinks}
+            activeConversation={activeConversation}
+            adminReply={adminReply}
             isMounted={isMounted}
+            onAdminReplyChange={setAdminReply}
             onRefresh={loadOperatorMessages}
             onMarkAllRead={markAllMessagesAsRead}
             onMarkAsRead={markMessageAsRead}
+            onSelectConversation={openMessageConversation}
+            onSendReply={sendAdminReply}
           />
         )}
 

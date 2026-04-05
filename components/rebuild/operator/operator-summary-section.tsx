@@ -1,5 +1,7 @@
 "use client";
 
+import { MessageSquare } from "lucide-react";
+
 import { Badge, PaymentBadge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
 import { Card } from "@/components/rebuild/ui/card";
@@ -42,10 +44,12 @@ type OperatorSummarySectionProps = {
   totals: Totals;
   totalGeral: number;
   txs: TxRow[];
+  unreadChatCount: number;
   isMounted: boolean;
   onBoothChange: (value: string) => void;
   onOpenShift: () => void | Promise<void>;
   onOpenCloseShiftModal: () => void | Promise<void>;
+  onOpenChat: () => void | Promise<void>;
 };
 
 function formatCurrency(value: number): string {
@@ -60,10 +64,12 @@ export function OperatorSummarySection({
   totals,
   totalGeral,
   txs,
+  unreadChatCount,
   isMounted,
   onBoothChange,
   onOpenShift,
   onOpenCloseShiftModal,
+  onOpenChat,
 }: OperatorSummarySectionProps) {
   return (
     <div className="space-y-6">
@@ -85,30 +91,41 @@ export function OperatorSummarySection({
               <span className="font-semibold text-muted">Nenhum turno ativo</span>
             )}
           </div>
-          {!shift ? (
-            <div className="flex items-center gap-3">
-              <Select
-                value={boothId}
-                onChange={(e) => onBoothChange(e.target.value)}
-                disabled={operatorBlocked}
-                className="w-48"
-              >
-                <option value="">Selecione guiche</option>
-                {booths.map((booth) => (
-                  <option key={booth.booth_id} value={booth.booth_id}>
-                    {booth.booth_name}
-                  </option>
-                ))}
-              </Select>
-              <Button variant="success" onClick={() => void onOpenShift()} disabled={operatorBlocked || !boothId}>
-                Abrir Turno
-              </Button>
-            </div>
-          ) : (
-            <Button variant="danger" onClick={() => void onOpenCloseShiftModal()} disabled={operatorBlocked}>
-              Encerrar Turno
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" onClick={() => void onOpenChat()} className="relative">
+              <MessageSquare className="h-4 w-4" />
+              Falar com Admin
+              {unreadChatCount > 0 && (
+                <span className="absolute -right-1 -top-1 inline-flex size-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
+                  {unreadChatCount > 9 ? "9+" : unreadChatCount}
+                </span>
+              )}
             </Button>
-          )}
+            {!shift ? (
+              <>
+                <Select
+                  value={boothId}
+                  onChange={(e) => onBoothChange(e.target.value)}
+                  disabled={operatorBlocked}
+                  className="w-48"
+                >
+                  <option value="">Selecione guiche</option>
+                  {booths.map((booth) => (
+                    <option key={booth.booth_id} value={booth.booth_id}>
+                      {booth.booth_name}
+                    </option>
+                  ))}
+                </Select>
+                <Button variant="success" onClick={() => void onOpenShift()} disabled={operatorBlocked || !boothId}>
+                  Abrir Turno
+                </Button>
+              </>
+            ) : (
+              <Button variant="danger" onClick={() => void onOpenCloseShiftModal()} disabled={operatorBlocked}>
+                Encerrar Turno
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
 

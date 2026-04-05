@@ -1,11 +1,13 @@
 "use client";
 
-import { AlertCircle, CheckCheck, Eye, MessageSquare, RefreshCw, Users } from "lucide-react";
+import { useMemo } from "react";
+import { AlertCircle, CheckCheck, Eye, MessageSquare, RefreshCw, Send, Store, Users } from "lucide-react";
 
-import { nameOf } from "@/lib/admin/admin-helpers";
+import { boothOf, nameOf } from "@/lib/admin/admin-helpers";
 import { Badge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
 import { Card } from "@/components/rebuild/ui/card";
+import { Input } from "@/components/rebuild/ui/input";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { StatCard } from "@/components/rebuild/ui/stat-card";
 
@@ -15,29 +17,138 @@ type OperatorMessageRow = {
   read: boolean;
   created_at: string;
   operator_id: string;
+  booth_id: string | null;
+  sender_role: "operator" | "admin";
   profiles: { full_name: string } | { full_name: string }[] | null;
+  booths: { name: string; code: string } | { name: string; code: string }[] | null;
+};
+
+type OperatorBoothLinkRow = {
+  id: string;
+  active: boolean;
+  operator_id?: string;
+  booth_id?: string;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+  booths: { name: string; code: string } | { name: string; code: string }[] | null;
+};
+
+type MessageConversation = {
+  operatorId: string;
+  boothId: string | null;
+  operatorName: string;
+  boothName: string;
+};
+
+type ConversationItem = MessageConversation & {
+  key: string;
+  boothCode: string;
+  lastMessage: string;
+  lastAt: string | null;
+  unreadMessages: number;
 };
 
 type AdminMessagesSectionProps = {
   unreadCount: number;
   operatorMessages: OperatorMessageRow[];
+  operatorBoothLinks: OperatorBoothLinkRow[];
+  activeConversation: MessageConversation | null;
+  adminReply: string;
   isMounted: boolean;
+  onAdminReplyChange: (value: string) => void;
   onRefresh: () => void | Promise<void>;
   onMarkAllRead: () => void | Promise<void>;
   onMarkAsRead: (messageId: string) => void | Promise<void>;
+  onSelectConversation: (conversation: MessageConversation) => void | Promise<void>;
+  onSendReply: () => void | Promise<void>;
 };
 
 export function AdminMessagesSection({
   unreadCount,
   operatorMessages,
+  operatorBoothLinks,
+  activeConversation,
+  adminReply,
   isMounted,
+  onAdminReplyChange,
   onRefresh,
   onMarkAllRead,
   onMarkAsRead,
+  onSelectConversation,
+  onSendReply,
 }: AdminMessagesSectionProps) {
+  const conversations = useMemo<ConversationItem[]>(() => {
+    const conversationMap = new Map<string, ConversationItem>();
+
+    for (const link of operatorBoothLinks) {
+      if (!link.active || !link.operator_id) continue;
+      const booth = boothOf(link.booths);
+      const boothId = link.booth_id ?? null;
+      const key = `${link.operator_id}:${boothId ?? "sem-guiche"}`;
+
+      conversationMap.set(key, {
+        key,
+        operatorId: link.operator_id,
+        boothId,
+        operatorName: nameOf(link.profiles) ?? "Operador",
+        boothName: booth?.name ?? "Guiche",
+        boothCode: booth?.code ?? "--",
+        lastMessage: "Sem mensagens ainda.",
+        lastAt: null,
+        unreadMessages: 0,
+      });
+    }
+
+    for (const message of operatorMessages) {
+      const booth = boothOf(message.booths);
+      const key = `${message.operator_id}:${message.booth_id ?? "sem-guiche"}`;
+      const existing = conversationMap.get(key);
+      const messageTime = new Date(message.created_at).getTime();
+      const existingTime = existing?.lastAt ? new Date(existing.lastAt).getTime() : 0;
+
+      conversationMap.set(key, {
+        key,
+        operatorId: message.operator_id,
+        boothId: message.booth_id,
+        operatorName: existing?.operatorName ?? nameOf(message.profiles) ?? "Operador",
+        boothName: existing?.boothName ?? booth?.name ?? "Guiche",
+        boothCode: existing?.boothCode ?? booth?.code ?? "--",
+        lastMessage: messageTime >= existingTime ? message.message : existing?.lastMessage ?? message.message,
+        lastAt: messageTime >= existingTime ? message.created_at : existing?.lastAt ?? message.created_at,
+        unreadMessages: (existing?.unreadMessages ?? 0) + (!message.read && message.sender_role === "operator" ? 1 : 0),
+      });
+    }
+
+    return Array.from(conversationMap.values()).sort((a, b) => {
+      if (b.unreadMessages !== a.unreadMessages) return b.unreadMessages - a.unreadMessages;
+      if (a.lastAt && b.lastAt) return new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime();
+      if (b.lastAt) return 1;
+      if (a.lastAt) return -1;
+      return a.boothName.localeCompare(b.boothName);
+    });
+  }, [operatorBoothLinks, operatorMessages]);
+
+  const selectedConversation =
+    conversations.find(
+      (conversation) =>
+        conversation.operatorId === activeConversation?.operatorId &&
+        conversation.boothId === (activeConversation?.boothId ?? null)
+    ) ?? conversations[0] ?? null;
+
+  const visibleMessages = useMemo(() => {
+    if (!selectedConversation) return [];
+
+    return operatorMessages
+      .filter(
+        (message) =>
+          message.operator_id === selectedConversation.operatorId &&
+          (message.booth_id ?? null) === (selectedConversation.boothId ?? null)
+      )
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  }, [operatorMessages, selectedConversation]);
+
   return (
     <div className="space-y-6">
-      <SectionHeader title="Central de Mensagens" subtitle="Mensagens recebidas dos operadores" />
+      <SectionHeader title="Conversas Privadas" subtitle="Inbox operacional por guiche, com historico separado e resposta direta do admin." />
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -57,60 +168,145 @@ export function AdminMessagesSection({
         )}
       </div>
 
-      <Card>
-        {operatorMessages.length === 0 ? (
-          <div className="py-12 text-center">
-            <MessageSquare size={48} className="mx-auto mb-3 text-muted opacity-50" />
-            <p className="text-muted">Nenhuma mensagem recebida.</p>
-            <p className="mt-1 text-xs text-muted">As mensagens dos operadores aparecerao aqui.</p>
-            <Button variant="ghost" size="sm" className="mt-4" onClick={() => void onRefresh()}>
-              <RefreshCw className="mr-1 h-4 w-4" />
-              Carregar mensagens
-            </Button>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-foreground">Guiches</h3>
+              <p className="text-xs text-muted">Selecione uma conversa privada</p>
+            </div>
+            <Badge variant="secondary">{conversations.length}</Badge>
           </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {operatorMessages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`p-4 transition-colors ${!msg.read ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-slate-800/30"}`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex flex-1 items-start gap-3">
-                    <div className={`size-10 rounded-full flex items-center justify-center ${!msg.read ? "bg-primary/20" : "bg-slate-700"}`}>
-                      <MessageSquare size={18} className={!msg.read ? "text-primary" : "text-muted"} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className="font-semibold text-foreground">{nameOf(msg.profiles) ?? "Operador"}</span>
-                        {!msg.read && (
-                          <Badge variant="primary" className="px-1.5 py-0 text-[10px]">
-                            NOVA
-                          </Badge>
-                        )}
+
+          {conversations.length === 0 ? (
+            <div className="py-10 text-center">
+              <Store size={40} className="mx-auto mb-3 text-muted opacity-50" />
+              <p className="text-sm text-muted">Nenhuma conversa iniciada ainda.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {conversations.map((conversation) => {
+                const isSelected = conversation.key === selectedConversation?.key;
+                return (
+                  <button
+                    key={conversation.key}
+                    type="button"
+                    onClick={() => void onSelectConversation(conversation)}
+                    className={`w-full rounded-xl border p-3 text-left transition-all ${
+                      isSelected
+                        ? "border-primary/40 bg-primary/10 shadow-lg"
+                        : "border-border bg-slate-900/30 hover:border-primary/20 hover:bg-slate-800/40"
+                    }`}
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] uppercase tracking-[0.22em] text-muted">{conversation.boothCode}</p>
+                        <p className="truncate font-semibold text-foreground">{conversation.boothName}</p>
+                        <p className="truncate text-xs text-muted">{conversation.operatorName}</p>
                       </div>
-                      <p className="mb-2 text-sm text-foreground/90">{msg.message}</p>
-                      <p className="text-xs text-muted">
-                        {isMounted ? new Date(msg.created_at).toLocaleString("pt-BR") : "--"}
-                      </p>
+                      {conversation.unreadMessages > 0 && (
+                        <Badge variant="warning">{conversation.unreadMessages}</Badge>
+                      )}
                     </div>
+                    <p className="line-clamp-2 text-xs text-muted">{conversation.lastMessage}</p>
+                    <p className="mt-2 text-[11px] text-muted">
+                      {conversation.lastAt && isMounted ? new Date(conversation.lastAt).toLocaleString("pt-BR") : "Sem historico"}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        <Card className="flex min-h-[560px] flex-col">
+          {selectedConversation ? (
+            <>
+              <div className="mb-4 flex items-center justify-between border-b border-border pb-4">
+                <div>
+                  <h3 className="font-semibold text-foreground">{selectedConversation.boothName}</h3>
+                  <p className="text-xs text-muted">Conversa com {selectedConversation.operatorName}</p>
+                </div>
+                <Badge variant={selectedConversation.unreadMessages > 0 ? "warning" : "secondary"}>
+                  {selectedConversation.unreadMessages > 0 ? `${selectedConversation.unreadMessages} nova(s)` : "Em dia"}
+                </Badge>
+              </div>
+
+              <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+                {visibleMessages.length === 0 ? (
+                  <div className="py-14 text-center">
+                    <MessageSquare size={48} className="mx-auto mb-3 text-muted opacity-50" />
+                    <p className="text-muted">Nenhuma mensagem nessa conversa ainda.</p>
+                    <p className="mt-1 text-xs text-muted">Envie a primeira mensagem para iniciar o historico do guiche.</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!msg.read && (
-                      <Button variant="ghost" size="sm" onClick={() => void onMarkAsRead(msg.id)} title="Marcar como lida">
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
+                ) : (
+                  visibleMessages.map((message) => {
+                    const sentByAdmin = message.sender_role === "admin";
+                    return (
+                      <div key={message.id} className={`flex ${sentByAdmin ? "justify-end" : "justify-start"}`}>
+                        <div
+                          className={`max-w-[85%] rounded-2xl border p-3 ${
+                            sentByAdmin
+                              ? "rounded-br-sm border-primary/30 bg-primary/15"
+                              : "rounded-bl-sm border-border bg-slate-800/60"
+                          }`}
+                        >
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className={`text-[11px] font-semibold uppercase tracking-wide ${sentByAdmin ? "text-primary" : "text-emerald-400"}`}>
+                              {sentByAdmin ? "Admin" : nameOf(message.profiles) ?? "Operador"}
+                            </span>
+                            {!sentByAdmin && !message.read && <Badge variant="warning">Nova</Badge>}
+                          </div>
+                          <p className="whitespace-pre-wrap text-sm text-foreground/90">{message.message}</p>
+                          <div className={`mt-2 flex items-center gap-2 text-xs text-muted ${sentByAdmin ? "justify-end" : "justify-between"}`}>
+                            <span>{isMounted ? new Date(message.created_at).toLocaleString("pt-BR") : "--"}</span>
+                            {!sentByAdmin && !message.read && (
+                              <Button variant="ghost" size="sm" onClick={() => void onMarkAsRead(message.id)} title="Marcar como lida">
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="mt-4 border-t border-border pt-4">
+                <div className="flex gap-2">
+                  <Input
+                    value={adminReply}
+                    onChange={(event) => onAdminReplyChange(event.target.value)}
+                    placeholder={`Responder ${selectedConversation.boothName}...`}
+                    className="flex-1"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void onSendReply();
+                      }
+                    }}
+                  />
+                  <Button variant="primary" onClick={() => void onSendReply()} disabled={!adminReply.trim()}>
+                    <Send className="h-4 w-4" />
+                    Enviar
+                  </Button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </Card>
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center text-center">
+              <div>
+                <MessageSquare size={48} className="mx-auto mb-3 text-muted opacity-50" />
+                <p className="text-muted">Selecione um guiche para abrir a conversa.</p>
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <StatCard title="Total de Mensagens" value={operatorMessages.length.toString()} icon={<MessageSquare className="h-5 w-5" />} />
+        <StatCard title="Conversas" value={conversations.length.toString()} icon={<MessageSquare className="h-5 w-5" />} />
         <StatCard
           title="Nao Lidas"
           value={unreadCount.toString()}
@@ -119,7 +315,7 @@ export function AdminMessagesSection({
         />
         <StatCard
           title="Operadores Ativos"
-          value={new Set(operatorMessages.map((m) => m.operator_id)).size.toString()}
+          value={new Set(conversations.map((conversation) => conversation.operatorId)).size.toString()}
           icon={<Users className="h-5 w-5" />}
         />
       </div>

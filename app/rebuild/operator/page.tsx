@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { canAccessAdminArea, getHomeRouteForRole } from "@/lib/rbac";
 import { tolerantData, isSchemaToleranceError } from "@/lib/schema-tolerance";
+import { OperatorPunchSection } from "@/components/rebuild/operator/operator-punch-section";
 import { OperatorSummarySection } from "@/components/rebuild/operator/operator-summary-section";
 import { RebuildShell } from "@/components/rebuild/shell/rebuild-shell";
 import { Card, CardTitle } from "@/components/rebuild/ui/card";
@@ -24,11 +25,21 @@ type Tx = { id: string; amount: number; payment_method: "pix"|"credit"|"debit"|"
 type BoothLink  = { booth_id: string; booth_name: string };
 type Punch      = { id: string; punch_type: "entrada"|"saida"|"pausa_inicio"|"pausa_fim"; punched_at: string; note: string|null };
 type CashMovement={ id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_name?: string };
+type TaxaEmbarque = { id: string; name: string; amount: number; tax_type: "estadual" | "federal"; active: boolean };
+
+const DEFAULT_BOARDING_TAXES: TaxaEmbarque[] = [
+  { id: "fallback-goiania", name: "Goiania", amount: 8.5, tax_type: "estadual", active: true },
+  { id: "fallback-belem", name: "Belem", amount: 12, tax_type: "estadual", active: true },
+];
 
 function getCompanyPct(c: Option) { return Number(c.commission_percent ?? c.comission_percent ?? 0); }
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+}
+
+function parseMoneyInput(value: string): number {
+  return Number(value.replace(",", ".")) || 0;
 }
 
 export default function OperatorRebuildPage() {
@@ -81,20 +92,23 @@ export default function OperatorRebuildPage() {
   const [pdvBoardingTaxState, setPdvBoardingTaxState] = useState("");
   const [pdvBoardingTaxFederal, setPdvBoardingTaxFederal] = useState("");
   const [showPdvConfirm, setShowPdvConfirm] = useState(false);
+  const [pdvAccumulator, setPdvAccumulator] = useState<number | null>(null);
+  const [pdvPendingOperation, setPdvPendingOperation] = useState<"+" | "-" | null>(null);
+  const [pdvResetOnNextDigit, setPdvResetOnNextDigit] = useState(false);
 
   // Taxa de embarque
-  type TaxaEmbarque = { id: string; nome: string; valor: number; tipo: "estadual" | "federal" };
-  const [taxasEmbarque, setTaxasEmbarque] = useState<TaxaEmbarque[]>([
-    { id: "goiania", nome: "Goiania", valor: 8.50, tipo: "estadual" },
-    { id: "belem",   nome: "Belem",   valor: 12.00, tipo: "estadual" },
-  ]);
+  const [taxasEmbarque, setTaxasEmbarque] = useState<TaxaEmbarque[]>(DEFAULT_BOARDING_TAXES);
   const [showTaxaConfig, setShowTaxaConfig] = useState(false);
-  const [editingTaxa, setEditingTaxa] = useState<TaxaEmbarque | null>(null);
-  const [taxaEditNome, setTaxaEditNome] = useState("");
-  const [taxaEditValor, setTaxaEditValor] = useState("");
 
-  // Chat
-  type ChatMessage = { id: string; message: string; created_at: string; read: boolean };
+  // Chat privado admin <-> guiche
+  type ChatMessage = {
+    id: string;
+    message: string;
+    created_at: string;
+    read: boolean;
+    booth_id: string | null;
+    sender_role: "operator" | "admin";
+  };
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newChatMessage, setNewChatMessage] = useState("");
   const [showChat, setShowChat] = useState(false);
@@ -102,6 +116,9 @@ export default function OperatorRebuildPage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const showChatRef = useRef(showChat);
   showChatRef.current = showChat;
+
+  const activeChatBoothId = shift?.booth_id ?? boothId ?? booths[0]?.booth_id ?? "";
+  const activeChatBoothName = booths.find((item) => item.booth_id === activeChatBoothId)?.booth_name ?? "Guiche";
 
   useEffect(() => {
     setIsMounted(true);
@@ -143,11 +160,12 @@ export default function OperatorRebuildPage() {
         return router.replace("/login");
       }
 
-      const [boothLinksRes, companiesRes, categoriesRes, subcategoriesRes, shiftRes, allBoothsRes] = await Promise.all([
+      const [boothLinksRes, companiesRes, categoriesRes, subcategoriesRes, boardingTaxesRes, shiftRes, allBoothsRes] = await Promise.all([
         supabase.from("operator_booths").select("booth_id").eq("operator_id",uid).eq("active",true),
         supabase.from("companies").select("*").eq("active",true).order("name"),
         supabase.from("transaction_categories").select("id,name").eq("active",true).order("name"),
         supabase.from("transaction_subcategories").select("id,name,category_id").eq("active",true).order("name"),
+        supabase.from("boarding_taxes").select("id,name,amount,tax_type,active").eq("active",true).order("tax_type").order("name"),
         supabase.from("shifts").select("id,booth_id,status").eq("operator_id",uid).eq("status","open").maybeSingle(),
         supabase.from("booths").select("id,name").eq("active",true),
       ]);
@@ -156,11 +174,12 @@ export default function OperatorRebuildPage() {
       const cData  = tolerantData((companiesRes.data as Option[]|null)??[], companiesRes.error, [], "Empresas").data;
       const catData= tolerantData((categoriesRes.data as Category[]|null)??[], categoriesRes.error, [], "Categorias").data;
       const subData= tolerantData((subcategoriesRes.data as Subcategory[]|null)??[], subcategoriesRes.error, [], "Subcategorias").data;
+      const taxData= tolerantData((boardingTaxesRes.data as TaxaEmbarque[]|null)??[], boardingTaxesRes.error, DEFAULT_BOARDING_TAXES, "Taxas de embarque").data;
       const allBooths= tolerantData((allBoothsRes.data as {id:string;name:string}[]|null)??[], allBoothsRes.error, [], "Guiches").data;
 
       const boothNameMap = new Map((allBooths??[]).map((b:{id:string;name:string})=>[b.id,b.name]));
       const boothRows = ((bData??[]) as {booth_id:string}[]).map(b=>({ booth_id:b.booth_id, booth_name:boothNameMap.get(b.booth_id)??b.booth_id }));
-      setBooths(boothRows); setCompanies(cData??[]);
+      setBooths(boothRows); setCompanies(cData??[]); setTaxasEmbarque((taxData ?? DEFAULT_BOARDING_TAXES).filter((tax) => tax.active !== false));
       const cats = catData??[]; const subs = subData??[];
       setCategories(cats); setSubcategories(subs);
       if (cats[0]) { setCategoryId(cats[0].id); const first=subs.find(s=>s.category_id===cats[0].id); setSubcategoryId(first?.id??""); }
@@ -217,6 +236,49 @@ export default function OperatorRebuildPage() {
     setCashMovements((res.data as CashMovement[]|null)??[]);
   }
 
+  async function syncAttendanceAfterPunch(type: Punch["punch_type"], uid: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (type === "entrada") {
+      const { data: openRow, error: selectError } = await supabase
+        .from("user_attendance")
+        .select("id")
+        .eq("user_id", uid)
+        .is("clock_out", null)
+        .gte("clock_in", today.toISOString())
+        .maybeSingle();
+
+      if (selectError && !isSchemaToleranceError(selectError)) {
+        return "Falha ao sincronizar a presenca do dia.";
+      }
+
+      if (!openRow) {
+        const { error } = await supabase.from("user_attendance").insert({ user_id: uid });
+        if (error && !isSchemaToleranceError(error)) {
+          return "Falha ao sincronizar a presenca do dia.";
+        }
+      }
+
+      return null;
+    }
+
+    if (type === "saida") {
+      const { error } = await supabase
+        .from("user_attendance")
+        .update({ clock_out: new Date().toISOString() })
+        .eq("user_id", uid)
+        .is("clock_out", null)
+        .gte("clock_in", today.toISOString());
+
+      if (error && !isSchemaToleranceError(error)) {
+        return "Falha ao finalizar a presenca do dia.";
+      }
+    }
+
+    return null;
+  }
+
   async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string,unknown>) {
     if (!userId) return;
     await supabase.from("audit_logs").insert({ created_by:userId, action, entity:entity??null, entity_id:entityId??null, details:details??{} });
@@ -250,10 +312,11 @@ export default function OperatorRebuildPage() {
     setIsClosing(true);
     try {
       const declaredCash = Number(closeDeclared.replace(",","."));
-      if (Number.isNaN(declaredCash)) { setMessage("Valor invalido."); return; }
+      if (Number.isNaN(declaredCash) || declaredCash < 0) { setMessage("Informe um valor contado valido."); return; }
       const difference = Number((declaredCash-expectedCashVal).toFixed(2));
       const obs = closeObs.trim() || null;
-      await supabase.from("shift_cash_closings").upsert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, expected_cash:Number(expectedCashVal.toFixed(2)), declared_cash:Number(declaredCash.toFixed(2)), difference, note:obs });
+      const { error: saveClosingError } = await supabase.from("shift_cash_closings").upsert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, expected_cash:Number(expectedCashVal.toFixed(2)), declared_cash:Number(declaredCash.toFixed(2)), difference, note:obs });
+      if (saveClosingError) { setMessage(`Erro ao registrar fechamento: ${saveClosingError.message}`); return; }
       const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_ip:null,p_notes:obs});
       if (error) { setMessage(`Erro: ${error.message}`); return; }
       await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCashVal,declared_cash:declaredCash,difference});
@@ -268,14 +331,17 @@ export default function OperatorRebuildPage() {
     const label = type==="entrada"?"Entrada":type==="saida"?"Saida":type==="pausa_inicio"?"Inicio de pausa":"Fim de pausa";
     const { error } = await supabase.from("time_punches").insert({ user_id:userId, booth_id:(shift?.booth_id??boothId)||null, shift_id:shift?.id??null, punch_type:type, note:label });
     if (error) return setMessage(`Erro: ${error.message}`);
+    const attendanceWarning = await syncAttendanceAfterPunch(type, userId);
     await logAction("TIME_PUNCH","time_punches",undefined,{type});
-    await loadPunches(userId); setMessage(`Ponto: ${label}.`);
+    await loadPunches(userId); setMessage(attendanceWarning ? `Ponto: ${label}. ${attendanceWarning}` : `Ponto: ${label}.`);
   }
 
   async function submitCashMovement(e: FormEvent) {
     e.preventDefault();
-    if (!shift||!userId||!cashAmount) return;
-    const { error } = await supabase.from("cash_movements").insert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, movement_type:cashType, amount:Number(cashAmount), note:cashNote.trim()||null });
+    if (!shift||!userId) return;
+    const parsedAmount = Number(cashAmount.replace(",","."));
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) return setMessage("Informe um valor maior que zero para o movimento de caixa.");
+    const { error } = await supabase.from("cash_movements").insert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, movement_type:cashType, amount:Number(parsedAmount.toFixed(2)), note:cashNote.trim()||null });
     if (error) return setMessage(`Erro: ${error.message}`);
     setCashAmount(""); setCashNote(""); setShowCashModal(false); await loadCashMovements(shift.id); setMessage("Movimento registrado.");
   }
@@ -293,35 +359,112 @@ export default function OperatorRebuildPage() {
   }
 
   // ===== FUNCOES PDV CALCULADORA =====
+  function pdvFormatAmount(value: number) {
+    return Number.isFinite(value) ? value.toFixed(2) : "0";
+  }
+
+  function pdvResolveCurrentValue() {
+    const current = parseMoneyInput(pdvDisplay);
+
+    if (!pdvPendingOperation || pdvAccumulator === null) {
+      return current;
+    }
+
+    const resolved = pdvResetOnNextDigit
+      ? pdvAccumulator
+      : pdvPendingOperation === "+"
+        ? pdvAccumulator + current
+        : Math.max(0, pdvAccumulator - current);
+
+    setPdvDisplay(pdvFormatAmount(resolved));
+    setPdvAccumulator(null);
+    setPdvPendingOperation(null);
+    setPdvResetOnNextDigit(true);
+
+    return resolved;
+  }
+
   function pdvDigit(d: string) {
-    setPdvDisplay(prev => {
-      if (prev === "0" && d !== ".") return d;
-      if (d === "." && prev.includes(".")) return prev;
-      return prev + d;
+    setPdvDisplay((prev) => {
+      const base = pdvResetOnNextDigit ? "0" : prev;
+      if (d === "." && base.includes(".")) return base;
+      if (base === "0" && d !== ".") return d;
+      return base + d;
+    });
+    setPdvResetOnNextDigit(false);
+  }
+
+  function pdvClear() {
+    setPdvDisplay("0");
+    setPdvBoardingTaxState("");
+    setPdvBoardingTaxFederal("");
+    setPdvAccumulator(null);
+    setPdvPendingOperation(null);
+    setPdvResetOnNextDigit(false);
+  }
+
+  function pdvBackspace() {
+    if (pdvResetOnNextDigit) {
+      setPdvDisplay("0");
+      setPdvResetOnNextDigit(false);
+      return;
+    }
+
+    setPdvDisplay((prev) => (prev.length > 1 ? prev.slice(0, -1) : "0"));
+  }
+
+  function pdvSetOperation(operation: "+" | "-") {
+    const current = pdvResolveCurrentValue();
+    setPdvAccumulator(current);
+    setPdvPendingOperation(operation);
+    setPdvResetOnNextDigit(true);
+  }
+
+  function pdvAddTaxa(taxa: TaxaEmbarque) {
+    const nextValue = Number(taxa.amount ?? 0).toFixed(2);
+
+    if (taxa.tax_type === "estadual") {
+      setPdvBoardingTaxState((prev) => {
+        const current = parseMoneyInput(prev);
+        return Math.abs(current - Number(taxa.amount ?? 0)) < 0.001 ? "" : nextValue;
+      });
+      return;
+    }
+
+    setPdvBoardingTaxFederal((prev) => {
+      const current = parseMoneyInput(prev);
+      return Math.abs(current - Number(taxa.amount ?? 0)) < 0.001 ? "" : nextValue;
     });
   }
-  function pdvClear() { setPdvDisplay("0"); setPdvBoardingTaxState(""); setPdvBoardingTaxFederal(""); }
-  function pdvBackspace() { setPdvDisplay(prev => prev.length > 1 ? prev.slice(0, -1) : "0"); }
-  function pdvAddTaxa(taxa: TaxaEmbarque) {
-    const current = parseFloat(pdvDisplay) || 0;
-    setPdvDisplay((current + taxa.valor).toFixed(2));
-    if (taxa.tipo === "estadual") {
-      setPdvBoardingTaxState(prev => (((parseFloat(prev) || 0) + taxa.valor).toFixed(2)));
-    } else {
-      setPdvBoardingTaxFederal(prev => (((parseFloat(prev) || 0) + taxa.valor).toFixed(2)));
+
+  function pdvOpenConfirm() {
+    const baseValue = pdvResolveCurrentValue();
+
+    if (!pdvCompanyId) {
+      setMessage("Selecione a empresa para concluir a venda.");
+      return;
     }
+
+    if (baseValue <= 0) {
+      setMessage("Informe um valor valido para a venda.");
+      return;
+    }
+
+    setShowPdvConfirm(true);
   }
 
   async function pdvSubmitSale() {
-    if (!shift || !pdvCompanyId || pdvDisplay === "0") return;
-    const valor = parseFloat(pdvDisplay);
-    if (isNaN(valor) || valor <= 0) return setMessage("Valor invalido.");
-    
+    if (!shift || !pdvCompanyId) return;
+
+    const baseAmount = pdvResolveCurrentValue();
+    if (isNaN(baseAmount) || baseAmount <= 0) return setMessage("Valor invalido.");
+
     const defaultCat = categories[0];
-    const defaultSub = subcategories.find(s => s.category_id === defaultCat?.id);
-    const taxState   = Number(pdvBoardingTaxState.replace(",","."))   || 0;
-    const taxFederal = Number(pdvBoardingTaxFederal.replace(",",".")) || 0;
-    
+    const defaultSub = subcategories.find((s) => s.category_id === defaultCat?.id);
+    const taxState = parseMoneyInput(pdvBoardingTaxState);
+    const taxFederal = parseMoneyInput(pdvBoardingTaxFederal);
+    const totalAmount = Number((baseAmount + taxState + taxFederal).toFixed(2));
+
     const { data: inserted, error } = await supabase.from("transactions").insert({
       shift_id: shift.id,
       booth_id: shift.booth_id,
@@ -329,57 +472,115 @@ export default function OperatorRebuildPage() {
       company_id: pdvCompanyId,
       category_id: defaultCat?.id || null,
       subcategory_id: defaultSub?.id || null,
-      amount: valor,
+      amount: totalAmount,
       payment_method: pdvPaymentMethod === "link" ? "pix" : pdvPaymentMethod,
       ticket_reference: pdvTicketRef || null,
       note: pdvPaymentMethod === "link" ? `Link de Pagamento - ${pdvNote}` : pdvNote || null,
       boarding_tax_state: taxState,
       boarding_tax_federal: taxFederal,
     }).select("id").single();
-    
+
     if (error) return setMessage(`Erro: ${error.message}`);
-    await logAction("CREATE_TRANSACTION", "transactions", inserted?.id, { amount: valor, payment_method: pdvPaymentMethod, boarding_tax_state: taxState, boarding_tax_federal: taxFederal });
-    
+    await logAction("CREATE_TRANSACTION", "transactions", inserted?.id, {
+      amount: totalAmount,
+      base_amount: baseAmount,
+      payment_method: pdvPaymentMethod,
+      boarding_tax_state: taxState,
+      boarding_tax_federal: taxFederal,
+    });
+
     // Reset PDV
     setPdvDisplay("0");
     setPdvTicketRef("");
     setPdvNote("");
     setPdvBoardingTaxState("");
     setPdvBoardingTaxFederal("");
+    setPdvAccumulator(null);
+    setPdvPendingOperation(null);
+    setPdvResetOnNextDigit(false);
     setShowPdvConfirm(false);
-    setMessage(`Venda de ${formatCurrency(valor)} registrada!`);
+    setMessage(`Venda de ${formatCurrency(totalAmount)} registrada!`);
     await loadTxs(shift.id);
-  }
-
-  // Taxa de embarque config
-  function saveTaxaEdit() {
-    if (!editingTaxa) return;
-    setTaxasEmbarque(prev => prev.map(t => 
-      t.id === editingTaxa.id 
-        ? { ...t, nome: taxaEditNome || t.nome, valor: parseFloat(taxaEditValor) || t.valor }
-        : t
-    ));
-    setEditingTaxa(null);
-    setShowTaxaConfig(false);
-    setMessage("Taxa de embarque atualizada.");
   }
 
   // ===== FUNCOES CHAT =====
   const loadChatMessages = useCallback(async () => {
     if (!userId) return;
-    const res = await supabase
+
+    const query = await supabase
       .from("operator_messages")
-      .select("id, message, created_at, read")
+      .select("id, message, created_at, read, booth_id, sender_role")
       .eq("operator_id", userId)
       .order("created_at", { ascending: true })
-      .limit(50);
-    if (!res.error) {
-      const msgs = (res.data as ChatMessage[]) || [];
-      setChatMessages(msgs);
-      setUnreadChatCount(msgs.filter(m => !m.read).length);
+      .limit(150);
+
+    if (!query.error && query.data) {
+      const allMessages: ChatMessage[] = ((query.data as ChatMessage[]) || []).map((msg) => ({
+        ...msg,
+        booth_id: msg.booth_id ?? null,
+        sender_role: msg.sender_role === "admin" ? "admin" : "operator",
+      }));
+      const visibleMessages: ChatMessage[] = activeChatBoothId
+        ? allMessages.filter((msg) => (msg.booth_id ?? activeChatBoothId) === activeChatBoothId)
+        : allMessages;
+
+      setChatMessages(visibleMessages);
+      setUnreadChatCount(allMessages.filter((msg) => !msg.read && msg.sender_role === "admin").length);
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
+      return;
     }
-  }, [userId]);
+
+    if (isSchemaToleranceError(query.error)) {
+      const fallback = await supabase
+        .from("operator_messages")
+        .select("id, message, created_at, read")
+        .eq("operator_id", userId)
+        .order("created_at", { ascending: true })
+        .limit(150);
+
+      if (!fallback.error) {
+        const legacyMessages = (((fallback.data as Array<{ id: string; message: string; created_at: string; read: boolean }>) || [])).map((msg) => ({
+          ...msg,
+          booth_id: activeChatBoothId || null,
+          sender_role: "operator" as const,
+        }));
+        setChatMessages(legacyMessages);
+        setUnreadChatCount(0);
+        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
+      }
+    }
+  }, [activeChatBoothId, userId]);
+
+  async function markAdminChatAsRead() {
+    if (!userId || !activeChatBoothId) return;
+    const { error } = await supabase
+      .from("operator_messages")
+      .update({ read: true, read_at: new Date().toISOString(), read_by: userId })
+      .eq("operator_id", userId)
+      .eq("sender_role", "admin")
+      .eq("read", false)
+      .eq("booth_id", activeChatBoothId);
+
+    if (error && !isSchemaToleranceError(error)) return;
+    await loadChatMessages();
+  }
+
+  async function openChatPanel() {
+    if (!activeChatBoothId) {
+      setMessage("Selecione um guiche para abrir a conversa privada.");
+      return;
+    }
+
+    setShowChat(true);
+    await loadChatMessages();
+    await markAdminChatAsRead();
+  }
+
+  useEffect(() => {
+    if (!showChat || !userId || !activeChatBoothId) return;
+    void loadChatMessages();
+    void markAdminChatAsRead();
+  }, [activeChatBoothId, loadChatMessages, showChat, userId]);
 
   // Realtime: escutar novos inserts na tabela operator_messages
   useEffect(() => {
@@ -387,33 +588,58 @@ export default function OperatorRebuildPage() {
     const channel = supabase
       .channel(`op-messages-${userId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "operator_messages", filter: `operator_id=eq.${userId}` }, (payload) => {
-        const newMsg = payload.new as ChatMessage;
-        setChatMessages(prev => [...prev, newMsg]);
-        if (!showChatRef.current) {
-          setUnreadChatCount(prev => prev + 1);
-          setMessage("Nova mensagem do administrador.");
+        const raw = payload.new as ChatMessage;
+        const normalized: ChatMessage = {
+          ...raw,
+          booth_id: raw.booth_id ?? null,
+          sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+        };
+        const belongsToCurrentBooth = !activeChatBoothId || (normalized.booth_id ?? activeChatBoothId) === activeChatBoothId;
+
+        if (belongsToCurrentBooth) {
+          setChatMessages((prev) => (prev.some((msg) => msg.id === normalized.id) ? prev : [...prev, normalized]));
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
         }
-        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+
+        if (normalized.sender_role === "admin") {
+          if (showChatRef.current && belongsToCurrentBooth) {
+            void markAdminChatAsRead();
+          } else {
+            setUnreadChatCount((prev) => prev + 1);
+            setMessage(`Nova mensagem do administrador para ${activeChatBoothName}.`);
+          }
+        }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "operator_messages", filter: `operator_id=eq.${userId}` }, (payload) => {
-        const updated = payload.new as ChatMessage;
-        setChatMessages(prev => prev.map(m => m.id === updated.id ? updated : m));
+        const raw = payload.new as ChatMessage;
+        const updated: ChatMessage = {
+          ...raw,
+          booth_id: raw.booth_id ?? null,
+          sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+        };
+        const belongsToCurrentBooth = !activeChatBoothId || (updated.booth_id ?? activeChatBoothId) === activeChatBoothId;
+        if (belongsToCurrentBooth) {
+          setChatMessages((prev) => prev.map((msg) => (msg.id === updated.id ? updated : msg)));
+        }
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [activeChatBoothId, activeChatBoothName, userId]);
 
   async function sendChatMessage() {
-    if (!userId || !newChatMessage.trim()) return;
-    const { error } = await supabase.from("operator_messages").insert({
+    if (!userId || !activeChatBoothId || !newChatMessage.trim()) return;
+    const payload = {
       operator_id: userId,
+      booth_id: activeChatBoothId,
+      sender_role: "operator" as const,
       message: newChatMessage.trim(),
       read: false,
-    });
+    };
+    const { error } = await supabase.from("operator_messages").insert(payload);
     if (error) return setMessage(`Erro: ${error.message}`);
     setNewChatMessage("");
-    setMessage("Mensagem enviada para o administrador.");
+    setMessage(`Mensagem enviada para o admin do guiche ${activeChatBoothName}.`);
     await loadChatMessages();
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 120);
   }
@@ -425,10 +651,11 @@ export default function OperatorRebuildPage() {
     const ext = file.name.split(".").pop()||"jpg";
     const path = `${userId}/${txId}.${ext}`;
     const up = await supabase.storage.from("payment-receipts").upload(path,file,{upsert:true,contentType:file.type||"image/jpeg"});
-    if (up.error) { setMessage(`Erro upload: ${up.error.message}`); setUploadingTxId(null); return; }
-    await supabase.from("transaction_receipts").upsert({ transaction_id:txId, storage_path:path, mime_type:file.type||"image/jpeg", uploaded_by:userId });
+    if (up.error) { setMessage(`Erro upload: ${up.error.message}`); setUploadingTxId(null); ev.target.value = ""; return; }
+    const { error: receiptError } = await supabase.from("transaction_receipts").upsert({ transaction_id:txId, storage_path:path, mime_type:file.type||"image/jpeg", uploaded_by:userId });
+    if (receiptError) { setMessage(`Erro ao registrar comprovante: ${receiptError.message}`); setUploadingTxId(null); ev.target.value = ""; return; }
     await logAction("UPLOAD_RECEIPT","transactions",txId,{path});
-    setMessage("Comprovante enviado."); if (shift) await loadTxs(shift.id); setUploadingTxId(null);
+    setMessage("Comprovante enviado."); if (shift) await loadTxs(shift.id); setUploadingTxId(null); ev.target.value = "";
   }
 
   const totals = useMemo(()=>txs.reduce((acc,tx)=>{ acc[tx.payment_method]+=Number(tx.amount||0); acc.taxState+=Number(tx.boarding_tax_state||0); acc.taxFederal+=Number(tx.boarding_tax_federal||0); return acc; },{pix:0,credit:0,debit:0,cash:0,taxState:0,taxFederal:0}),[txs]);
@@ -439,6 +666,10 @@ export default function OperatorRebuildPage() {
     const j=cashMovements.filter(m=>m.movement_type==="ajuste").reduce((a,m)=>a+Number(m.amount||0),0);
     return {suprimento:s,sangria:g,ajuste:j,saldo:totals.cash+s-g+j};
   },[cashMovements, totals.cash]);
+  const pdvBaseAmount = useMemo(() => parseMoneyInput(pdvDisplay), [pdvDisplay]);
+  const pdvTaxStateValue = useMemo(() => parseMoneyInput(pdvBoardingTaxState), [pdvBoardingTaxState]);
+  const pdvTaxFederalValue = useMemo(() => parseMoneyInput(pdvBoardingTaxFederal), [pdvBoardingTaxFederal]);
+  const pdvTotalAmount = pdvBaseAmount + pdvTaxStateValue + pdvTaxFederalValue;
   const digitalTotal = totals.pix + totals.credit + totals.debit;
   const filteredSubs = useMemo(()=>subcategories.filter(s=>s.category_id===categoryId),[subcategories,categoryId]);
   const pendingReceiptTxs = useMemo(()=>txs.filter(t=>(t.payment_method==="credit"||t.payment_method==="debit")&&t.receipt_count===0),[txs]);
@@ -460,10 +691,12 @@ export default function OperatorRebuildPage() {
           totals={totals}
           totalGeral={totalGeral}
           txs={txs}
+          unreadChatCount={unreadChatCount}
           isMounted={isMounted}
           onBoothChange={setBoothId}
           onOpenShift={openShift}
           onOpenCloseShiftModal={openCloseShiftModal}
+          onOpenChat={openChatPanel}
         />
       )}
 
@@ -481,7 +714,7 @@ export default function OperatorRebuildPage() {
                 variant="ghost" 
                 size="sm"
                 className="relative"
-                onClick={() => { loadChatMessages(); setUnreadChatCount(0); setShowChat(true); }}
+                onClick={() => { void openChatPanel(); }}
               >
                 <MessageSquare size={16} className="mr-1" />
                 Chat
@@ -518,14 +751,21 @@ export default function OperatorRebuildPage() {
               <Card className="p-0 overflow-hidden">
                 {/* Display */}
                 <div className="bg-slate-900 p-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-slate-400 uppercase tracking-wider">Valor da Venda</span>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-xs text-slate-400 uppercase tracking-wider">Total da Venda</span>
                     {shift && <span className="text-xs text-emerald-400 flex items-center gap-1"><span className="size-2 rounded-full bg-emerald-400 animate-pulse" /> Turno Ativo</span>}
                   </div>
                   <div className="text-right">
                     <span className="text-5xl font-bold text-white tracking-tight">
-                      R$ {pdvDisplay}
+                      {formatCurrency(pdvTotalAmount)}
                     </span>
+                    <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-xs text-slate-400">
+                      <span>Base: {formatCurrency(pdvBaseAmount)}</span>
+                      <span>Taxas: {formatCurrency(pdvTaxStateValue + pdvTaxFederalValue)}</span>
+                    </div>
+                    {pdvPendingOperation && (
+                      <p className="mt-2 text-xs text-amber-400">Operacao pendente: {pdvPendingOperation}</p>
+                    )}
                   </div>
                 </div>
 
@@ -541,34 +781,43 @@ export default function OperatorRebuildPage() {
                       className="text-xs text-primary hover:underline flex items-center gap-1"
                     >
                       <Settings size={12} />
-                      Editar
+                      Ver taxas
                     </button>
                   </div>
                   <div className="flex gap-2">
-                    {taxasEmbarque.map(taxa => (
-                      <button
-                        key={taxa.id}
-                        onClick={() => pdvAddTaxa(taxa)}
-                        disabled={!shift || operatorBlocked}
-                        className="flex-1 py-3 px-4 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 font-semibold hover:bg-amber-500/30 transition-colors disabled:opacity-50"
-                      >
-                        <span className="block text-sm">{taxa.nome}</span>
-                        <span className="block text-lg">{formatCurrency(taxa.valor)}</span>
-                      </button>
-                    ))}
+                    {taxasEmbarque.length === 0 ? (
+                      <div className="w-full rounded-lg border border-dashed border-slate-600 px-3 py-4 text-center text-sm text-slate-400">
+                        Nenhuma taxa rapida ativa foi configurada no admin.
+                      </div>
+                    ) : (
+                      taxasEmbarque.map(taxa => (
+                        <button
+                          key={taxa.id}
+                          onClick={() => pdvAddTaxa(taxa)}
+                          disabled={!shift || operatorBlocked}
+                          className="flex-1 py-3 px-4 rounded-lg bg-amber-500/20 border border-amber-500/30 text-amber-400 font-semibold hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+                        >
+                          <span className="block text-sm">{taxa.name}</span>
+                          <span className="block text-lg">{formatCurrency(Number(taxa.amount ?? 0))}</span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
 
                 {/* Teclado Numerico */}
                 <div className="p-4 bg-slate-800/30">
-                  <div className="grid grid-cols-4 gap-2">
-                    {["7","8","9","C","4","5","6","<","1","2","3",".","00","0","000","OK"].map((key) => (
+                  <div className="grid grid-cols-5 gap-2">
+                    {["7","8","9","C","+","4","5","6","<","-","1","2","3",".","=","00","0","000","OK"].map((key) => (
                       <button
                         key={key}
                         onClick={() => {
                           if (key === "C") pdvClear();
                           else if (key === "<") pdvBackspace();
-                          else if (key === "OK") { if (pdvDisplay !== "0" && pdvCompanyId) setShowPdvConfirm(true); }
+                          else if (key === "+") pdvSetOperation("+");
+                          else if (key === "-") pdvSetOperation("-");
+                          else if (key === "=") pdvResolveCurrentValue();
+                          else if (key === "OK") pdvOpenConfirm();
                           else pdvDigit(key);
                         }}
                         disabled={!shift || operatorBlocked}
@@ -576,6 +825,7 @@ export default function OperatorRebuildPage() {
                           key === "C" ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30" :
                           key === "<" ? "bg-slate-600 text-slate-300 hover:bg-slate-500" :
                           key === "OK" ? "bg-emerald-500 text-white hover:bg-emerald-600" :
+                          key === "+" || key === "-" || key === "=" ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30" :
                           "bg-slate-700 text-slate-200 hover:bg-slate-600"
                         }`}
                       >
@@ -903,46 +1153,12 @@ export default function OperatorRebuildPage() {
 
       {/* ===== PONTO DIGITAL ===== */}
       {show("ponto") && (
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Ponto Digital</h1>
-            <p className="text-sm text-muted">Registre sua entrada, saida e pausas</p>
-          </div>
-
-          <Card>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {(["entrada","pausa_inicio","pausa_fim","saida"] as const).map(t=>(
-                <Button
-                  key={t}
-                  variant={t==="entrada"?"success":t==="saida"?"danger":"secondary"}
-                  disabled={operatorBlocked}
-                  onClick={()=>registerPunch(t)}
-                  className="py-6"
-                >
-                  <Clock size={20} className="mr-2" />
-                  {t==="entrada"?"Entrada":t==="pausa_inicio"?"Inicio Pausa":t==="pausa_fim"?"Fim Pausa":"Saida"}
-                </Button>
-              ))}
-            </div>
-          </Card>
-
-          <Card>
-            <h3 className="font-semibold text-foreground mb-4">Registros de Ponto</h3>
-            <DataTable
-              columns={[
-                { key: "tipo", header: "Tipo", render: (p) => (
-                  <Badge variant={p.punch_type === "entrada" ? "success" : p.punch_type === "saida" ? "warning" : "secondary"}>
-                    {p.punch_type.toUpperCase().replace("_"," ")}
-                  </Badge>
-                ) },
-                { key: "hora", header: "Data/Hora", render: (p) => isMounted ? new Date(p.punched_at).toLocaleString("pt-BR") : "--" },
-                { key: "obs", header: "Observacao", render: (p) => p.note || "-" },
-              ]}
-              rows={punches}
-              emptyMessage="Nenhum registro de ponto."
-            />
-          </Card>
-        </div>
+        <OperatorPunchSection
+          punches={punches}
+          operatorBlocked={operatorBlocked}
+          isMounted={isMounted}
+          onRegisterPunch={registerPunch}
+        />
       )}
 
       {/* ===== CONFIGURACOES ===== */}
@@ -1036,7 +1252,10 @@ export default function OperatorRebuildPage() {
             <div className="space-y-4">
               <div className="bg-slate-800 p-6 rounded-lg text-center">
                 <p className="text-sm text-muted mb-1">Valor Total</p>
-                <p className="text-4xl font-bold text-emerald-400">{formatCurrency(parseFloat(pdvDisplay))}</p>
+                <p className="text-4xl font-bold text-emerald-400">{formatCurrency(pdvTotalAmount)}</p>
+                <p className="mt-2 text-xs text-slate-400">
+                  Base: {formatCurrency(pdvBaseAmount)} • Taxas: {formatCurrency(pdvTaxStateValue + pdvTaxFederalValue)}
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="bg-slate-800/50 p-3 rounded-lg">
@@ -1066,67 +1285,37 @@ export default function OperatorRebuildPage() {
         </div>
       )}
 
-      {/* Modal Configuracao Taxa Embarque */}
+      {/* Modal Taxa de Embarque */}
       {showTaxaConfig && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <Card className="w-full max-w-md">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-foreground">Configurar Taxas de Embarque</h2>
-              <button onClick={() => { setShowTaxaConfig(false); setEditingTaxa(null); }} className="text-muted hover:text-foreground">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-foreground">Taxas de Embarque Vigentes</h2>
+              <button onClick={() => setShowTaxaConfig(false)} className="text-muted hover:text-foreground">
                 <X size={20} />
               </button>
             </div>
             <div className="space-y-3">
-              {taxasEmbarque.map(taxa => (
-                <div key={taxa.id} className="flex items-center justify-between p-3 bg-slate-800 rounded-lg">
-                  {editingTaxa?.id === taxa.id ? (
-                    <div className="flex-1 grid grid-cols-2 gap-2">
-                      <Input
-                        value={taxaEditNome}
-                        onChange={e => setTaxaEditNome(e.target.value)}
-                        placeholder="Nome"
-                      />
-                      <Input
-                        value={taxaEditValor}
-                        onChange={e => setTaxaEditValor(e.target.value)}
-                        type="number"
-                        step="0.01"
-                        placeholder="Valor"
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      <div>
-                        <p className="font-semibold text-foreground">{taxa.nome}</p>
-                        <p className="text-sm text-muted">{formatCurrency(taxa.valor)}</p>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex gap-2 ml-3">
-                    {editingTaxa?.id === taxa.id ? (
-                      <>
-                        <Button size="sm" variant="success" onClick={saveTaxaEdit}><Check size={14} /></Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditingTaxa(null)}><X size={14} /></Button>
-                      </>
-                    ) : (
-                      <Button 
-                        size="sm" 
-                        variant="ghost" 
-                        onClick={() => { 
-                          setEditingTaxa(taxa); 
-                          setTaxaEditNome(taxa.nome); 
-                          setTaxaEditValor(taxa.valor.toString()); 
-                        }}
-                      >
-                        Editar
-                      </Button>
-                    )}
-                  </div>
+              {taxasEmbarque.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted">
+                  Nenhuma taxa de embarque ativa foi configurada pelo admin.
                 </div>
-              ))}
+              ) : (
+                taxasEmbarque.map((taxa) => (
+                  <div key={taxa.id} className="flex items-center justify-between rounded-lg bg-slate-800 p-3">
+                    <div>
+                      <p className="font-semibold text-foreground">{taxa.name}</p>
+                      <p className="text-sm text-muted">{formatCurrency(Number(taxa.amount ?? 0))}</p>
+                    </div>
+                    <Badge variant={taxa.tax_type === "estadual" ? "warning" : "info"}>
+                      {taxa.tax_type === "estadual" ? "Estadual" : "Federal"}
+                    </Badge>
+                  </div>
+                ))
+              )}
             </div>
-            <div className="mt-4 pt-4 border-t border-slate-700">
-              <p className="text-xs text-muted">As taxas sao salvas localmente. Para alteracoes permanentes, contate o administrador.</p>
+            <div className="mt-4 border-t border-slate-700 pt-4">
+              <p className="text-xs text-muted">Esses valores sao gerenciados no painel do admin em `Configuracoes`.</p>
             </div>
           </Card>
         </div>
@@ -1135,62 +1324,82 @@ export default function OperatorRebuildPage() {
       {/* Modal Chat com Admin */}
       {showChat && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <Card className="w-full max-w-lg h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-700">
+          <Card className="flex h-[80vh] w-full max-w-lg flex-col">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-700 pb-4">
               <div className="flex items-center gap-3">
-                <div className="size-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <div className="flex size-10 items-center justify-center rounded-full bg-primary/20">
                   <MessageSquare size={20} className="text-primary" />
                 </div>
                 <div>
-                  <h2 className="font-bold text-foreground">Chat com Administrador</h2>
-                  <p className="text-xs text-muted">Envie mensagens para a central</p>
+                  <h2 className="font-bold text-foreground">Conversa privada com o Admin</h2>
+                  <p className="text-xs text-muted">Guiche: {activeChatBoothName}</p>
                 </div>
               </div>
               <button onClick={() => setShowChat(false)} className="text-muted hover:text-foreground">
                 <X size={20} />
               </button>
             </div>
-            
-            {/* Mensagens */}
-            <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1">
+
+            <div className="mb-4 flex-1 space-y-3 overflow-y-auto pr-1">
               {chatMessages.length === 0 ? (
-                <div className="text-center py-12">
-                  <MessageSquare size={48} className="mx-auto text-muted mb-3 opacity-50" />
+                <div className="py-12 text-center">
+                  <MessageSquare size={48} className="mx-auto mb-3 text-muted opacity-50" />
                   <p className="text-muted">Nenhuma mensagem ainda.</p>
-                  <p className="text-xs text-muted">Envie uma mensagem para o administrador.</p>
+                  <p className="text-xs text-muted">Use esta conversa para falar diretamente com o admin do guiche.</p>
                 </div>
               ) : (
-                chatMessages.map(msg => (
-                  <div key={msg.id} className="flex justify-end">
-                    <div className="max-w-[80%] bg-primary/20 border border-primary/30 p-3 rounded-lg rounded-tr-sm">
-                      <p className="text-sm text-foreground">{msg.message}</p>
-                      <div className="flex items-center justify-end gap-2 mt-1">
-                        <p className="text-xs text-muted">
-                          {isMounted ? new Date(msg.created_at).toLocaleString("pt-BR") : "--"}
-                        </p>
-                        {msg.read
-                          ? <Check size={12} className="text-emerald-400" />
-                          : <Clock size={12} className="text-amber-400" />}
+                chatMessages.map((msg) => {
+                  const sentByOperator = msg.sender_role === "operator";
+                  return (
+                    <div key={msg.id} className={`flex ${sentByOperator ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[82%] rounded-xl border p-3 ${
+                          sentByOperator
+                            ? "rounded-tr-sm border-primary/30 bg-primary/20"
+                            : "rounded-tl-sm border-border bg-slate-800/70"
+                        }`}
+                      >
+                        <div className="mb-1 flex items-center gap-2">
+                          <span className={`text-[11px] font-semibold uppercase tracking-wide ${sentByOperator ? "text-primary" : "text-emerald-400"}`}>
+                            {sentByOperator ? "Voce" : "Admin"}
+                          </span>
+                          {!sentByOperator && !msg.read && <Badge variant="warning">Nova</Badge>}
+                        </div>
+                        <p className="text-sm text-foreground">{msg.message}</p>
+                        <div className={`mt-2 flex items-center gap-2 ${sentByOperator ? "justify-end" : "justify-between"}`}>
+                          <p className="text-xs text-muted">
+                            {isMounted ? new Date(msg.created_at).toLocaleString("pt-BR") : "--"}
+                          </p>
+                          {sentByOperator ? (
+                            msg.read ? <Check size={12} className="text-emerald-400" /> : <Clock size={12} className="text-amber-400" />
+                          ) : null}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
               <div ref={chatEndRef} />
             </div>
 
-            {/* Input Mensagem */}
-            <div className="flex gap-2 pt-4 border-t border-slate-700">
-              <Input
-                value={newChatMessage}
-                onChange={e => setNewChatMessage(e.target.value)}
-                placeholder="Digite sua mensagem..."
-                className="flex-1"
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
-              />
-              <Button variant="primary" onClick={sendChatMessage} disabled={!newChatMessage.trim()}>
-                <Send size={16} />
-              </Button>
+            <div className="border-t border-slate-700 pt-4">
+              <div className="flex gap-2">
+                <Input
+                  value={newChatMessage}
+                  onChange={(e) => setNewChatMessage(e.target.value)}
+                  placeholder={`Mensagem para o admin de ${activeChatBoothName}...`}
+                  className="flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendChatMessage();
+                    }
+                  }}
+                />
+                <Button variant="primary" onClick={() => void sendChatMessage()} disabled={!newChatMessage.trim()}>
+                  <Send size={16} />
+                </Button>
+              </div>
             </div>
           </Card>
         </div>
