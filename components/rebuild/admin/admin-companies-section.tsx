@@ -15,6 +15,7 @@ type CompanyRow = {
   commission_percent?: number | null;
   comission_percent?: number | null;
   dia_repasse?: number | null;
+  payout_days?: number | null;
   active: boolean;
 };
 
@@ -29,6 +30,7 @@ type AdminCompaniesSectionProps = {
   companyName: string;
   companyPct: string;
   companyRepasseDay: string;
+  companyPayoutDays: string;
   boothCode: string;
   boothName: string;
   boothSearch: string;
@@ -38,18 +40,21 @@ type AdminCompaniesSectionProps = {
   editingCompanyName: string;
   editingCompanyPct: string;
   editingCompanyRepasseDay: string;
+  editingCompanyPayoutDays: string;
   editingBoothId: string | null;
   editingBoothCode: string;
   editingBoothName: string;
   onCompanyNameChange: ChangeEventHandler<HTMLInputElement>;
   onCompanyPctChange: ChangeEventHandler<HTMLInputElement>;
   onCompanyRepasseDayChange: ChangeEventHandler<HTMLInputElement>;
+  onCompanyPayoutDaysChange: ChangeEventHandler<HTMLInputElement>;
   onBoothCodeChange: ChangeEventHandler<HTMLInputElement>;
   onBoothNameChange: ChangeEventHandler<HTMLInputElement>;
   onBoothSearchChange: ChangeEventHandler<HTMLInputElement>;
   onEditingCompanyNameChange: ChangeEventHandler<HTMLInputElement>;
   onEditingCompanyPctChange: ChangeEventHandler<HTMLInputElement>;
   onEditingCompanyRepasseDayChange: ChangeEventHandler<HTMLInputElement>;
+  onEditingCompanyPayoutDaysChange: ChangeEventHandler<HTMLInputElement>;
   onEditingBoothCodeChange: ChangeEventHandler<HTMLInputElement>;
   onEditingBoothNameChange: ChangeEventHandler<HTMLInputElement>;
   onCreateCompany: FormEventHandler<HTMLFormElement>;
@@ -68,10 +73,16 @@ function formatRepasseDay(day: number | null | undefined) {
   return typeof day === "number" && Number.isInteger(day) && day >= 1 && day <= 31 ? `Dia ${day}` : "Nao definido";
 }
 
+function formatPayoutDays(days: number | null | undefined) {
+  const safeDays = typeof days === "number" && Number.isFinite(days) && days >= 0 ? Math.trunc(days) : 0;
+  return `${safeDays} dia${safeDays === 1 ? "" : "s"}`;
+}
+
 export function AdminCompaniesSection({
   companyName,
   companyPct,
   companyRepasseDay,
+  companyPayoutDays,
   boothCode,
   boothName,
   boothSearch,
@@ -81,18 +92,21 @@ export function AdminCompaniesSection({
   editingCompanyName,
   editingCompanyPct,
   editingCompanyRepasseDay,
+  editingCompanyPayoutDays,
   editingBoothId,
   editingBoothCode,
   editingBoothName,
   onCompanyNameChange,
   onCompanyPctChange,
   onCompanyRepasseDayChange,
+  onCompanyPayoutDaysChange,
   onBoothCodeChange,
   onBoothNameChange,
   onBoothSearchChange,
   onEditingCompanyNameChange,
   onEditingCompanyPctChange,
   onEditingCompanyRepasseDayChange,
+  onEditingCompanyPayoutDaysChange,
   onEditingBoothCodeChange,
   onEditingBoothNameChange,
   onCreateCompany,
@@ -114,6 +128,7 @@ export function AdminCompaniesSection({
             <Input value={companyName} onChange={onCompanyNameChange} required placeholder="Nome da empresa / viacao" />
             <Input value={companyPct} onChange={onCompanyPctChange} required type="number" min="0" step="0.001" placeholder="% Comissao Central" />
             <Input value={companyRepasseDay} onChange={onCompanyRepasseDayChange} type="number" min="1" max="31" step="1" placeholder="Dia de repasse (1-31)" />
+            <Input value={companyPayoutDays} onChange={onCompanyPayoutDaysChange} type="number" min="0" step="1" placeholder="Prazo de repasse (dias)" />
             <Button type="submit" className="w-full">
               Cadastrar Empresa
             </Button>
@@ -182,6 +197,24 @@ export function AdminCompaniesSection({
                   />
                 ) : (
                   <span className="text-sm text-foreground/90">{formatRepasseDay(c.dia_repasse)}</span>
+                ),
+            },
+            {
+              key: "prazo",
+              header: "Prazo de Repasse",
+              render: (c) =>
+                editingCompanyId === c.id ? (
+                  <input
+                    value={editingCompanyPayoutDays}
+                    onChange={onEditingCompanyPayoutDaysChange}
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="0"
+                    className="w-20 rounded border border-border bg-input px-2 py-1 text-sm text-foreground"
+                  />
+                ) : (
+                  <span className="text-sm text-foreground/90">{formatPayoutDays(c.payout_days)}</span>
                 ),
             },
             { key: "status", header: "Status", render: (c) => <StatusBadge active={c.active} /> },

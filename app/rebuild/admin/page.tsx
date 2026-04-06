@@ -87,6 +87,7 @@ type Company = {
   commission_percent?: number | null;
   comission_percent?: number | null;
   dia_repasse?: number | null;
+  payout_days?: number | null;
   active: boolean;
 };
 type Booth   = { id: string; code: string; name: string; active: boolean };
@@ -168,6 +169,7 @@ export default function AdminRebuildPage() {
   const [companyName, setCompanyName]     = useState("");
   const [companyPct, setCompanyPct]       = useState("6");
   const [companyRepasseDay, setCompanyRepasseDay] = useState("");
+  const [companyPayoutDays, setCompanyPayoutDays] = useState("0");
   const [boothCode, setBoothCode]         = useState("");
   const [boothName, setBoothName]         = useState("");
   const [categoryName, setCategoryName]   = useState("");
@@ -204,6 +206,7 @@ export default function AdminRebuildPage() {
   const [editingCompanyName, setEditingCompanyName] = useState("");
   const [editingCompanyPct, setEditingCompanyPct] = useState("");
   const [editingCompanyRepasseDay, setEditingCompanyRepasseDay] = useState("");
+  const [editingCompanyPayoutDays, setEditingCompanyPayoutDays] = useState("0");
   const [editingBoothId, setEditingBoothId] = useState<string | null>(null);
   const [editingBoothCode, setEditingBoothCode] = useState("");
   const [editingBoothName, setEditingBoothName] = useState("");
@@ -695,8 +698,14 @@ export default function AdminRebuildPage() {
     let faturamento = 0;
     let central = 0;
     let repasse = 0;
-    const comps = new Map<string, { id: string, name: string, amount: number, central: number, repasse: number }>();
+    const comps = new Map<string, { id: string, name: string, amount: number, central: number, repasse: number, payoutDays: number }>();
     const pctMap = new Map(companies.map(c => [c.id, getCompanyPct(c)]));
+    const payoutDaysMap = new Map(
+      companies.map((c) => [
+        c.id,
+        typeof c.payout_days === "number" && Number.isFinite(c.payout_days) ? Math.max(0, Math.trunc(c.payout_days)) : 0,
+      ])
+    );
 
     for (const tx of reportTxs) {
       const v = Number(tx.amount || 0);
@@ -712,7 +721,7 @@ export default function AdminRebuildPage() {
       if (cId) {
         if (!comps.has(cId)) {
           const cName = tx.companies && !Array.isArray(tx.companies) ? tx.companies.name : "Desconhecida";
-          comps.set(cId, { id: cId, name: cName, amount: 0, central: 0, repasse: 0 });
+          comps.set(cId, { id: cId, name: cName, amount: 0, central: 0, repasse: 0, payoutDays: payoutDaysMap.get(cId) ?? 0 });
         }
         const st = comps.get(cId)!;
         st.amount += v;
@@ -893,17 +902,31 @@ export default function AdminRebuildPage() {
     return parsed;
   }
 
+  function parsePayoutDaysInput(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return 0;
+
+    const parsed = Number(trimmed);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      return Number.NaN;
+    }
+
+    return parsed;
+  }
+
   async function persistCompanyRecord({
     companyId,
     name,
     commissionPercent,
     diaRepasse,
+    payoutDays,
     active,
   }: {
     companyId?: string;
     name: string;
     commissionPercent: number;
     diaRepasse: number | null;
+    payoutDays: number;
     active?: boolean;
   }) {
     const sharedPayload = {
@@ -912,6 +935,10 @@ export default function AdminRebuildPage() {
     };
 
     const payloads: Record<string, unknown>[] = [
+      { ...sharedPayload, commission_percent: commissionPercent, dia_repasse: diaRepasse, payout_days: payoutDays },
+      { ...sharedPayload, comission_percent: commissionPercent, dia_repasse: diaRepasse, payout_days: payoutDays },
+      { ...sharedPayload, commission_percent: commissionPercent, payout_days: payoutDays },
+      { ...sharedPayload, comission_percent: commissionPercent, payout_days: payoutDays },
       { ...sharedPayload, commission_percent: commissionPercent, dia_repasse: diaRepasse },
       { ...sharedPayload, comission_percent: commissionPercent, dia_repasse: diaRepasse },
       { ...sharedPayload, commission_percent: commissionPercent },
@@ -929,6 +956,7 @@ export default function AdminRebuildPage() {
         return {
           error: null,
           omittedDiaRepasse: !Object.prototype.hasOwnProperty.call(payload, "dia_repasse"),
+          omittedPayoutDays: !Object.prototype.hasOwnProperty.call(payload, "payout_days"),
         };
       }
 
@@ -936,7 +964,7 @@ export default function AdminRebuildPage() {
       if (!isSchemaToleranceError(result.error)) break;
     }
 
-    return { error: lastError, omittedDiaRepasse: false };
+    return { error: lastError, omittedDiaRepasse: false, omittedPayoutDays: false };
   }
 
   async function createCompany(e: FormEvent) {
@@ -945,6 +973,7 @@ export default function AdminRebuildPage() {
     const name = companyName.trim();
     const pct = Number(companyPct.replace(",", "."));
     const diaRepasse = parseRepasseDayInput(companyRepasseDay);
+    const payoutDays = parsePayoutDaysInput(companyPayoutDays);
 
     if (!name) {
       setToastType("warning");
@@ -961,15 +990,21 @@ export default function AdminRebuildPage() {
       return setMessage("Informe um dia de repasse valido entre 1 e 31.");
     }
 
+    if (Number.isNaN(payoutDays)) {
+      setToastType("warning");
+      return setMessage("Informe um prazo de repasse valido em dias (0 ou mais).");
+    }
+
     if (companies.some((company) => normalizeConfigText(company.name) === normalizeConfigText(name))) {
       setToastType("warning");
       return setMessage(`A empresa "${name}" ja existe.`);
     }
 
-    const { error, omittedDiaRepasse } = await persistCompanyRecord({
+    const { error, omittedDiaRepasse, omittedPayoutDays } = await persistCompanyRecord({
       name,
       commissionPercent: Number(pct.toFixed(3)),
       diaRepasse,
+      payoutDays,
       active: true,
     });
 
@@ -981,10 +1016,11 @@ export default function AdminRebuildPage() {
     setCompanyName("");
     setCompanyPct("6");
     setCompanyRepasseDay("");
+    setCompanyPayoutDays("0");
     setToastType("success");
     setMessage(
-      omittedDiaRepasse && diaRepasse !== null
-        ? "Empresa cadastrada com sucesso! Aplique a migration de dia de repasse para persistir esse campo no banco atual."
+      (omittedDiaRepasse && diaRepasse !== null) || (omittedPayoutDays && payoutDays !== 0)
+        ? "Empresa cadastrada com sucesso! Aplique a migration de prazo/dia de repasse para persistir todos os campos financeiros no banco atual."
         : "Empresa cadastrada com sucesso!"
     );
     await refreshData();
@@ -1418,6 +1454,7 @@ export default function AdminRebuildPage() {
     setEditingCompanyName(c.name);
     setEditingCompanyPct(getCompanyPct(c).toString());
     setEditingCompanyRepasseDay(c.dia_repasse ? String(c.dia_repasse) : "");
+    setEditingCompanyPayoutDays(String(c.payout_days ?? 0));
   }
   async function saveEditCompany() {
     if (!editingCompanyId) return;
@@ -1425,6 +1462,7 @@ export default function AdminRebuildPage() {
     const nextName = editingCompanyName.trim();
     const nextPct = Number(editingCompanyPct.replace(",", "."));
     const nextDiaRepasse = parseRepasseDayInput(editingCompanyRepasseDay);
+    const nextPayoutDays = parsePayoutDaysInput(editingCompanyPayoutDays);
 
     if (!nextName) {
       setToastType("warning");
@@ -1441,6 +1479,11 @@ export default function AdminRebuildPage() {
       return setMessage("Informe um dia de repasse valido entre 1 e 31.");
     }
 
+    if (Number.isNaN(nextPayoutDays)) {
+      setToastType("warning");
+      return setMessage("Informe um prazo de repasse valido em dias (0 ou mais).");
+    }
+
     const alreadyExists = companies.some(
       (company) => company.id !== editingCompanyId && normalizeConfigText(company.name) === normalizeConfigText(nextName)
     );
@@ -1450,11 +1493,12 @@ export default function AdminRebuildPage() {
       return setMessage(`A empresa "${nextName}" ja existe.`);
     }
 
-    const { error, omittedDiaRepasse } = await persistCompanyRecord({
+    const { error, omittedDiaRepasse, omittedPayoutDays } = await persistCompanyRecord({
       companyId: editingCompanyId,
       name: nextName,
       commissionPercent: Number(nextPct.toFixed(3)),
       diaRepasse: nextDiaRepasse,
+      payoutDays: nextPayoutDays,
     });
 
     if (error) {
@@ -1466,11 +1510,12 @@ export default function AdminRebuildPage() {
     setEditingCompanyName("");
     setEditingCompanyPct("");
     setEditingCompanyRepasseDay("");
+    setEditingCompanyPayoutDays("0");
     await refreshData();
     setToastType("success");
     setMessage(
-      omittedDiaRepasse && nextDiaRepasse !== null
-        ? "Empresa atualizada! Aplique a migration de dia de repasse para persistir esse campo no banco atual."
+      (omittedDiaRepasse && nextDiaRepasse !== null) || (omittedPayoutDays && nextPayoutDays !== 0)
+        ? "Empresa atualizada! Aplique a migration de prazo/dia de repasse para persistir todos os campos financeiros no banco atual."
         : "Empresa atualizada!"
     );
   }
@@ -1479,6 +1524,7 @@ export default function AdminRebuildPage() {
     setEditingCompanyName("");
     setEditingCompanyPct("");
     setEditingCompanyRepasseDay("");
+    setEditingCompanyPayoutDays("0");
   }
 
   function startEditBooth(b: Booth) {
@@ -1531,6 +1577,7 @@ export default function AdminRebuildPage() {
       { key: "amount", label: "Faturamento Bruto" },
       { key: "central", label: "Taxa Retida (Central)" },
       { key: "repasse", label: "Repasse Liquido" },
+      { key: "payoutDays", label: "Prazo de Repasse (dias)" },
     ]);
   }
 
@@ -1704,6 +1751,7 @@ export default function AdminRebuildPage() {
             companyName={companyName}
             companyPct={companyPct}
             companyRepasseDay={companyRepasseDay}
+            companyPayoutDays={companyPayoutDays}
             boothCode={boothCode}
             boothName={boothName}
             boothSearch={boothSearch}
@@ -1713,18 +1761,21 @@ export default function AdminRebuildPage() {
             editingCompanyName={editingCompanyName}
             editingCompanyPct={editingCompanyPct}
             editingCompanyRepasseDay={editingCompanyRepasseDay}
+            editingCompanyPayoutDays={editingCompanyPayoutDays}
             editingBoothId={editingBoothId}
             editingBoothCode={editingBoothCode}
             editingBoothName={editingBoothName}
             onCompanyNameChange={(e) => setCompanyName(e.target.value)}
             onCompanyPctChange={(e) => setCompanyPct(e.target.value)}
             onCompanyRepasseDayChange={(e) => setCompanyRepasseDay(e.target.value)}
+            onCompanyPayoutDaysChange={(e) => setCompanyPayoutDays(e.target.value)}
             onBoothCodeChange={(e) => setBoothCode(e.target.value)}
             onBoothNameChange={(e) => setBoothName(e.target.value)}
             onBoothSearchChange={(e) => setBoothSearch(e.target.value)}
             onEditingCompanyNameChange={(e) => setEditingCompanyName(e.target.value)}
             onEditingCompanyPctChange={(e) => setEditingCompanyPct(e.target.value)}
             onEditingCompanyRepasseDayChange={(e) => setEditingCompanyRepasseDay(e.target.value)}
+            onEditingCompanyPayoutDaysChange={(e) => setEditingCompanyPayoutDays(e.target.value)}
             onEditingBoothCodeChange={(e) => setEditingBoothCode(e.target.value)}
             onEditingBoothNameChange={(e) => setEditingBoothName(e.target.value)}
             onCreateCompany={createCompany}

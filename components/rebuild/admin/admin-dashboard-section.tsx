@@ -42,6 +42,7 @@ type RepassesCompanyRow = {
   amount: number;
   central: number;
   repasse: number;
+  payoutDays: number;
 };
 
 type ShiftRow = {
@@ -80,6 +81,11 @@ type TopCompanyDatum = {
   faturamento: number;
   repasse: number;
 };
+
+function formatPayoutDeadline(days: number | null | undefined) {
+  const safeDays = typeof days === "number" && Number.isFinite(days) && days >= 0 ? Math.trunc(days) : 0;
+  return `D+${safeDays}`;
+}
 
 type AdminDashboardSectionProps = {
   isLoading: boolean;
@@ -390,7 +396,7 @@ export function AdminDashboardSection({
 
       <Card>
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-foreground">Consolidado por Viacao</h3>
+          <h3 className="text-base font-semibold text-foreground">Acerto Contabil por Viacao</h3>
         </div>
         <DataTable
           columns={[
@@ -398,6 +404,7 @@ export function AdminDashboardSection({
             { key: "faturamento", header: "Faturamento Bruto", render: (v) => formatCurrency(v.amount) },
             { key: "central", header: "Taxa Retida", render: (v) => <span className="font-semibold text-emerald-600">{formatCurrency(v.central)}</span> },
             { key: "repasse", header: "Repasse Liquido", render: (v) => <span className="font-semibold text-amber-600">{formatCurrency(v.repasse)}</span> },
+            { key: "prazo", header: "Prazo", render: (v) => <span className="font-semibold text-cyan-300">{formatPayoutDeadline(v.payoutDays)}</span> },
           ]}
           rows={repassesComputed.viacoes}
           emptyMessage="Nenhum faturamento registrado no periodo."
