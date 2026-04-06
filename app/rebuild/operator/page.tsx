@@ -49,6 +49,15 @@ function parseMoneyInput(value: string): number {
   return Number(value.replace(",", ".")) || 0;
 }
 
+function hasNativeInputFocus(element: EventTarget | null) {
+  if (typeof document === "undefined") return false;
+  const activeElement = element as HTMLElement | null;
+  if (!activeElement || activeElement === document.body) return false;
+
+  const tagName = activeElement.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || activeElement.isContentEditable;
+}
+
 export default function OperatorRebuildPage() {
   const router = useRouter();
   const [userId, setUserId]             = useState<string|null>(null);
@@ -403,6 +412,10 @@ export default function OperatorRebuildPage() {
     setPdvResetOnNextDigit(false);
   }
 
+  function pdvHandleNumber(key: string) {
+    pdvDigit(key);
+  }
+
   function pdvClear() {
     setPdvDisplay("0");
     setPdvBoardingTaxState("");
@@ -421,6 +434,10 @@ export default function OperatorRebuildPage() {
     }
 
     setPdvDisplay((prev) => (prev.length > 1 ? prev.slice(0, -1) : "0"));
+  }
+
+  function pdvHandleBackspace() {
+    pdvBackspace();
   }
 
   function pdvSetOperation(operation: "+" | "-") {
@@ -747,6 +764,69 @@ export default function OperatorRebuildPage() {
   const pendingReceiptTxs = useMemo(()=>txs.filter(t=>(t.payment_method==="credit"||t.payment_method==="debit")&&t.receipt_count===0),[txs]);
   const operatorBlocked = operatorActive===false;
 
+  useEffect(() => {
+    if (!isMounted) return;
+
+    function handleGlobalPdvKeydown(event: KeyboardEvent) {
+      const isPdvSection = section === "caixa-pdv" || section === "nova-venda";
+      if (!isPdvSection || !shift || operatorBlocked || showPdvConfirm || showCashModal || showCloseModal || showChat || showTaxaConfig) {
+        return;
+      }
+
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (hasNativeInputFocus(document.activeElement)) return;
+
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        pdvHandleNumber(event.key);
+        return;
+      }
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        pdvHandleBackspace();
+        return;
+      }
+
+      if (event.key === "." || event.key === ",") {
+        event.preventDefault();
+        pdvHandleNumber(".");
+        return;
+      }
+
+      if (event.key === "Enter") {
+        if (parseMoneyInput(pdvDisplay) > 0) {
+          event.preventDefault();
+          pdvOpenConfirm();
+        }
+        return;
+      }
+
+      if (event.key === "Escape" || event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        pdvClear();
+      }
+    }
+
+    window.addEventListener("keydown", handleGlobalPdvKeydown);
+    return () => window.removeEventListener("keydown", handleGlobalPdvKeydown);
+  }, [
+    isMounted,
+    operatorBlocked,
+    pdvClear,
+    pdvDisplay,
+    pdvHandleBackspace,
+    pdvHandleNumber,
+    pdvOpenConfirm,
+    section,
+    shift,
+    showCashModal,
+    showChat,
+    showCloseModal,
+    showPdvConfirm,
+    showTaxaConfig,
+  ]);
+
   const show = (s: string) => section === s;
 
   return (
@@ -899,12 +979,12 @@ export default function OperatorRebuildPage() {
                         key={key}
                         onClick={() => {
                           if (key === "C") pdvClear();
-                          else if (key === "<") pdvBackspace();
+                          else if (key === "<") pdvHandleBackspace();
                           else if (key === "+") pdvSetOperation("+");
                           else if (key === "-") pdvSetOperation("-");
                           else if (key === "=") pdvResolveCurrentValue();
                           else if (key === "OK") pdvOpenConfirm();
-                          else pdvDigit(key);
+                          else pdvHandleNumber(key);
                         }}
                         disabled={!shift || operatorBlocked}
                         className={`py-4 rounded-lg font-bold text-xl transition-all disabled:opacity-50 ${
