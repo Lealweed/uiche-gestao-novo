@@ -4,10 +4,36 @@
 create extension if not exists pgcrypto;
 
 -- Enums
-create type public.app_role as enum ('admin', 'operator');
-create type public.payment_method as enum ('pix', 'credit', 'debit', 'cash');
-create type public.shift_status as enum ('open', 'closed');
-create type public.tx_status as enum ('posted', 'voided');
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'app_role') then
+    create type public.app_role as enum ('admin', 'tenant_admin', 'financeiro', 'operator');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'payment_method') then
+    create type public.payment_method as enum ('pix', 'credit', 'debit', 'cash');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'shift_status') then
+    create type public.shift_status as enum ('open', 'closed');
+  end if;
+
+  if not exists (select 1 from pg_type where typname = 'tx_status') then
+    create type public.tx_status as enum ('posted', 'voided');
+  end if;
+end $$;
+
+create table if not exists public.tenants (
+  id uuid primary key default gen_random_uuid(),
+  slug text not null unique,
+  name text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+insert into public.tenants (slug, name)
+select 'default', 'Tenant Padrão'
+where not exists (select 1 from public.tenants where slug = 'default');
 
 -- Core tables
 create table if not exists public.profiles (
@@ -179,6 +205,52 @@ create table if not exists public.shift_cash_closings (
 create index if not exists shift_cash_closings_shift_idx on public.shift_cash_closings(shift_id);
 create index if not exists shift_cash_closings_booth_idx on public.shift_cash_closings(booth_id);
 create index if not exists shift_cash_closings_user_idx on public.shift_cash_closings(user_id);
+
+-- Compatibilidade SaaS / recovery-safe
+do $$
+begin
+  if exists (select 1 from pg_type where typname = 'app_role') then
+    begin alter type public.app_role add value if not exists 'tenant_admin'; exception when duplicate_object then null; end;
+    begin alter type public.app_role add value if not exists 'financeiro'; exception when duplicate_object then null; end;
+  end if;
+end $$;
+
+alter table if exists public.profiles add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.booths add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.operator_booths add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.companies add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.companies add column if not exists payout_days integer not null default 0;
+alter table if exists public.clients add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.shifts add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.transactions add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.transactions add column if not exists boarding_tax_state numeric(12,2) not null default 0;
+alter table if exists public.transactions add column if not exists boarding_tax_federal numeric(12,2) not null default 0;
+alter table if exists public.transaction_receipts add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.adjustment_requests add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.audit_logs add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.time_punches add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.cash_movements add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.shift_cash_closings add column if not exists tenant_id uuid references public.tenants(id);
+
+update public.profiles set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.booths set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.operator_booths set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.companies set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.clients set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.shifts set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.transactions set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.transaction_receipts set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.adjustment_requests set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.audit_logs set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.time_punches set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.cash_movements set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+update public.shift_cash_closings set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
+
+create index if not exists idx_profiles_tenant on public.profiles(tenant_id);
+create index if not exists idx_booths_tenant on public.booths(tenant_id);
+create index if not exists idx_companies_tenant on public.companies(tenant_id);
+create index if not exists idx_shifts_tenant on public.shifts(tenant_id);
+create index if not exists idx_transactions_tenant on public.transactions(tenant_id);
 
 -- Helper functions
 create or replace function public.is_admin(check_user_id uuid)
@@ -587,6 +659,7 @@ grant execute on function public.close_shift(uuid, text, text) to authenticated;
 -- ===== Block 1: Categories / Subcategories =====
 create table if not exists public.transaction_categories (
   id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id),
   name text not null unique,
   active boolean not null default true,
   created_at timestamptz not null default now()
@@ -594,6 +667,7 @@ create table if not exists public.transaction_categories (
 
 create table if not exists public.transaction_subcategories (
   id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references public.tenants(id),
   category_id uuid not null references public.transaction_categories(id) on delete cascade,
   name text not null,
   active boolean not null default true,
@@ -606,6 +680,8 @@ alter table public.transactions add column if not exists subcategory_id uuid ref
 
 create index if not exists transactions_category_idx on public.transactions(category_id);
 create index if not exists transactions_subcategory_idx on public.transactions(subcategory_id);
+create index if not exists transaction_categories_tenant_idx on public.transaction_categories(tenant_id);
+create index if not exists transaction_subcategories_tenant_idx on public.transaction_subcategories(tenant_id);
 
 alter table public.transaction_categories enable row level security;
 alter table public.transaction_subcategories enable row level security;
@@ -625,3 +701,108 @@ for select using (auth.uid() is not null);
 drop policy if exists tx_subcategories_admin_write on public.transaction_subcategories;
 create policy tx_subcategories_admin_write on public.transaction_subcategories
 for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+-- ===== Block 2: Attendance / Boarding taxes / Chat =====
+create table if not exists public.user_attendance (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(user_id) on delete cascade,
+  clock_in timestamptz not null default now(),
+  clock_out timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_attendance_user_date on public.user_attendance(user_id, clock_in desc);
+alter table public.user_attendance enable row level security;
+
+drop policy if exists user_attendance_self_insert on public.user_attendance;
+create policy user_attendance_self_insert on public.user_attendance
+for insert with check (auth.uid() = user_id);
+
+drop policy if exists user_attendance_self_update on public.user_attendance;
+create policy user_attendance_self_update on public.user_attendance
+for update using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+drop policy if exists user_attendance_self_or_admin_select on public.user_attendance;
+create policy user_attendance_self_or_admin_select on public.user_attendance
+for select using (user_id = auth.uid() or public.can_read_admin_data(auth.uid()));
+
+create table if not exists public.boarding_taxes (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  amount numeric(12,2) not null check (amount >= 0),
+  tax_type text not null check (tax_type in ('estadual', 'federal')),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (name, tax_type)
+);
+
+create index if not exists boarding_taxes_active_idx on public.boarding_taxes(active);
+create index if not exists boarding_taxes_type_idx on public.boarding_taxes(tax_type);
+alter table public.boarding_taxes enable row level security;
+
+insert into public.boarding_taxes (name, amount, tax_type, active)
+values
+  ('Goiania', 8.50, 'estadual', true),
+  ('Belem', 12.00, 'estadual', true)
+on conflict (name, tax_type) do nothing;
+
+drop policy if exists boarding_taxes_select_active_or_admin on public.boarding_taxes;
+create policy boarding_taxes_select_active_or_admin on public.boarding_taxes
+for select using (active = true or public.can_read_admin_data(auth.uid()));
+
+drop policy if exists boarding_taxes_admin_insert on public.boarding_taxes;
+create policy boarding_taxes_admin_insert on public.boarding_taxes
+for insert with check (public.is_admin(auth.uid()));
+
+drop policy if exists boarding_taxes_admin_update on public.boarding_taxes;
+create policy boarding_taxes_admin_update on public.boarding_taxes
+for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+
+create table if not exists public.operator_messages (
+  id uuid primary key default gen_random_uuid(),
+  operator_id uuid not null references public.profiles(user_id) on delete cascade,
+  booth_id uuid references public.booths(id) on delete set null,
+  sender_role text not null default 'operator' check (sender_role in ('operator', 'admin', 'tenant_admin', 'financeiro')),
+  message text not null check (char_length(trim(message)) between 1 and 2000),
+  read boolean not null default false,
+  read_at timestamptz,
+  read_by uuid references public.profiles(user_id),
+  attachment_path text,
+  attachment_name text,
+  attachment_type text,
+  attachment_size bigint,
+  created_at timestamptz not null default now()
+);
+
+alter table if exists public.operator_messages add column if not exists booth_id uuid references public.booths(id) on delete set null;
+alter table if exists public.operator_messages add column if not exists sender_role text not null default 'operator';
+alter table if exists public.operator_messages add column if not exists read_at timestamptz;
+alter table if exists public.operator_messages add column if not exists read_by uuid references public.profiles(user_id);
+alter table if exists public.operator_messages add column if not exists attachment_path text;
+alter table if exists public.operator_messages add column if not exists attachment_name text;
+alter table if exists public.operator_messages add column if not exists attachment_type text;
+alter table if exists public.operator_messages add column if not exists attachment_size bigint;
+
+create index if not exists idx_operator_messages_operator_id on public.operator_messages(operator_id);
+create index if not exists idx_operator_messages_booth_id on public.operator_messages(booth_id);
+create index if not exists idx_operator_messages_read on public.operator_messages(read);
+create index if not exists idx_operator_messages_created_at on public.operator_messages(created_at desc);
+create index if not exists idx_operator_messages_conversation on public.operator_messages(operator_id, booth_id, created_at desc);
+alter table public.operator_messages enable row level security;
+
+drop policy if exists operator_messages_select_self_or_admin on public.operator_messages;
+create policy operator_messages_select_self_or_admin on public.operator_messages
+for select using (operator_id = auth.uid() or public.can_read_admin_data(auth.uid()));
+
+drop policy if exists operator_messages_insert_self_or_admin on public.operator_messages;
+create policy operator_messages_insert_self_or_admin on public.operator_messages
+for insert with check (
+  (operator_id = auth.uid() and sender_role = 'operator')
+  or (public.can_read_admin_data(auth.uid()) and sender_role in ('admin', 'tenant_admin', 'financeiro'))
+);
+
+drop policy if exists operator_messages_update_self_or_admin on public.operator_messages;
+create policy operator_messages_update_self_or_admin on public.operator_messages
+for update using (operator_id = auth.uid() or public.can_read_admin_data(auth.uid()))
+with check (operator_id = auth.uid() or public.can_read_admin_data(auth.uid()));

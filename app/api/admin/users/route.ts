@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { canAccessAdminArea, canManageUsers, type AppRole } from "@/lib/rbac";
+import { isSchemaToleranceError } from "@/lib/schema-tolerance";
 
 type CreateUserBody = {
   name?: string;
@@ -57,11 +58,29 @@ async function resolveRequester(req: Request, access: "read" | "manage" = "manag
   }
 
   const requesterId = authUserData.user.id;
-  const { data: requesterProfile, error: requesterProfileError } = await authClient
+
+  let requesterProfile: { role?: string | null; tenant_id?: string | null } | null = null;
+  let requesterProfileError: { message?: string; code?: string } | null = null;
+
+  const requesterWithTenant = await authClient
     .from("profiles")
     .select("role,tenant_id")
     .eq("user_id", requesterId)
-    .single();
+    .maybeSingle();
+
+  requesterProfile = requesterWithTenant.data;
+  requesterProfileError = requesterWithTenant.error;
+
+  if (requesterProfileError && isSchemaToleranceError(requesterProfileError)) {
+    const fallbackRequester = await authClient
+      .from("profiles")
+      .select("role")
+      .eq("user_id", requesterId)
+      .maybeSingle();
+
+    requesterProfile = fallbackRequester.data ? { ...fallbackRequester.data, tenant_id: null } : null;
+    requesterProfileError = fallbackRequester.error;
+  }
 
   if (requesterProfileError || !requesterProfile) {
     return { error: NextResponse.json({ error: "Perfil do solicitante não encontrado." }, { status: 403 }) };
@@ -92,15 +111,32 @@ export async function GET(req: Request) {
     });
 
     const isRootAdmin = String(requester.requesterProfile.role) === "admin";
+    const requesterTenantId = requester.requesterProfile.tenant_id ?? null;
+
     let profilesQuery = adminClient
       .from("profiles")
       .select("user_id,full_name,cpf,address,phone,avatar_url,role,active,tenant_id");
 
-    if (!isRootAdmin && requester.requesterProfile.tenant_id) {
-      profilesQuery = profilesQuery.eq("tenant_id", requester.requesterProfile.tenant_id);
+    if (!isRootAdmin && requesterTenantId) {
+      profilesQuery = profilesQuery.eq("tenant_id", requesterTenantId);
     }
 
-    const { data: profileRows, error: profileError } = await profilesQuery.order("full_name");
+    let { data: profileRows, error: profileError } = await profilesQuery.order("full_name");
+
+    if (profileError && isSchemaToleranceError(profileError)) {
+      let fallbackProfilesQuery = adminClient
+        .from("profiles")
+        .select("user_id,full_name,cpf,address,phone,avatar_url,role,active");
+
+      if (!isRootAdmin && requesterTenantId) {
+        fallbackProfilesQuery = fallbackProfilesQuery.eq("user_id", requester.requesterId);
+      }
+
+      const fallbackProfiles = await fallbackProfilesQuery.order("full_name");
+      profileRows = (fallbackProfiles.data ?? []).map((row) => ({ ...row, tenant_id: requesterTenantId }));
+      profileError = fallbackProfiles.error;
+    }
+
     if (profileError) {
       return NextResponse.json({ error: `Falha ao carregar perfis: ${profileError.message}` }, { status: 400 });
     }
@@ -207,13 +243,25 @@ export async function POST(req: Request) {
     }
 
     const newUserId = createdAuth.user.id;
-    const { error: profileError } = await adminClient.from("profiles").upsert({
+    const profilePayload = {
       user_id: newUserId,
       full_name: name,
       role,
       active,
       tenant_id: requesterProfile.tenant_id || null,
-    });
+    };
+
+    let { error: profileError } = await adminClient.from("profiles").upsert(profilePayload);
+
+    if (profileError && isSchemaToleranceError(profileError)) {
+      const fallbackProfile = await adminClient.from("profiles").upsert({
+        user_id: newUserId,
+        full_name: name,
+        role,
+        active,
+      });
+      profileError = fallbackProfile.error;
+    }
 
     if (profileError) {
       return NextResponse.json({ error: `Usuário criado no Auth, mas falhou ao salvar perfil: ${profileError.message}` }, { status: 400 });
