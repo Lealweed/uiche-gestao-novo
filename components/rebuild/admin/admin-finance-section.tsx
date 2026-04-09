@@ -74,12 +74,44 @@ type FinanceByBoothRow = {
   closingCount: number;
 };
 
+type ReportTxRow = {
+  id: string;
+  booth_id?: string | null;
+  amount: number;
+  sold_at?: string;
+  payment_method?: string | null;
+  boarding_tax_state?: number | null;
+  boarding_tax_federal?: number | null;
+  profiles?: { full_name: string } | { full_name: string }[] | null;
+  booths?: { code: string; name: string } | { code: string; name: string }[] | null;
+  companies?: { name: string } | { name: string }[] | null;
+};
+
+type GroupedFinanceByBoothRow = FinanceByBoothRow & {
+  operatorLabel: string;
+};
+
+type ConsolidatedFinanceRow = {
+  id: string;
+  createdAt: string;
+  recordType: string;
+  boothLabel: string;
+  operatorName: string;
+  detail: string;
+  amountValue: number;
+  cashImpactValue: number;
+  statusLabel: string;
+  statusVariant: "success" | "warning" | "danger" | "neutral" | "info" | "secondary" | "primary";
+  note: string;
+};
+
 type AdminFinanceSectionProps = {
   dateFrom: string;
   dateTo: string;
   cashMovementTotals: CashMovementTotals;
   cashClosingTotals: CashClosingTotals;
   financeByBooth: FinanceByBoothRow[];
+  reportTxs: ReportTxRow[];
   cashMovementRows: CashMovementRow[];
   shiftCashClosingRows: ShiftCashClosingRow[];
   responsavelConferencia: string;
@@ -134,6 +166,7 @@ export function AdminFinanceSection({
   cashMovementTotals,
   cashClosingTotals,
   financeByBooth,
+  reportTxs,
   cashMovementRows,
   shiftCashClosingRows,
   responsavelConferencia,
@@ -164,19 +197,134 @@ export function AdminFinanceSection({
       ? "Declarado acima do esperado"
       : "Declarado abaixo do esperado";
 
+  const groupedFinanceByBooth = useMemo<GroupedFinanceByBoothRow[]>(() => {
+    const summaryMap = new Map<
+      string,
+      GroupedFinanceByBoothRow & {
+        operatorSet: Set<string>;
+      }
+    >();
+
+    const ensureSummary = (
+      boothId?: string | null,
+      boothValue?: { code: string; name: string } | { code: string; name: string }[] | null,
+    ) => {
+      const normalizedBoothId = boothId ?? "sem-guiche";
+      if (!summaryMap.has(normalizedBoothId)) {
+        const booth = boothOf(boothValue ?? null);
+        const boothLabel = booth ? `${booth.code} - ${booth.name}` : "Sem guiche";
+
+        summaryMap.set(normalizedBoothId, {
+          boothId: normalizedBoothId,
+          boothLabel,
+          operatorLabel: "Operacao do periodo",
+          operatorSet: new Set<string>(),
+          grossSales: 0,
+          txCount: 0,
+          pixSales: 0,
+          creditSales: 0,
+          debitSales: 0,
+          cashSales: 0,
+          suprimento: 0,
+          sangria: 0,
+          ajuste: 0,
+          saldo: 0,
+          expected: 0,
+          declared: 0,
+          difference: 0,
+          stateTaxCount: 0,
+          stateTaxValue: 0,
+          federalTaxCount: 0,
+          federalTaxValue: 0,
+          movementCount: 0,
+          closingCount: 0,
+        });
+      }
+
+      return summaryMap.get(normalizedBoothId)!;
+    };
+
+    for (const tx of reportTxs) {
+      const row = ensureSummary(tx.booth_id, tx.booths ?? null);
+      const amount = Number(tx.amount || 0);
+      const paymentMethod = (tx.payment_method ?? "").toLowerCase();
+      const operatorName = nameOf(tx.profiles ?? null);
+
+      row.grossSales += amount;
+      row.txCount += 1;
+      if (paymentMethod === "pix") row.pixSales += amount;
+      else if (paymentMethod === "credit") row.creditSales += amount;
+      else if (paymentMethod === "debit") row.debitSales += amount;
+      else if (paymentMethod === "cash") row.cashSales += amount;
+
+      const stateTax = Number(tx.boarding_tax_state || 0);
+      const federalTax = Number(tx.boarding_tax_federal || 0);
+      if (stateTax > 0) {
+        row.stateTaxCount += 1;
+        row.stateTaxValue += stateTax;
+      }
+      if (federalTax > 0) {
+        row.federalTaxCount += 1;
+        row.federalTaxValue += federalTax;
+      }
+      if (operatorName && operatorName !== "-") row.operatorSet.add(operatorName);
+    }
+
+    for (const movement of cashMovementRows) {
+      const row = ensureSummary(movement.booth_id, movement.booths ?? null);
+      const amount = Number(movement.amount || 0);
+      const operatorName = nameOf(movement.profiles ?? null);
+
+      if (movement.movement_type === "suprimento") row.suprimento += amount;
+      else if (movement.movement_type === "sangria") row.sangria += amount;
+      else row.ajuste += amount;
+
+      row.movementCount += 1;
+      if (operatorName && operatorName !== "-") row.operatorSet.add(operatorName);
+    }
+
+    for (const closing of shiftCashClosingRows) {
+      const row = ensureSummary(closing.booth_id, closing.booths ?? null);
+      const operatorName = nameOf(closing.profiles ?? null);
+      row.expected += Number(closing.expected_cash || 0);
+      row.declared += Number(closing.declared_cash || 0);
+      row.difference += Number(closing.difference || 0);
+      row.closingCount += 1;
+      if (operatorName && operatorName !== "-") row.operatorSet.add(operatorName);
+    }
+
+    return Array.from(summaryMap.values())
+      .map(({ operatorSet, ...row }) => ({
+        ...row,
+        operatorLabel: Array.from(operatorSet).slice(0, 2).join(" • ") || "Operacao do periodo",
+        saldo: row.cashSales + row.suprimento - row.sangria + row.ajuste,
+      }))
+      .sort((a, b) => Number(b.grossSales || 0) - Number(a.grossSales || 0));
+  }, [cashMovementRows, reportTxs, shiftCashClosingRows]);
+
+  const normalizedFinanceByBooth = useMemo<GroupedFinanceByBoothRow[]>(
+    () => (groupedFinanceByBooth.length ? groupedFinanceByBooth : financeByBooth.map((row) => ({ ...row, operatorLabel: "Operacao do periodo" }))),
+    [financeByBooth, groupedFinanceByBooth]
+  );
+
   const boothOptions = useMemo(
-    () => financeByBooth.filter((row) => row.boothId !== "sem-guiche"),
-    [financeByBooth]
+    () => normalizedFinanceByBooth.filter((row) => row.boothId !== "sem-guiche"),
+    [normalizedFinanceByBooth]
   );
 
   const visibleFinanceByBooth = useMemo(
-    () => selectedBoothId === "all" ? financeByBooth : financeByBooth.filter((row) => row.boothId === selectedBoothId),
-    [financeByBooth, selectedBoothId]
+    () => selectedBoothId === "all" ? normalizedFinanceByBooth : normalizedFinanceByBooth.filter((row) => row.boothId === selectedBoothId),
+    [normalizedFinanceByBooth, selectedBoothId]
   );
 
   const selectedBoothSummary = useMemo(
-    () => selectedBoothId === "all" ? null : financeByBooth.find((row) => row.boothId === selectedBoothId) ?? null,
-    [financeByBooth, selectedBoothId]
+    () => selectedBoothId === "all" ? null : normalizedFinanceByBooth.find((row) => row.boothId === selectedBoothId) ?? null,
+    [normalizedFinanceByBooth, selectedBoothId]
+  );
+
+  const filteredReportTxs = useMemo(
+    () => selectedBoothId === "all" ? reportTxs : reportTxs.filter((row) => (row.booth_id ?? "sem-guiche") === selectedBoothId),
+    [reportTxs, selectedBoothId]
   );
 
   const financeSnapshot = useMemo(
@@ -261,6 +409,95 @@ export function AdminFinanceSection({
     [selectedBoothId, shiftCashClosingRows]
   );
 
+  const consolidatedFinanceRows = useMemo<ConsolidatedFinanceRow[]>(() => {
+    const txRows = filteredReportTxs.map((tx) => {
+      const booth = boothOf(tx.booths ?? null);
+      const boothLabel = booth ? `${booth.code} - ${booth.name}` : "Sem guiche";
+      const operatorName = nameOf(tx.profiles ?? null) ?? "-";
+      const paymentMethod = (tx.payment_method ?? "-").toLowerCase();
+      const paymentLabel = paymentMethod === "cash"
+        ? "Dinheiro"
+        : paymentMethod === "pix"
+          ? "PIX"
+          : paymentMethod === "credit"
+            ? "Credito"
+            : paymentMethod === "debit"
+              ? "Debito"
+              : "Venda";
+      const statusVariant: ConsolidatedFinanceRow["statusVariant"] = paymentMethod === "cash"
+        ? "success"
+        : paymentMethod === "pix"
+          ? "primary"
+          : "secondary";
+      const companyName = tx.companies && !Array.isArray(tx.companies) ? tx.companies.name : "Venda consolidada";
+      const amountValue = Number(tx.amount || 0);
+
+      return {
+        id: `tx-${tx.id}`,
+        createdAt: tx.sold_at ?? new Date().toISOString(),
+        recordType: "Venda",
+        boothLabel,
+        operatorName,
+        detail: `${companyName} · ${paymentLabel}`,
+        amountValue,
+        cashImpactValue: paymentMethod === "cash" ? amountValue : 0,
+        statusLabel: paymentLabel,
+        statusVariant,
+        note: `Taxas: ${formatCurrency(Number(tx.boarding_tax_state || 0) + Number(tx.boarding_tax_federal || 0))}`,
+      };
+    });
+
+    const movementRows = filteredCashMovementRows.map((row) => {
+      const booth = boothOf(row.booths ?? null);
+      const boothLabel = booth ? `${booth.code} - ${booth.name}` : "Sem guiche";
+      const operatorName = nameOf(row.profiles ?? null) ?? "-";
+      const amountValue = Number(row.amount || 0);
+      const isWithdrawal = row.movement_type === "sangria";
+      const statusVariant: ConsolidatedFinanceRow["statusVariant"] = row.movement_type === "suprimento" ? "success" : row.movement_type === "sangria" ? "warning" : "info";
+      const statusLabel = row.movement_type === "suprimento" ? "Suprimento" : row.movement_type === "sangria" ? "Sangria" : "Ajuste";
+
+      return {
+        id: `cash-${row.id}`,
+        createdAt: row.created_at,
+        recordType: statusLabel,
+        boothLabel,
+        operatorName,
+        detail: row.note ?? "Movimento operacional do caixa",
+        amountValue,
+        cashImpactValue: isWithdrawal ? -amountValue : amountValue,
+        statusLabel,
+        statusVariant,
+        note: row.note ?? "Sem observacao",
+      };
+    });
+
+    const closingRows = filteredShiftCashClosingRows.map((row) => {
+      const booth = boothOf(row.booths ?? null);
+      const boothLabel = booth ? `${booth.code} - ${booth.name}` : "Sem guiche";
+      const operatorName = nameOf(row.profiles ?? null) ?? "-";
+      const difference = Number(row.difference || 0);
+      const diffStatus = getDifferenceStatus(difference);
+
+      return {
+        id: `closing-${row.id}`,
+        createdAt: row.created_at,
+        recordType: "Fechamento",
+        boothLabel,
+        operatorName,
+        detail: `Esperado ${formatCurrency(Number(row.expected_cash || 0))} · Declarado ${formatCurrency(Number(row.declared_cash || 0))}`,
+        amountValue: Number(row.declared_cash || 0),
+        cashImpactValue: difference,
+        statusLabel: diffStatus.label,
+        statusVariant: diffStatus.variant,
+        note: row.note ?? "Sem observacao",
+      };
+    });
+
+    return [...txRows, ...movementRows, ...closingRows].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [filteredCashMovementRows, filteredReportTxs, filteredShiftCashClosingRows]);
+
   const boothDetailLabel = selectedBoothSummary?.boothLabel ?? "Todos os guiches";
   const reportGeneratedAt = new Date().toLocaleString("pt-BR");
   const reportReference = selectedBoothId === "all" ? `FIN-GERAL-${visibleFinanceByBooth.length}` : `FIN-${selectedBoothId.slice(0, 8).toUpperCase()}`;
@@ -325,7 +562,7 @@ export function AdminFinanceSection({
         tipo_registro: "resumo_guiche",
         guiche: row.boothLabel,
         data: "",
-        operador: "",
+        operador: row.operatorLabel,
         vendas: row.txCount,
         faturamento_bruto: row.grossSales,
         pix: row.pixSales,
@@ -353,6 +590,42 @@ export function AdminFinanceSection({
         data_assinatura: signatureDateLabel,
         observacoes_finais: observacoesFinais,
         observacao: `Ranking ${row.rank}`,
+      })),
+      ...filteredReportTxs.map((tx) => ({
+        tipo_registro: "transacao",
+        guiche: (() => {
+          const booth = boothOf(tx.booths ?? null);
+          return booth ? `${booth.code} - ${booth.name}` : "-";
+        })(),
+        data: tx.sold_at ? new Date(tx.sold_at).toLocaleString("pt-BR") : "-",
+        operador: nameOf(tx.profiles ?? null) ?? "-",
+        vendas: 1,
+        faturamento_bruto: Number(tx.amount || 0),
+        pix: (tx.payment_method ?? "").toLowerCase() === "pix" ? Number(tx.amount || 0) : "",
+        credito: (tx.payment_method ?? "").toLowerCase() === "credit" ? Number(tx.amount || 0) : "",
+        debito: (tx.payment_method ?? "").toLowerCase() === "debit" ? Number(tx.amount || 0) : "",
+        dinheiro: (tx.payment_method ?? "").toLowerCase() === "cash" ? Number(tx.amount || 0) : "",
+        suprimento: "",
+        sangria: "",
+        ajuste: "",
+        taxa_estadual_qtd: Number(tx.boarding_tax_state || 0) > 0 ? 1 : "",
+        taxa_estadual_valor: Number(tx.boarding_tax_state || 0) || "",
+        taxa_federal_qtd: Number(tx.boarding_tax_federal || 0) > 0 ? 1 : "",
+        taxa_federal_valor: Number(tx.boarding_tax_federal || 0) || "",
+        taxas_totais: Number(tx.boarding_tax_state || 0) + Number(tx.boarding_tax_federal || 0),
+        ticket_medio: Number(tx.amount || 0),
+        participacao_percentual: "",
+        caixa_estimado: (tx.payment_method ?? "").toLowerCase() === "cash" ? Number(tx.amount || 0) : "",
+        esperado: "",
+        declarado: "",
+        diferenca: "",
+        conferencia: (tx.payment_method ?? "").toUpperCase() || "VENDA",
+        total_movimentos: "",
+        total_fechamentos: "",
+        responsavel_conferencia: responsavelConferencia,
+        data_assinatura: signatureDateLabel,
+        observacoes_finais: observacoesFinais,
+        observacao: tx.companies && !Array.isArray(tx.companies) ? tx.companies.name : "Venda consolidada",
       })),
       ...filteredCashMovementRows.map((row) => ({
         tipo_registro: "movimento_caixa",
@@ -534,17 +807,23 @@ export function AdminFinanceSection({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
+          label="Total geral do periodo"
+          value={formatCurrency(financeSnapshot.grossSales)}
+          icon={<TrendingUp className="h-5 w-5" />}
+          delta={`${financeSnapshot.txCount} venda(s) consolidadas`}
+          deltaType="positive"
+        />
+        <StatCard
           label="Vendas em dinheiro"
           value={formatCurrency(cashMovementTotals.cashSales)}
           icon={<Wallet className="h-5 w-5" />}
-          delta="Base dos turnos no periodo"
+          delta="Base do caixa no periodo"
           deltaType="neutral"
         />
-        <StatCard label="Suprimento" value={formatCurrency(cashMovementTotals.suprimento)} icon={<ArrowUpRight className="h-5 w-5" />} deltaType="positive" />
-        <StatCard label="Sangria" value={formatCurrency(cashMovementTotals.sangria)} icon={<ArrowDownRight className="h-5 w-5" />} deltaType="negative" />
-        <StatCard label="Ajuste" value={formatCurrency(cashMovementTotals.ajuste)} icon={<RefreshCw className="h-5 w-5" />} />
+        <StatCard label="Suprimentos" value={formatCurrency(cashMovementTotals.suprimento)} icon={<ArrowUpRight className="h-5 w-5" />} deltaType="positive" />
+        <StatCard label="Sangrias" value={formatCurrency(cashMovementTotals.sangria)} icon={<ArrowDownRight className="h-5 w-5" />} deltaType="negative" />
         <StatCard
-          label="Caixa estimado"
+          label="Caixa estimado (gaveta)"
           value={formatCurrency(cashMovementTotals.saldo)}
           icon={<Wallet className="h-5 w-5" />}
           delta="Dinheiro + suprimentos - sangrias +/- ajustes"
@@ -552,7 +831,7 @@ export function AdminFinanceSection({
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Esperado (fechamentos)" value={formatCurrency(cashClosingTotals.expected)} />
         <StatCard label="Declarado" value={formatCurrency(cashClosingTotals.declared)} />
         <StatCard
@@ -561,87 +840,85 @@ export function AdminFinanceSection({
           delta={closingDifferenceDelta}
           deltaType={cashClosingTotals.difference === 0 ? "positive" : cashClosingTotals.difference < 0 ? "negative" : "neutral"}
         />
+        <StatCard
+          label="Ticket medio"
+          value={formatCurrency(averageTicket)}
+          delta={`${filteredReportTxs.length} transacao(oes) filtradas`}
+          deltaType="neutral"
+        />
       </div>
 
-      <Card>
+      <Card className="border border-border/70 bg-gradient-to-br from-slate-950 via-card to-card">
         <SectionHeader
-          title={selectedBoothId === "all" ? "Resumo Completo por Guiche" : `Resumo Completo · ${boothDetailLabel}`}
-          subtitle="Visualize faturamento bruto, formas de pagamento e taxas de embarque geradas no periodo selecionado."
+          title={selectedBoothId === "all" ? "Cards unificados por guiche" : `Painel unificado · ${boothDetailLabel}`}
+          subtitle={selectedBoothId === "all" ? "Cada card consolida vendas, caixa e movimentacoes do periodo por guiche." : "Visao completa do guiche selecionado com foco operacional e de conferencia."}
           className="mb-4"
         />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label="Faturamento bruto"
-            value={formatCurrency(financeSnapshot.grossSales)}
-            icon={<Wallet className="h-5 w-5" />}
-            delta={`${financeSnapshot.txCount} venda(s)`}
-            deltaType="neutral"
-          />
-          <StatCard
-            label="Taxas estaduais"
-            value={formatCurrency(financeSnapshot.stateTaxValue)}
-            delta={`${financeSnapshot.stateTaxCount} gerada(s)`}
-            deltaType="neutral"
-          />
-          <StatCard
-            label="Taxas federais"
-            value={formatCurrency(financeSnapshot.federalTaxValue)}
-            delta={`${financeSnapshot.federalTaxCount} gerada(s)`}
-            deltaType="neutral"
-          />
-          <StatCard
-            label="Divergencia de caixa"
-            value={formatCurrency(financeSnapshot.difference)}
-            delta={financeSnapshot.difference === 0 ? "Conferido" : financeSnapshot.difference > 0 ? "Sobra" : "Falta"}
-            deltaType={financeSnapshot.difference === 0 ? "positive" : financeSnapshot.difference > 0 ? "neutral" : "negative"}
-          />
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Badge variant="secondary">{selectedBoothId === "all" ? `${visibleFinanceByBooth.length} guiche(s) com movimento` : boothDetailLabel}</Badge>
+          <Badge variant="secondary">Taxas totais {formatCurrency(totalTaxValue)}</Badge>
+          <Badge variant={overallDifferenceStatus.variant}>{overallDifferenceStatus.label}</Badge>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs text-muted">PIX</p>
-            <p className="text-lg font-semibold text-foreground">{formatCurrency(financeSnapshot.pixSales)}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs text-muted">Credito</p>
-            <p className="text-lg font-semibold text-foreground">{formatCurrency(financeSnapshot.creditSales)}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs text-muted">Debito</p>
-            <p className="text-lg font-semibold text-foreground">{formatCurrency(financeSnapshot.debitSales)}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/30 p-3">
-            <p className="text-xs text-muted">Dinheiro</p>
-            <p className="text-lg font-semibold text-foreground">{formatCurrency(financeSnapshot.cashSales)}</p>
-          </div>
-        </div>
-      </Card>
+        {visibleFinanceByBooth.length === 0 ? (
+          <p className="text-sm text-muted">Nenhum guiche com movimentacao no periodo informado.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {visibleFinanceByBooth.map((row) => {
+              const boothStatus = getDifferenceStatus(Number(row.difference || 0));
 
-        {selectedBoothSummary && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              label={`Dinheiro · ${selectedBoothSummary.boothLabel}`}
-              value={formatCurrency(selectedBoothSummary.cashSales)}
-              icon={<Wallet className="h-5 w-5" />}
-              delta={`${selectedBoothSummary.movementCount} movimento(s) de caixa`}
-              deltaType="neutral"
-            />
-            <StatCard
-              label="Caixa estimado do guiche"
-              value={formatCurrency(selectedBoothSummary.saldo)}
-              icon={<Building2 className="h-5 w-5" />}
-              delta={`${selectedBoothSummary.closingCount} fechamento(s)`}
-              deltaType={selectedBoothSummary.saldo >= 0 ? "positive" : "negative"}
-            />
-            <StatCard label="Esperado do guiche" value={formatCurrency(selectedBoothSummary.expected)} />
-            <StatCard
-              label="Diferenca do guiche"
-              value={formatCurrency(selectedBoothSummary.difference)}
-              delta={selectedBoothSummary.difference === 0 ? "Conferido" : selectedBoothSummary.difference > 0 ? "Sobra" : "Falta"}
-              deltaType={selectedBoothSummary.difference === 0 ? "positive" : selectedBoothSummary.difference > 0 ? "neutral" : "negative"}
-            />
+              return (
+                <div key={row.boothId} className="rounded-2xl border border-border/70 bg-[hsl(var(--card-elevated))] p-4 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.85)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-primary/80">Guiche operacional</p>
+                      <h3 className="mt-1 text-base font-semibold text-foreground">{row.boothLabel}</h3>
+                      <p className="mt-1 text-xs text-muted">{row.operatorLabel}</p>
+                    </div>
+                    <Badge variant={boothStatus.variant}>{boothStatus.label}</Badge>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border border-border bg-background/60 p-3">
+                      <p className="text-[10px] uppercase tracking-widest text-muted">Vendas totais</p>
+                      <p className="mt-1 text-lg font-semibold text-foreground">{formatCurrency(row.grossSales)}</p>
+                      <p className="text-xs text-muted">{row.txCount} venda(s)</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/60 p-3">
+                      <p className="text-[10px] uppercase tracking-widest text-muted">Dinheiro</p>
+                      <p className="mt-1 text-lg font-semibold text-emerald-400">{formatCurrency(row.cashSales)}</p>
+                      <p className="text-xs text-muted">Base da gaveta</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/60 p-3">
+                      <p className="text-[10px] uppercase tracking-widest text-muted">Suprimentos</p>
+                      <p className="mt-1 text-lg font-semibold text-cyan-300">{formatCurrency(row.suprimento)}</p>
+                    </div>
+                    <div className="rounded-lg border border-border bg-background/60 p-3">
+                      <p className="text-[10px] uppercase tracking-widest text-muted">Sangrias</p>
+                      <p className="mt-1 text-lg font-semibold text-amber-300">{formatCurrency(row.sangria)}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-widest text-muted">Caixa estimado (gaveta)</p>
+                        <p className="mt-1 text-xl font-bold text-foreground">{formatCurrency(row.saldo)}</p>
+                      </div>
+                      <div className="text-right text-xs text-muted">
+                        <p>Esp. {formatCurrency(row.expected)}</p>
+                        <p>Dec. {formatCurrency(row.declared)}</p>
+                      </div>
+                    </div>
+                    <p className={`mt-2 text-xs ${boothStatus.textClass}`}>Diferenca {formatCurrency(Number(row.difference || 0))}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
+      </Card>
       </div>
 
       <Card className="hidden print:block print:border-slate-300 print:bg-white print:shadow-none">
@@ -680,12 +957,12 @@ export function AdminFinanceSection({
 
       <Card className="print:border-slate-300 print:bg-white print:shadow-none">
         <SectionHeader
-          title="Relatorio detalhado pronto para emissao"
-          subtitle={selectedBoothId === "all" ? "Consolidado mais limpo para auditoria, conferencia e exportacao por guiche." : `Emissao financeira completa de ${boothDetailLabel}, com leitura executiva e operacional.`}
+          title="Tabela consolidada do periodo"
+          subtitle={selectedBoothId === "all" ? "Transacoes, movimentos de caixa e fechamentos reunidos em uma unica leitura operacional." : `Fluxo consolidado de ${boothDetailLabel} para conferencia e impressao.`}
           className="mb-4"
         />
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.05fr_0.95fr]">
           <div className="rounded-xl border border-border bg-gradient-to-br from-primary/5 via-card to-card p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="secondary">{selectedBoothId === "all" ? "Consolidado geral" : "Guiche selecionado"}</Badge>
@@ -694,12 +971,8 @@ export function AdminFinanceSection({
 
             <div className="mt-3 flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-foreground">
-                  {selectedBoothId === "all" ? "Relatorio executivo do periodo" : `Relatorio executivo · ${boothDetailLabel}`}
-                </h3>
-                <p className="mt-1 text-sm text-muted">
-                  Estrutura ajustada para o administrativo validar faturamento, mix de pagamentos, taxas e conferencia de caixa com mais rapidez.
-                </p>
+                <h3 className="text-lg font-semibold text-foreground">Resumo gerencial do periodo</h3>
+                <p className="mt-1 text-sm text-muted">Leitura unificada para faturamento, caixa e conferencia final.</p>
                 <p className="mt-2 text-sm text-foreground print:text-black">{reportSummaryText}</p>
               </div>
               <FileText className="h-5 w-5 text-primary" />
@@ -722,7 +995,7 @@ export function AdminFinanceSection({
               <div className="rounded-lg border border-border bg-background/80 p-3">
                 <p className="text-xs text-muted">Conferencia operacional</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{filteredShiftCashClosingRows.length} fechamento(s)</p>
-                <p className="text-xs text-muted">{filteredCashMovementRows.length} movimento(s) no caixa</p>
+                <p className="text-xs text-muted">{filteredCashMovementRows.length} movimento(s) + {filteredReportTxs.length} venda(s)</p>
               </div>
             </div>
           </div>
@@ -746,197 +1019,67 @@ export function AdminFinanceSection({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
-          <div className="rounded-xl border border-border bg-muted/20 p-3">
-            <p className="text-xs text-muted">Maior faturamento do recorte</p>
-            <p className="mt-1 text-base font-semibold text-foreground">{bestBooth?.boothLabel ?? boothDetailLabel}</p>
-            <p className="text-sm text-muted">{formatCurrency(bestBooth?.grossSales ?? financeSnapshot.grossSales)}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-muted/20 p-3">
-            <p className="text-xs text-muted">Participacao da lideranca</p>
-            <p className="mt-1 text-base font-semibold text-foreground">{bestBooth ? formatPercent(bestBooth.share) : "0,0%"}</p>
-            <p className="text-sm text-muted">{bestBooth ? `${bestBooth.txCount} venda(s)` : "Sem vendas no periodo"}</p>
-          </div>
-          <div className="rounded-xl border border-border bg-muted/20 p-3">
-            <p className="text-xs text-muted">Status do caixa</p>
-            <div className="mt-1">
-              <Badge variant={overallDifferenceStatus.variant}>{overallDifferenceStatus.label}</Badge>
-            </div>
-            <p className="mt-2 text-sm text-muted">{closingDifferenceDelta}</p>
-          </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Badge variant="secondary">{consolidatedFinanceRows.length} registro(s) consolidados</Badge>
+          <Badge variant="secondary">Melhor desempenho: {bestBooth?.boothLabel ?? boothDetailLabel}</Badge>
+          <Badge variant={overallDifferenceStatus.variant}>{closingDifferenceDelta}</Badge>
         </div>
 
         <div className="mt-4">
           <DataTable
             columns={[
-              { key: "rank", header: "#", render: (row) => <span className="font-semibold">{row.rank}</span> },
+              {
+                key: "data",
+                header: "Data / hora",
+                render: (row) => new Date(row.createdAt).toLocaleString("pt-BR"),
+              },
+              {
+                key: "tipo",
+                header: "Tipo",
+                render: (row) => <Badge variant={row.statusVariant}>{row.recordType}</Badge>,
+              },
               {
                 key: "guiche",
-                header: "Guiche",
+                header: "Guiche / operador",
                 render: (row) => (
                   <div>
                     <p className="font-semibold text-foreground">{row.boothLabel}</p>
-                    <p className="text-xs text-muted">{row.txCount} venda(s)</p>
+                    <p className="text-xs text-muted">{row.operatorName}</p>
                   </div>
                 ),
               },
               {
-                key: "participacao",
-                header: "Participacao",
+                key: "detalhe",
+                header: "Detalhamento",
                 render: (row) => (
                   <div>
-                    <p className="font-semibold text-foreground">{formatPercent(row.share)}</p>
-                    <p className="text-xs text-muted">do bruto do periodo</p>
+                    <p className="font-medium text-foreground">{row.detail}</p>
+                    <p className="text-xs text-muted">{row.note}</p>
                   </div>
                 ),
               },
               {
-                key: "faturamento",
-                header: "Faturamento e ticket",
-                render: (row) => (
-                  <div>
-                    <p className="font-semibold text-foreground">{formatCurrency(row.grossSales)}</p>
-                    <p className="text-xs text-muted">Ticket medio {formatCurrency(row.avgTicket)}</p>
-                  </div>
-                ),
-              },
-              {
-                key: "pagamentos",
-                header: "Pagamentos",
-                render: (row) => (
-                  <div className="space-y-1 text-xs text-muted">
-                    <p>PIX {formatCurrency(row.pixSales)}</p>
-                    <p>Credito {formatCurrency(row.creditSales)}</p>
-                    <p>Debito {formatCurrency(row.debitSales)}</p>
-                    <p>Dinheiro {formatCurrency(row.cashSales)}</p>
-                  </div>
-                ),
-              },
-              {
-                key: "taxas",
-                header: "Taxas geradas",
-                render: (row) => (
-                  <div>
-                    <p className="font-semibold text-foreground">{formatCurrency(row.totalTaxes)}</p>
-                    <p className="text-xs text-muted">Est. {row.stateTaxCount} / Fed. {row.federalTaxCount}</p>
-                  </div>
-                ),
+                key: "valor",
+                header: "Valor",
+                render: (row) => <span className="font-semibold text-foreground">{formatCurrency(row.amountValue)}</span>,
               },
               {
                 key: "caixa",
-                header: "Caixa e fechamento",
+                header: "Impacto no caixa",
                 render: (row) => (
                   <div>
-                    <p className="font-semibold text-foreground">Saldo {formatCurrency(row.saldo)}</p>
-                    <p className="text-xs text-muted">Esp. {formatCurrency(row.expected)} / Dec. {formatCurrency(row.declared)}</p>
-                  </div>
-                ),
-              },
-              {
-                key: "status",
-                header: "Status",
-                render: (row) => (
-                  <div className="space-y-1">
-                    <Badge variant={row.conference.variant}>{row.conference.label}</Badge>
-                    <p className={`text-xs ${row.conference.textClass}`}>{formatCurrency(Number(row.difference || 0))}</p>
-                  </div>
-                ),
-              },
-              {
-                key: "operacao",
-                header: "Operacao",
-                render: (row) => (
-                  <div className="text-xs text-muted">
-                    <p>{row.movementCount} mov.</p>
-                    <p>{row.closingCount} fechamento(s)</p>
+                    <p className={`font-semibold ${row.cashImpactValue === 0 ? "text-foreground" : row.cashImpactValue > 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                      {formatCurrency(row.cashImpactValue)}
+                    </p>
+                    <p className="text-xs text-muted">{row.statusLabel}</p>
                   </div>
                 ),
               },
             ]}
-            rows={rankedFinanceByBooth}
-            emptyMessage="Nenhum guiche com dados financeiros no periodo informado."
+            rows={consolidatedFinanceRows}
+            emptyMessage="Nenhum registro financeiro consolidado no periodo informado."
           />
         </div>
-      </Card>
-
-      <Card className="print:border-slate-300 print:bg-white print:shadow-none">
-        <SectionHeader title="Movimentos de Caixa" subtitle={`${filteredCashMovementRows.length} registro(s) em ${boothDetailLabel}`} className="mb-4" />
-        <DataTable
-          columns={[
-            { key: "data", header: "Data", render: (row) => new Date(row.created_at).toLocaleString("pt-BR") },
-            { key: "operador", header: "Operador", render: (row) => nameOf(row.profiles) ?? "-" },
-            {
-              key: "guiche",
-              header: "Guiche",
-              render: (row) => {
-                const booth = boothOf(row.booths);
-                return booth ? `${booth.code} - ${booth.name}` : "-";
-              },
-            },
-            {
-              key: "tipo",
-              header: "Tipo",
-              render: (row) => {
-                const tone = row.movement_type === "suprimento" ? "success" : row.movement_type === "sangria" ? "warning" : "info";
-                const label = row.movement_type === "suprimento" ? "Suprimento" : row.movement_type === "sangria" ? "Sangria" : "Ajuste";
-                return <Badge variant={tone}>{label}</Badge>;
-              },
-            },
-            { key: "valor", header: "Valor", render: (row) => <span className="font-semibold">{formatCurrency(Number(row.amount))}</span> },
-            { key: "obs", header: "Obs", render: (row) => row.note ?? "-" },
-          ]}
-          rows={filteredCashMovementRows}
-          emptyMessage="Nenhum movimento de caixa no periodo informado para o guiche selecionado."
-        />
-      </Card>
-
-      <Card className="print:border-slate-300 print:bg-white print:shadow-none">
-        <SectionHeader title="Fechamento de Caixa por Turno" subtitle={`${filteredShiftCashClosingRows.length} fechamento(s) em ${boothDetailLabel}`} className="mb-4" />
-        <DataTable
-          columns={[
-            { key: "data", header: "Data", render: (row) => new Date(row.created_at).toLocaleString("pt-BR") },
-            { key: "operador", header: "Operador", render: (row) => nameOf(row.profiles) ?? "-" },
-            {
-              key: "guiche",
-              header: "Guiche",
-              render: (row) => {
-                const booth = boothOf(row.booths);
-                return booth ? `${booth.code} - ${booth.name}` : "-";
-              },
-            },
-            { key: "esperado", header: "Esperado", render: (row) => formatCurrency(Number(row.expected_cash)) },
-            { key: "declarado", header: "Declarado", render: (row) => formatCurrency(Number(row.declared_cash)) },
-            {
-              key: "diferenca",
-              header: "Diferenca",
-              render: (row) => {
-                const diff = Number(row.difference);
-                return (
-                  <span className={diff === 0 ? "text-emerald-600" : diff > 0 ? "font-semibold text-amber-600" : "font-semibold text-red-600"}>
-                    {formatCurrency(diff)}
-                  </span>
-                );
-              },
-            },
-            {
-              key: "conferencia",
-              header: "Conferencia",
-              render: (row) => {
-                const diff = Number(row.difference);
-                return diff === 0 ? (
-                  <Badge variant="success">Conferido</Badge>
-                ) : diff > 0 ? (
-                  <Badge variant="warning">Sobra</Badge>
-                ) : (
-                  <Badge variant="danger">Falta</Badge>
-                );
-              },
-            },
-            { key: "obs", header: "Obs", render: (row) => row.note ?? "-" },
-          ]}
-          rows={filteredShiftCashClosingRows}
-          emptyMessage="Nenhum fechamento de caixa no periodo informado para o guiche selecionado."
-        />
       </Card>
 
       <Card className="print:break-inside-avoid print:border-slate-300 print:bg-white print:shadow-none">

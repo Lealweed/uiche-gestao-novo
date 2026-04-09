@@ -1860,6 +1860,7 @@ export default function AdminRebuildPage() {
             cashMovementTotals={cashMovementTotals}
             cashClosingTotals={cashClosingTotals}
             financeByBooth={financeByBooth}
+            reportTxs={reportTxs}
             cashMovementRows={cashMovementRows}
             shiftCashClosingRows={shiftCashClosingRows}
             responsavelConferencia={responsavelConferencia}
