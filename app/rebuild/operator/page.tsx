@@ -21,7 +21,7 @@ const supabase = createClient();
 type Option     = { id: string; name: string; commission_percent?: number | null; comission_percent?: number | null };
 type Category   = { id: string; name: string };
 type Subcategory= { id: string; name: string; category_id: string };
-type Shift      = { id: string; booth_id: string; status: "open" | "closed" };
+type Shift      = { id: string; booth_id: string; status: "open" | "closed"; opened_at?: string; notes?: string | null };
 type Tx = { id: string; amount: number; payment_method: "pix"|"credit"|"debit"|"cash"; sold_at: string; ticket_reference: string|null; note: string|null; company_id: string|null; company_name: string; receipt_count: number; boarding_tax_state: number; boarding_tax_federal: number };
 type BoothLink  = { booth_id: string; booth_name: string };
 type Punch      = { id: string; punch_type: "entrada"|"saida"|"pausa_inicio"|"pausa_fim"; punched_at: string; note: string|null };
@@ -88,11 +88,22 @@ export default function OperatorRebuildPage() {
   const [boardingTaxState, setBoardingTaxState]     = useState("");
   const [boardingTaxFederal, setBoardingTaxFederal] = useState("");
 
+  const [showOpenShiftModal, setShowOpenShiftModal] = useState(false);
+  const [openingCash, setOpeningCash] = useState("0");
+  const [openingNote, setOpeningNote] = useState("");
+  const [isOpeningShift, setIsOpeningShift] = useState(false);
+
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeDeclared, setCloseDeclared] = useState("");
   const [closeObs, setCloseObs] = useState("");
   const [expectedCashVal, setExpectedCashVal] = useState(0);
   const [isClosing, setIsClosing] = useState(false);
+  const [closeChecklist, setCloseChecklist] = useState({
+    vendas: false,
+    movimentos: false,
+    caixa: false,
+    comprovantes: false,
+  });
   const [lastCloseResult, setLastCloseResult] = useState<LastCloseResult | null>(null);
   
   const [showCashModal, setShowCashModal] = useState(false);
@@ -193,7 +204,7 @@ export default function OperatorRebuildPage() {
         supabase.from("transaction_categories").select("id,name").eq("active",true).order("name"),
         supabase.from("transaction_subcategories").select("id,name,category_id").eq("active",true).order("name"),
         supabase.from("boarding_taxes").select("id,name,amount,tax_type,active").eq("active",true).order("tax_type").order("name"),
-        supabase.from("shifts").select("id,booth_id,status").eq("operator_id",uid).eq("status","open").maybeSingle(),
+        supabase.from("shifts").select("id,booth_id,status,opened_at,notes").eq("operator_id",uid).eq("status","open").maybeSingle(),
         supabase.from("booths").select("id,name").eq("active",true),
       ]);
 
@@ -212,7 +223,12 @@ export default function OperatorRebuildPage() {
       if (cats[0]) { setCategoryId(cats[0].id); const first=subs.find(s=>s.category_id===cats[0].id); setSubcategoryId(first?.id??""); }
 
       const sData = shiftRes.data as Shift|null;
-      if (sData) { setShift(sData); await loadTxs(sData.id); await loadCashMovements(sData.id); }
+      if (sData) {
+        setShift(sData);
+        setBoothId(sData.booth_id);
+        await loadTxs(sData.id);
+        await loadCashMovements(sData.id);
+      }
       await loadPunches(uid);
       if (!sData && bData?.[0]) setBoothId((bData[0] as {booth_id:string}).booth_id);
 
@@ -364,12 +380,70 @@ export default function OperatorRebuildPage() {
 
   async function openShift() {
     if (!boothId) return setMessage("Selecione um guiche.");
-    const { data, error } = await supabase.rpc("open_shift",{p_booth_id:boothId});
-    if (error) return setMessage(`Erro: ${error.message}`);
-    await logAction("OPEN_SHIFT","shifts",(data as Shift).id,{booth_id:boothId});
-    setLastCloseResult(null);
-    setShift(data as Shift); setMessage("Turno aberto.");
-    await loadTxs((data as Shift).id); await loadCashMovements((data as Shift).id);
+    setOpeningCash("0");
+    setOpeningNote("");
+    setShowOpenShiftModal(true);
+  }
+
+  async function confirmOpenShift() {
+    if (!boothId || !userId) return setMessage("Selecione um guiche.");
+    const parsedOpeningCash = parseMoneyInput(openingCash);
+    if (openingCash.trim() === "" || Number.isNaN(parsedOpeningCash) || parsedOpeningCash < 0) {
+      return setMessage("Informe um valor valido para o caixa inicial.");
+    }
+
+    setIsOpeningShift(true);
+    try {
+      const { data, error } = await supabase.rpc("open_shift", { p_booth_id: boothId, p_ip: null });
+      if (error) return setMessage(`Erro: ${error.message}`);
+
+      const createdShift = data as Shift;
+      const noteValue = openingNote.trim();
+      const openingCashValue = Number(parsedOpeningCash.toFixed(2));
+
+      if (noteValue) {
+        const { error: shiftNoteError } = await supabase
+          .from("shifts")
+          .update({ notes: `Abertura: ${noteValue}` })
+          .eq("id", createdShift.id)
+          .eq("operator_id", userId);
+
+        if (shiftNoteError && !isSchemaToleranceError(shiftNoteError)) {
+          console.warn("Falha ao salvar observacao de abertura:", shiftNoteError.message);
+        }
+      }
+
+      if (openingCashValue > 0) {
+        const { error: openingCashError } = await supabase.from("cash_movements").insert({
+          shift_id: createdShift.id,
+          booth_id: createdShift.booth_id,
+          user_id: userId,
+          movement_type: "suprimento",
+          amount: openingCashValue,
+          note: noteValue ? `Caixa inicial - ${noteValue}` : "Caixa inicial",
+        });
+
+        if (openingCashError) {
+          setMessage(`Turno aberto, mas houve falha ao registrar o caixa inicial: ${openingCashError.message}`);
+        }
+      }
+
+      await logAction("OPEN_SHIFT", "shifts", createdShift.id, {
+        booth_id: boothId,
+        opening_cash: openingCashValue,
+        opening_note: noteValue || null,
+      });
+
+      setLastCloseResult(null);
+      setShift(createdShift);
+      setBoothId(createdShift.booth_id);
+      setShowOpenShiftModal(false);
+      setMessage(openingCashValue > 0 ? "Turno aberto e caixa inicial registrado." : "Turno aberto.");
+      await loadTxs(createdShift.id);
+      await loadCashMovements(createdShift.id);
+    } finally {
+      setIsOpeningShift(false);
+    }
   }
 
   async function openCloseShiftModal() {
@@ -379,6 +453,7 @@ export default function OperatorRebuildPage() {
     setExpectedCashVal(Number(cashTotals.saldo.toFixed(2)));
     setCloseDeclared("");
     setCloseObs("");
+    setCloseChecklist({ vendas: false, movimentos: false, caixa: false, comprovantes: false });
     setShowCloseModal(true);
   }
 
@@ -388,16 +463,40 @@ export default function OperatorRebuildPage() {
     try {
       const declaredCash = Number(closeDeclared.replace(",","."));
       if (Number.isNaN(declaredCash) || declaredCash < 0) { setMessage("Informe um valor contado valido."); return; }
+      if (!Object.values(closeChecklist).every(Boolean)) {
+        setMessage("Confirme todo o checklist antes de concluir o fechamento do turno.");
+        return;
+      }
+
       const difference = Number((declaredCash-expectedCashVal).toFixed(2));
-      const obs = closeObs.trim() || null;
+      if (difference !== 0 && !closeObs.trim()) {
+        setMessage("Descreva a divergencia no campo de observacoes para concluir o fechamento.");
+        return;
+      }
+
+      const obs = closeObs.trim();
       const normalizedExpected = Number(expectedCashVal.toFixed(2));
       const normalizedDeclared = Number(declaredCash.toFixed(2));
-      const { error: saveClosingError } = await supabase.from("shift_cash_closings").upsert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, expected_cash:normalizedExpected, declared_cash:normalizedDeclared, difference, note:obs });
+      const closingSummary = [
+        obs || null,
+        `Checklist ok: vendas, movimentos, caixa fisico e comprovantes conferidos.`,
+        `Resumo -> dinheiro ${totals.cash.toFixed(2)}, suprimento ${cashTotals.suprimento.toFixed(2)}, sangria ${cashTotals.sangria.toFixed(2)}, ajuste ${cashTotals.ajuste.toFixed(2)}.`,
+      ].filter(Boolean).join(" | ");
+
+      const { error: saveClosingError } = await supabase.from("shift_cash_closings").upsert({
+        shift_id:shift.id,
+        booth_id:shift.booth_id,
+        user_id:userId,
+        expected_cash:normalizedExpected,
+        declared_cash:normalizedDeclared,
+        difference,
+        note:closingSummary || null,
+      });
       if (saveClosingError) { setMessage(`Erro ao registrar fechamento: ${saveClosingError.message}`); return; }
-      const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_notes:obs});
+      const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_ip:null,p_notes:closingSummary || null});
       if (error) { setMessage(`Erro: ${error.message}`); return; }
-      await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCashVal,declared_cash:declaredCash,difference});
-      setLastCloseResult({ expectedCash: normalizedExpected, declaredCash: normalizedDeclared, difference, note: obs, closedAt: new Date().toISOString() });
+      await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCashVal,declared_cash:declaredCash,difference,checklist_confirmed:true,shift_duration_label:shiftDurationLabel});
+      setLastCloseResult({ expectedCash: normalizedExpected, declaredCash: normalizedDeclared, difference, note: closingSummary || null, closedAt: new Date().toISOString() });
       setShift(null); setTxs([]); setCashMovements([]); setShowCloseModal(false); setSection("resumo"); setMessage(`Fechamento concluido. Resultado: ${difference === 0 ? "caixa conferido" : difference > 0 ? `sobra de ${formatCurrency(difference)}` : `falta de ${formatCurrency(Math.abs(difference))}`}.`);
     } finally {
       setIsClosing(false);
@@ -890,7 +989,27 @@ export default function OperatorRebuildPage() {
       : closeDifferencePreview > 0
         ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
         : "border-rose-500/30 bg-rose-500/10 text-rose-400";
+  const closeChecklistComplete = Object.values(closeChecklist).every(Boolean);
   const recentCashMovements = useMemo(() => cashMovements.slice(0, 4), [cashMovements]);
+  const openingCashRegistered = useMemo(() => {
+    const openingMovement = cashMovements.find(
+      (movement) => movement.movement_type === "suprimento" && (movement.note ?? "").toLowerCase().includes("caixa inicial"),
+    );
+    return Number(openingMovement?.amount ?? 0);
+  }, [cashMovements]);
+  const shiftDurationLabel = useMemo(() => {
+    if (!shift?.opened_at) return "Sem turno ativo";
+    const diffMs = Math.max(0, Date.now() - new Date(shift.opened_at).getTime());
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours <= 0) return `${Math.max(1, minutes)} min`;
+    return `${hours}h ${minutes.toString().padStart(2, "0")}min`;
+  }, [shift]);
+  const shiftNeedsAttention = useMemo(() => {
+    if (!shift?.opened_at) return false;
+    return Date.now() - new Date(shift.opened_at).getTime() >= 10 * 60 * 60 * 1000;
+  }, [shift]);
   const pdvBaseAmount = useMemo(() => parseMoneyInput(pdvDisplay), [pdvDisplay]);
   const pdvTaxStateValue = useMemo(() => parseMoneyInput(pdvBoardingTaxState), [pdvBoardingTaxState]);
   const pdvTaxFederalValue = useMemo(() => parseMoneyInput(pdvBoardingTaxFederal), [pdvBoardingTaxFederal]);
@@ -984,6 +1103,10 @@ export default function OperatorRebuildPage() {
           lastCloseResult={lastCloseResult}
           unreadChatCount={unreadChatCount}
           isMounted={isMounted}
+          shiftDurationLabel={shiftDurationLabel}
+          shiftNeedsAttention={shiftNeedsAttention}
+          openingCash={openingCashRegistered}
+          pendingReceiptCount={pendingReceiptTxs.length}
           onBoothChange={setBoothId}
           onOpenShift={openShift}
           onOpenCloseShiftModal={openCloseShiftModal}
@@ -1513,6 +1636,55 @@ export default function OperatorRebuildPage() {
         </div>
       )}
 
+      {/* Modal Abertura */}
+      {showOpenShiftModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-xl">
+            <div className="mb-4 border-b border-border pb-4">
+              <h2 className="text-lg font-bold text-foreground">Abertura de Turno</h2>
+              <p className="text-sm text-muted">
+                Informe o caixa inicial do guiche {booths.find((item) => item.booth_id === boothId)?.booth_name ?? "selecionado"} para iniciar a operacao com rastreabilidade.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <Input
+                label="Caixa inicial (R$)"
+                value={openingCash}
+                onChange={(e) => setOpeningCash(e.target.value)}
+                autoFocus
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0,00"
+                hint="O valor sera registrado automaticamente como suprimento inicial do turno."
+              />
+              <Input
+                label="Observacao inicial (opcional)"
+                value={openingNote}
+                onChange={(e) => setOpeningNote(e.target.value)}
+                placeholder="Ex.: troco inicial, caixa recebido do plantao anterior"
+              />
+              <div className="rounded-lg border border-info/20 bg-info/10 p-3 text-sm text-info">
+                Essa abertura ajuda na conferencia do fechamento, nos alertas do turno e na auditoria do caixa.
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
+              <p className="text-xs text-muted">A operacao so comeca apos registrar o valor inicial do caixa.</p>
+              <div className="flex gap-3 justify-end">
+                <Button type="button" variant="ghost" onClick={() => setShowOpenShiftModal(false)}>
+                  Cancelar
+                </Button>
+                <Button type="button" variant="success" onClick={confirmOpenShift} disabled={isOpeningShift || openingCash.trim() === ""}>
+                  {isOpeningShift ? "Abrindo turno..." : "Confirmar abertura do turno"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* Modal Fechamento */}
       {showCloseModal && shift && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -1528,6 +1700,12 @@ export default function OperatorRebuildPage() {
             </div>
 
             <div className="space-y-5">
+              {shiftNeedsAttention && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-200">
+                  Atenção: este turno já está aberto há <strong>{shiftDurationLabel}</strong>. Revise a conferência com ainda mais cuidado.
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-lg border border-success/20 bg-success/10 p-4">
                   <p className="text-xs uppercase tracking-wide text-muted">Total esperado em caixa</p>
@@ -1570,6 +1748,19 @@ export default function OperatorRebuildPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted">Tempo do turno</p>
+                  <p className={`mt-1 text-xl font-bold ${shiftNeedsAttention ? "text-amber-300" : "text-foreground"}`}>{shiftDurationLabel}</p>
+                  <p className="text-xs text-muted">Ajuda a identificar plantões longos e pendências de fechamento.</p>
+                </div>
+                <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted">Caixa inicial registrado</p>
+                  <p className="mt-1 text-xl font-bold text-foreground">{formatCurrency(openingCashRegistered)}</p>
+                  <p className="text-xs text-muted">Registrado automaticamente como suprimento ao abrir o turno.</p>
+                </div>
+              </div>
+
               <div>
                 <p className="mb-2 text-xs uppercase tracking-wider text-muted">Movimentos de caixa relevantes</p>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -1607,6 +1798,41 @@ export default function OperatorRebuildPage() {
                 )}
               </div>
 
+              <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
+                <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Checklist obrigatório de fechamento</p>
+                    <p className="text-xs text-muted">Confirme os itens antes de encerrar o turno.</p>
+                  </div>
+                  <Badge variant={closeChecklistComplete ? "success" : "warning"}>
+                    {closeChecklistComplete ? "Checklist concluído" : "Checklist pendente"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {[
+                    { key: "vendas", label: "Conferi as vendas e formas de pagamento" },
+                    { key: "movimentos", label: "Revisei sangrias, suprimentos e ajustes" },
+                    { key: "caixa", label: "Contei o caixa físico da gaveta" },
+                    { key: "comprovantes", label: "Confirmei os comprovantes e pendências" },
+                  ].map((item) => (
+                    <label key={item.key} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2 text-sm text-foreground">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 rounded"
+                        checked={closeChecklist[item.key as keyof typeof closeChecklist]}
+                        onChange={() =>
+                          setCloseChecklist((prev) => ({
+                            ...prev,
+                            [item.key]: !prev[item.key as keyof typeof prev],
+                          }))
+                        }
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Input
                   label="Valor contado manual (gaveta)"
@@ -1617,23 +1843,30 @@ export default function OperatorRebuildPage() {
                   min="0"
                   step="0.01"
                   placeholder={expectedCashVal ? expectedCashVal.toFixed(2) : "0,00"}
+                  hint="Conte manualmente o valor fisico antes de concluir o fechamento."
                 />
                 <Input
-                  label="Observacoes do fechamento (opcional)"
+                  label="Observacoes do fechamento"
                   value={closeObs}
                   onChange={e => setCloseObs(e.target.value)}
                   placeholder="Ex.: troco inicial, divergencia identificada, observacoes finais"
+                  hint={closeDeclared.trim() && closeDifferencePreview !== 0 ? "Obrigatório quando houver sobra ou falta no fechamento." : "Use para registrar ocorrências, divergências ou repasses."}
                 />
               </div>
             </div>
 
             <div className="mt-6 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
               <p className="text-xs text-muted">
-                Ao confirmar, o sistema registra o fechamento em `shift_cash_closings` e encerra o turno atual com seguranca.
+                Ao confirmar, o sistema registra o fechamento em `shift_cash_closings`, exige a conferência do checklist e encerra o turno com mais segurança.
               </p>
               <div className="flex gap-3 justify-end">
                 <Button type="button" variant="ghost" onClick={() => setShowCloseModal(false)}>Continuar operando</Button>
-                <Button type="button" variant="danger" onClick={confirmCloseShift} disabled={isClosing || !closeDeclared.trim()}>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={confirmCloseShift}
+                  disabled={isClosing || !closeDeclared.trim() || !closeChecklistComplete || (closeDeclared.trim() !== "" && closeDifferencePreview !== 0 && !closeObs.trim())}
+                >
                   {isClosing ? "Concluindo fechamento..." : "Concluir fechamento e encerrar turno"}
                 </Button>
               </div>

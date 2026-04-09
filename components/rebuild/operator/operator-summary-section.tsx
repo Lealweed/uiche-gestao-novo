@@ -12,6 +12,8 @@ type Shift = {
   id: string;
   booth_id: string;
   status: "open" | "closed";
+  opened_at?: string;
+  notes?: string | null;
 };
 
 type BoothLink = {
@@ -63,6 +65,10 @@ type OperatorSummarySectionProps = {
   lastCloseResult: LastCloseResult | null;
   unreadChatCount: number;
   isMounted: boolean;
+  shiftDurationLabel: string;
+  shiftNeedsAttention: boolean;
+  openingCash: number;
+  pendingReceiptCount: number;
   onBoothChange: (value: string) => void;
   onOpenShift: () => void | Promise<void>;
   onOpenCloseShiftModal: () => void | Promise<void>;
@@ -85,6 +91,10 @@ export function OperatorSummarySection({
   lastCloseResult,
   unreadChatCount,
   isMounted,
+  shiftDurationLabel,
+  shiftNeedsAttention,
+  openingCash,
+  pendingReceiptCount,
   onBoothChange,
   onOpenShift,
   onOpenCloseShiftModal,
@@ -97,6 +107,8 @@ export function OperatorSummarySection({
       : lastCloseResult.difference > 0
         ? { label: "Sobra", variant: "warning" as const }
         : { label: "Falta", variant: "danger" as const };
+  const selectedBoothName = booths.find((booth) => booth.booth_id === (shift?.booth_id ?? boothId))?.booth_name ?? "Guiche nao selecionado";
+
   return (
     <div className="space-y-6">
       <div>
@@ -105,19 +117,47 @@ export function OperatorSummarySection({
       </div>
 
       <Card>
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex-1">
             <p className="mb-1 text-xs uppercase tracking-wider text-muted">Status do Turno</p>
             {shift ? (
               <div className="flex items-center gap-2">
                 <span className="size-2 rounded-full bg-success animate-pulse" />
                 <span className="font-semibold text-success">Turno Aberto</span>
+                {shiftNeedsAttention && <Badge variant="warning">Atenção operacional</Badge>}
               </div>
             ) : (
               <span className="font-semibold text-muted">Nenhum turno ativo</span>
             )}
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3">
+                <p className="text-[10px] uppercase tracking-widest text-muted">Guiche</p>
+                <p className="mt-1 font-semibold text-foreground">{selectedBoothName}</p>
+              </div>
+              <div className={`rounded-lg border p-3 ${shiftNeedsAttention ? "border-amber-500/30 bg-amber-500/10" : "border-border bg-[hsl(var(--card-elevated))]"}`}>
+                <p className="text-[10px] uppercase tracking-widest text-muted">Tempo do turno</p>
+                <p className={`mt-1 font-semibold ${shiftNeedsAttention ? "text-amber-300" : "text-foreground"}`}>{shiftDurationLabel}</p>
+              </div>
+              <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3">
+                <p className="text-[10px] uppercase tracking-widest text-muted">Caixa inicial</p>
+                <p className="mt-1 font-semibold text-foreground">{formatCurrency(openingCash)}</p>
+              </div>
+            </div>
+
+            {shiftNeedsAttention && (
+              <p className="mt-3 text-sm text-amber-300">
+                O turno atual já ultrapassou o tempo recomendado. Planeje o fechamento com conferência.
+              </p>
+            )}
+            {pendingReceiptCount > 0 && (
+              <p className="mt-2 text-sm text-rose-300">
+                Existem {pendingReceiptCount} comprovante(s) pendentes antes do fechamento do caixa.
+              </p>
+            )}
           </div>
-          <div className="flex items-center gap-3">
+
+          <div className="flex flex-wrap items-center gap-3 xl:justify-end">
             <Button variant="ghost" onClick={() => void onOpenChat()} className="relative">
               <MessageSquare className="h-4 w-4" />
               Falar com Admin

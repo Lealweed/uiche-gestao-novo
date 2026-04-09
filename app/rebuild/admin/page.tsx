@@ -1834,6 +1834,8 @@ export default function AdminRebuildPage() {
             timePunchRows={timePunchRows}
             attendanceRows={attendanceRows}
             reportTxs={reportTxs}
+            cashMovementRows={cashMovementRows}
+            shiftCashClosingRows={shiftCashClosingRows}
             isMounted={isMounted}
             punchPage={punchPage}
             punchPerPage={PUNCH_PER_PAGE}

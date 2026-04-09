@@ -110,6 +110,10 @@ create unique index if not exists shifts_one_open_per_operator
 on public.shifts(operator_id)
 where status = 'open';
 
+create unique index if not exists shifts_one_open_per_booth
+on public.shifts(booth_id)
+where status = 'open';
+
 create table if not exists public.transactions (
   id uuid primary key default gen_random_uuid(),
   shift_id uuid not null references public.shifts(id) on delete restrict,
@@ -389,6 +393,14 @@ begin
     raise exception 'Operador sem permissão para este guichê';
   end if;
 
+  if exists (
+    select 1 from public.shifts open_shift_row
+    where open_shift_row.booth_id = p_booth_id
+      and open_shift_row.status = 'open'
+  ) then
+    raise exception 'Já existe um turno aberto neste guichê';
+  end if;
+
   insert into public.shifts (booth_id, operator_id, opened_by_ip)
   values (p_booth_id, auth.uid(), p_ip)
   returning * into s;
@@ -406,6 +418,13 @@ as $$
 declare
   s public.shifts;
 begin
+  if not exists (
+    select 1 from public.shift_cash_closings closing_row
+    where closing_row.shift_id = p_shift_id
+  ) then
+    raise exception 'Registre o fechamento de caixa antes de encerrar o turno';
+  end if;
+
   update public.shifts
   set status = 'closed',
       closed_at = now(),
@@ -649,6 +668,7 @@ for insert with check (
     select 1 from public.shifts s
     where s.id = shift_cash_closings.shift_id
       and s.operator_id = auth.uid()
+      and s.status = 'open'
   )
 );
 

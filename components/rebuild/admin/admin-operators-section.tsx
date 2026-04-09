@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowRight, Building2, CircleDot, Clock3, MessageSquare, ReceiptText, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowRight, Building2, CircleDot, Clock3, MessageSquare, ReceiptText, Wallet } from "lucide-react";
 
 import { boothOf, formatCurrency, nameOf } from "@/lib/admin/admin-helpers";
 import { Badge } from "@/components/rebuild/ui/badge";
@@ -64,6 +64,23 @@ type TxRow = {
   booth_id?: string;
 };
 
+type CashMovementRow = {
+  id: string;
+  movement_type: "suprimento" | "sangria" | "ajuste";
+  amount: number;
+  created_at: string;
+  booth_id?: string;
+  note?: string | null;
+};
+
+type ShiftCashClosingRow = {
+  id: string;
+  difference: number;
+  created_at: string;
+  booth_id?: string;
+  note?: string | null;
+};
+
 type ConversationShortcut = {
   operatorId: string;
   operatorName: string;
@@ -78,6 +95,8 @@ type AdminOperatorsSectionProps = {
   timePunchRows: TimePunchRow[];
   attendanceRows: AttendanceRow[];
   reportTxs: TxRow[];
+  cashMovementRows: CashMovementRow[];
+  shiftCashClosingRows: ShiftCashClosingRow[];
   isMounted: boolean;
   punchPage: number;
   punchPerPage: number;
@@ -96,6 +115,11 @@ type BoothSummary = {
   shiftOpen: boolean;
   totalToday: number;
   txCountToday: number;
+  movementCountToday: number;
+  shiftDurationLabel: string;
+  shiftNeedsAttention: boolean;
+  lastDifference: number;
+  lastClosingAt: string | null;
   lastActivityAt: string | null;
   lastActivityLabel: string;
 };
@@ -113,6 +137,16 @@ function formatPunchType(value: string) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function formatDurationSince(value?: string | null) {
+  if (!value) return "Sem turno ativo";
+  const diffMs = Math.max(0, Date.now() - new Date(value).getTime());
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${Math.max(1, minutes)} min`;
+  return `${hours}h ${minutes.toString().padStart(2, "0")}min`;
+}
+
 export function AdminOperatorsSection({
   booths,
   operatorBoothLinks,
@@ -120,6 +154,8 @@ export function AdminOperatorsSection({
   timePunchRows,
   attendanceRows,
   reportTxs,
+  cashMovementRows,
+  shiftCashClosingRows,
   isMounted,
   punchPage,
   punchPerPage,
@@ -135,14 +171,19 @@ export function AdminOperatorsSection({
         const activeLink = operatorBoothLinks.find((link) => link.booth_id === booth.id && link.active);
         const latestShift = shiftRows.find((row) => row.booth_id === booth.id);
         const openShift = shiftRows.find((row) => row.booth_id === booth.id && row.status === "open");
+        const lastClosing = shiftCashClosingRows.find((row) => row.booth_id === booth.id);
         const operatorId = activeLink?.operator_id ?? openShift?.operator_id ?? null;
         const operatorName = nameOf(activeLink?.profiles ?? null) ?? openShift?.operator_name ?? "Nao vinculado";
         const activeAttendance = operatorId ? attendanceRows.find((row) => row.user_id === operatorId && !row.clock_out) : null;
         const txsToday = reportTxs.filter((tx) => tx.booth_id === booth.id && isSameLocalDay(tx.sold_at));
+        const movementsToday = cashMovementRows.filter((movement) => movement.booth_id === booth.id && isSameLocalDay(movement.created_at));
         const latestPunch = timePunchRows.find((punch) => {
           const punchBooth = boothOf(punch.booths);
           return punchBooth ? punchBooth.code === booth.code || punchBooth.name === booth.name : false;
         });
+        const shiftNeedsAttention = Boolean(
+          openShift?.opened_at && Date.now() - new Date(openShift.opened_at).getTime() >= 10 * 60 * 60 * 1000,
+        );
 
         const candidates = [
           latestPunch
@@ -152,7 +193,10 @@ export function AdminOperatorsSection({
             ? { at: txsToday[0].sold_at, label: "Lancamento registrado" }
             : null,
           openShift?.opened_at
-            ? { at: openShift.opened_at, label: "Turno aberto" }
+            ? { at: openShift.opened_at, label: shiftNeedsAttention ? "Turno aberto em atencao" : "Turno aberto" }
+            : null,
+          lastClosing?.created_at
+            ? { at: lastClosing.created_at, label: Math.abs(Number(lastClosing.difference || 0)) > 0.009 ? "Ultimo fechamento com divergencia" : "Ultimo fechamento conferido" }
             : null,
           latestShift?.closed_at
             ? { at: latestShift.closed_at, label: "Ultimo turno fechado" }
@@ -171,12 +215,23 @@ export function AdminOperatorsSection({
           shiftOpen: openShift?.status === "open",
           totalToday: txsToday.reduce((sum, tx) => sum + Number(tx.amount || 0), 0),
           txCountToday: txsToday.length,
+          movementCountToday: movementsToday.length,
+          shiftDurationLabel: openShift?.opened_at ? formatDurationSince(openShift.opened_at) : "Sem turno ativo",
+          shiftNeedsAttention,
+          lastDifference: Number(lastClosing?.difference ?? 0),
+          lastClosingAt: lastClosing?.created_at ?? latestShift?.closed_at ?? null,
           lastActivityAt: latestActivity?.at ?? null,
           lastActivityLabel: latestActivity?.label ?? "Sem atividade recente",
         };
       })
       .sort((a, b) => Number(b.online) - Number(a.online) || Number(b.shiftOpen) - Number(a.shiftOpen) || a.booth.name.localeCompare(b.booth.name));
-  }, [attendanceRows, booths, operatorBoothLinks, reportTxs, shiftRows, timePunchRows]);
+  }, [attendanceRows, booths, cashMovementRows, operatorBoothLinks, reportTxs, shiftCashClosingRows, shiftRows, timePunchRows]);
+
+  const operationalSummary = useMemo(() => ({
+    openCount: boothSummaries.filter((summary) => summary.shiftOpen).length,
+    attentionCount: boothSummaries.filter((summary) => summary.shiftNeedsAttention).length,
+    divergenceCount: boothSummaries.filter((summary) => Math.abs(summary.lastDifference) > 0.009).length,
+  }), [boothSummaries]);
 
   const selectedBooth = boothSummaries.find((summary) => summary.booth.id === selectedBoothId) ?? null;
   const paginatedRows = timePunchRows.slice((punchPage - 1) * punchPerPage, punchPage * punchPerPage);
@@ -189,6 +244,42 @@ export function AdminOperatorsSection({
           title="Resumo por Guiche"
           subtitle="Clique em um guiche para abrir um resumo operacional rapido."
         />
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <Card className="border border-border/70 bg-slate-900/30">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
+                <Clock3 className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Turnos abertos agora</p>
+                <p className="text-lg font-semibold text-foreground">{operationalSummary.openCount}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="border border-border/70 bg-slate-900/30">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/15 text-amber-300">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Turnos em atencao</p>
+                <p className="text-lg font-semibold text-foreground">{operationalSummary.attentionCount}</p>
+              </div>
+            </div>
+          </Card>
+          <Card className="border border-border/70 bg-slate-900/30">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-500/15 text-rose-300">
+                <Wallet className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted">Fechamentos com divergencia</p>
+                <p className="text-lg font-semibold text-foreground">{operationalSummary.divergenceCount}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
 
         {boothSummaries.length === 0 ? (
           <Card>
@@ -233,7 +324,19 @@ export function AdminOperatorsSection({
                       <span className="text-muted">Lancamentos</span>
                       <span className="font-medium text-foreground">{summary.txCountToday}</span>
                     </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted">Tempo</span>
+                      <span className={`font-medium ${summary.shiftNeedsAttention ? "text-amber-300" : "text-foreground"}`}>{summary.shiftDurationLabel}</span>
+                    </div>
                   </div>
+
+                  {(summary.shiftNeedsAttention || Math.abs(summary.lastDifference) > 0.009) && (
+                    <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-2 text-xs text-amber-200">
+                      {summary.shiftNeedsAttention
+                        ? `Turno aberto alem do ideal (${summary.shiftDurationLabel}).`
+                        : `Ultimo fechamento com ${summary.lastDifference > 0 ? "sobra" : "falta"} de ${formatCurrency(Math.abs(summary.lastDifference))}.`}
+                    </div>
+                  )}
 
                   <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted">
                     <span className="truncate">{summary.lastActivityLabel}</span>
@@ -320,6 +423,7 @@ export function AdminOperatorsSection({
               <Badge variant={selectedBooth.shiftOpen ? "success" : "neutral"}>
                 Turno {selectedBooth.shiftOpen ? "aberto" : "fechado"}
               </Badge>
+              {selectedBooth.shiftNeedsAttention && <Badge variant="warning">Acompanhar fechamento</Badge>}
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -373,6 +477,25 @@ export function AdminOperatorsSection({
                   </div>
                 </div>
               </Card>
+
+              <Card className="border border-border/70 bg-slate-900/30">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/15 text-amber-300">
+                    <AlertTriangle className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted">Controle do turno</p>
+                    <p className={`text-sm font-semibold ${selectedBooth.shiftNeedsAttention ? "text-amber-300" : "text-foreground"}`}>
+                      {selectedBooth.shiftDurationLabel}
+                    </p>
+                    <p className="text-xs text-muted">
+                      {Math.abs(selectedBooth.lastDifference) > 0.009
+                        ? `Ultima divergencia: ${formatCurrency(selectedBooth.lastDifference)}`
+                        : "Sem divergencia relevante no ultimo fechamento"}
+                    </p>
+                  </div>
+                </div>
+              </Card>
             </div>
 
             <Card className="border border-border/70">
@@ -392,6 +515,14 @@ export function AdminOperatorsSection({
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted">Operador atual</p>
                   <p className="mt-1 font-medium text-foreground">{selectedBooth.operatorName}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted">Tempo do turno</p>
+                  <p className={`mt-1 font-medium ${selectedBooth.shiftNeedsAttention ? "text-amber-300" : "text-foreground"}`}>{selectedBooth.shiftDurationLabel}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted">Movimentos de caixa hoje</p>
+                  <p className="mt-1 font-medium text-foreground">{selectedBooth.movementCountToday}</p>
                 </div>
               </div>
             </Card>
