@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { canManageUsers, type AppRole } from "@/lib/rbac";
+import { canAccessAdminArea, canManageUsers, type AppRole } from "@/lib/rbac";
 
 type CreateUserBody = {
   name?: string;
@@ -38,7 +38,7 @@ function envOrThrow(name: string, aliases: string[] = []) {
   throw new Error(`Variável obrigatória ausente: ${candidates.join(" ou ")}`);
 }
 
-async function resolveRequester(req: Request) {
+async function resolveRequester(req: Request, access: "read" | "manage" = "manage") {
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return { error: NextResponse.json({ error: "Token de autenticação ausente." }, { status: 401 }) };
@@ -67,8 +67,14 @@ async function resolveRequester(req: Request) {
     return { error: NextResponse.json({ error: "Perfil do solicitante não encontrado." }, { status: 403 }) };
   }
 
-  if (!canManageUsers(String(requesterProfile.role))) {
-    return { error: NextResponse.json({ error: "Sem permissão para gerenciar usuários." }, { status: 403 }) };
+  const requesterRole = String(requesterProfile.role);
+
+  if (access === "manage") {
+    if (!canManageUsers(requesterRole)) {
+      return { error: NextResponse.json({ error: "Sem permissão para gerenciar usuários." }, { status: 403 }) };
+    }
+  } else if (!canAccessAdminArea(requesterRole)) {
+    return { error: NextResponse.json({ error: "Sem permissão para acessar os dados administrativos." }, { status: 403 }) };
   }
 
   return { requesterProfile, requesterId };
@@ -76,7 +82,7 @@ async function resolveRequester(req: Request) {
 
 export async function GET(req: Request) {
   try {
-    const requester = await resolveRequester(req);
+    const requester = await resolveRequester(req, "read");
     if ("error" in requester) return requester.error;
 
     const url = envOrThrow("NEXT_PUBLIC_SUPABASE_URL");

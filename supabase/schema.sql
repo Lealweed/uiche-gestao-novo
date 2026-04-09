@@ -181,14 +181,25 @@ create index if not exists shift_cash_closings_booth_idx on public.shift_cash_cl
 create index if not exists shift_cash_closings_user_idx on public.shift_cash_closings(user_id);
 
 -- Helper functions
-create or replace function public.is_admin(uid uuid)
+create or replace function public.is_admin(check_user_id uuid)
 returns boolean
 language sql
 stable
 as $$
   select exists (
     select 1 from public.profiles p
-    where p.user_id = uid and p.role = 'admin' and p.active = true
+    where p.user_id = check_user_id and p.role in ('admin', 'tenant_admin') and p.active = true
+  );
+$$;
+
+create or replace function public.can_read_admin_data(uid uuid)
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.user_id = uid and p.role in ('admin', 'tenant_admin', 'financeiro') and p.active = true
   );
 $$;
 
@@ -197,7 +208,15 @@ returns public.app_role
 language sql
 stable
 as $$
-  select p.role from public.profiles p where p.user_id = auth.uid();
+  select coalesce(
+    (
+      select p.role::public.app_role
+      from public.profiles p
+      where p.user_id = auth.uid()
+      limit 1
+    ),
+    'operator'::public.app_role
+  );
 $$;
 
 -- Triggers
@@ -376,42 +395,54 @@ alter table public.cash_movements enable row level security;
 alter table public.shift_cash_closings enable row level security;
 
 -- profiles
+drop policy if exists profiles_self_or_admin_select on public.profiles;
 create policy profiles_self_or_admin_select on public.profiles
-for select using (user_id = auth.uid() or public.is_admin(auth.uid()));
+for select using (user_id = auth.uid() or public.can_read_admin_data(auth.uid()));
 
+drop policy if exists profiles_admin_write on public.profiles;
 create policy profiles_admin_write on public.profiles
 for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
 -- booths / companies (read for authenticated, write admin)
+drop policy if exists booths_read_authenticated on public.booths;
 create policy booths_read_authenticated on public.booths
 for select using (auth.uid() is not null);
 
+drop policy if exists booths_admin_write on public.booths;
 create policy booths_admin_write on public.booths
 for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
+drop policy if exists companies_read_authenticated on public.companies;
 create policy companies_read_authenticated on public.companies
 for select using (auth.uid() is not null);
 
+drop policy if exists companies_admin_write on public.companies;
 create policy companies_admin_write on public.companies
 for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
+drop policy if exists clients_read_authenticated on public.clients;
 create policy clients_read_authenticated on public.clients
 for select using (auth.uid() is not null);
 
+drop policy if exists clients_admin_write on public.clients;
 create policy clients_admin_write on public.clients
 for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
 -- operator_booths
+drop policy if exists operator_booths_self_or_admin_select on public.operator_booths;
 create policy operator_booths_self_or_admin_select on public.operator_booths
-for select using (operator_id = auth.uid() or public.is_admin(auth.uid()));
+for select using (operator_id = auth.uid() or public.can_read_admin_data(auth.uid()));
 
+drop policy if exists operator_booths_admin_write on public.operator_booths;
 create policy operator_booths_admin_write on public.operator_booths
 for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
 -- shifts
+drop policy if exists shifts_self_or_admin_select on public.shifts;
 create policy shifts_self_or_admin_select on public.shifts
-for select using (operator_id = auth.uid() or public.is_admin(auth.uid()));
+for select using (operator_id = auth.uid() or public.can_read_admin_data(auth.uid()));
 
+drop policy if exists shifts_operator_insert on public.shifts;
 create policy shifts_operator_insert on public.shifts
 for insert with check (
   operator_id = auth.uid()
@@ -424,14 +455,17 @@ for insert with check (
   )
 );
 
+drop policy if exists shifts_close_self_or_admin on public.shifts;
 create policy shifts_close_self_or_admin on public.shifts
 for update using (operator_id = auth.uid() or public.is_admin(auth.uid()))
 with check (operator_id = auth.uid() or public.is_admin(auth.uid()));
 
 -- transactions
+drop policy if exists tx_self_or_admin_select on public.transactions;
 create policy tx_self_or_admin_select on public.transactions
-for select using (operator_id = auth.uid() or public.is_admin(auth.uid()));
+for select using (operator_id = auth.uid() or public.can_read_admin_data(auth.uid()));
 
+drop policy if exists tx_operator_insert on public.transactions;
 create policy tx_operator_insert on public.transactions
 for insert with check (
   operator_id = auth.uid()
@@ -443,19 +477,22 @@ for insert with check (
   )
 );
 
+drop policy if exists tx_admin_update on public.transactions;
 create policy tx_admin_update on public.transactions
 for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
 -- receipts
+drop policy if exists receipts_self_or_admin_select on public.transaction_receipts;
 create policy receipts_self_or_admin_select on public.transaction_receipts
 for select using (
-  public.is_admin(auth.uid())
+  public.can_read_admin_data(auth.uid())
   or exists (
     select 1 from public.transactions t
     where t.id = transaction_id and t.operator_id = auth.uid()
   )
 );
 
+drop policy if exists receipts_self_insert on public.transaction_receipts;
 create policy receipts_self_insert on public.transaction_receipts
 for insert with check (
   uploaded_by = auth.uid()
@@ -465,39 +502,49 @@ for insert with check (
   )
 );
 
+drop policy if exists receipts_admin_delete on public.transaction_receipts;
 create policy receipts_admin_delete on public.transaction_receipts
 for delete using (public.is_admin(auth.uid()));
 
 -- adjustment requests
+drop policy if exists adj_self_or_admin_select on public.adjustment_requests;
 create policy adj_self_or_admin_select on public.adjustment_requests
 for select using (
-  requested_by = auth.uid() or public.is_admin(auth.uid())
+  requested_by = auth.uid() or public.can_read_admin_data(auth.uid())
 );
 
+drop policy if exists adj_self_insert on public.adjustment_requests;
 create policy adj_self_insert on public.adjustment_requests
 for insert with check (requested_by = auth.uid());
 
+drop policy if exists adj_admin_update on public.adjustment_requests;
 create policy adj_admin_update on public.adjustment_requests
 for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
 -- audit logs
+drop policy if exists audit_self_or_admin_select on public.audit_logs;
 create policy audit_self_or_admin_select on public.audit_logs
-for select using (created_by = auth.uid() or public.is_admin(auth.uid()));
+for select using (created_by = auth.uid() or public.can_read_admin_data(auth.uid()));
 
+drop policy if exists audit_insert_authenticated on public.audit_logs;
 create policy audit_insert_authenticated on public.audit_logs
 for insert with check (created_by = auth.uid());
 
 -- time punches
+drop policy if exists time_punch_self_or_admin_select on public.time_punches;
 create policy time_punch_self_or_admin_select on public.time_punches
-for select using (user_id = auth.uid() or public.is_admin(auth.uid()));
+for select using (user_id = auth.uid() or public.can_read_admin_data(auth.uid()));
 
+drop policy if exists time_punch_self_insert on public.time_punches;
 create policy time_punch_self_insert on public.time_punches
 for insert with check (user_id = auth.uid());
 
 -- cash movements
+drop policy if exists cash_movements_self_or_admin_select on public.cash_movements;
 create policy cash_movements_self_or_admin_select on public.cash_movements
-for select using (user_id = auth.uid() or public.is_admin(auth.uid()));
+for select using (user_id = auth.uid() or public.can_read_admin_data(auth.uid()));
 
+drop policy if exists cash_movements_self_insert on public.cash_movements;
 create policy cash_movements_self_insert on public.cash_movements
 for insert with check (
   user_id = auth.uid()
@@ -509,13 +556,16 @@ for insert with check (
   )
 );
 
+drop policy if exists cash_movements_admin_update on public.cash_movements;
 create policy cash_movements_admin_update on public.cash_movements
 for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
 -- shift cash closings
+drop policy if exists shift_cash_closings_self_or_admin_select on public.shift_cash_closings;
 create policy shift_cash_closings_self_or_admin_select on public.shift_cash_closings
-for select using (user_id = auth.uid() or public.is_admin(auth.uid()));
+for select using (user_id = auth.uid() or public.can_read_admin_data(auth.uid()));
 
+drop policy if exists shift_cash_closings_self_insert on public.shift_cash_closings;
 create policy shift_cash_closings_self_insert on public.shift_cash_closings
 for insert with check (
   user_id = auth.uid()
@@ -526,6 +576,7 @@ for insert with check (
   )
 );
 
+drop policy if exists shift_cash_closings_admin_update on public.shift_cash_closings;
 create policy shift_cash_closings_admin_update on public.shift_cash_closings
 for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
@@ -559,14 +610,18 @@ create index if not exists transactions_subcategory_idx on public.transactions(s
 alter table public.transaction_categories enable row level security;
 alter table public.transaction_subcategories enable row level security;
 
+drop policy if exists tx_categories_read_authenticated on public.transaction_categories;
 create policy tx_categories_read_authenticated on public.transaction_categories
 for select using (auth.uid() is not null);
 
+drop policy if exists tx_categories_admin_write on public.transaction_categories;
 create policy tx_categories_admin_write on public.transaction_categories
 for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
 
+drop policy if exists tx_subcategories_read_authenticated on public.transaction_subcategories;
 create policy tx_subcategories_read_authenticated on public.transaction_subcategories
 for select using (auth.uid() is not null);
 
+drop policy if exists tx_subcategories_admin_write on public.transaction_subcategories;
 create policy tx_subcategories_admin_write on public.transaction_subcategories
 for all using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));

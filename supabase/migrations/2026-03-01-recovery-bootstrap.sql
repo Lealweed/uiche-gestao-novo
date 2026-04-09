@@ -158,11 +158,11 @@ select x.code, x.name, true
 from (values ('G1', 'Guichê 1'), ('G2', 'Guichê 2')) as x(code, name)
 where not exists (select 1 from public.booths b where b.code = x.code);
 
-create or replace function public.is_admin(uid uuid)
+create or replace function public.is_admin(check_user_id uuid)
 returns boolean language sql stable as $$
   select exists (
     select 1 from public.profiles p
-    where p.user_id = uid and p.role = 'admin' and p.active = true
+    where p.user_id = check_user_id and p.role = 'admin' and p.active = true
   );
 $$;
 

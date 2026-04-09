@@ -132,6 +132,7 @@ export default function OperatorRebuildPage() {
   const [showChat, setShowChat] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const attendanceCheckoutSentRef = useRef(false);
   const showChatRef = useRef(showChat);
   showChatRef.current = showChat;
 
@@ -224,6 +225,51 @@ export default function OperatorRebuildPage() {
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!userId || operatorActive === false) return;
+
+    attendanceCheckoutSentRef.current = false;
+
+    const endpoint = "/api/attendance/checkout";
+    const payload = JSON.stringify({ user_id: userId });
+
+    const sendAttendanceCheckout = () => {
+      if (attendanceCheckoutSentRef.current) return;
+      attendanceCheckoutSentRef.current = true;
+
+      try {
+        if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+          const blob = new Blob([payload], { type: "application/json" });
+          if (navigator.sendBeacon(endpoint, blob)) {
+            return;
+          }
+        }
+      } catch {
+        // fallback abaixo
+      }
+
+      void fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        credentials: "include",
+        keepalive: true,
+      }).catch(() => undefined);
+    };
+
+    const handlePageExit = () => {
+      sendAttendanceCheckout();
+    };
+
+    window.addEventListener("beforeunload", handlePageExit);
+    window.addEventListener("pagehide", handlePageExit);
+
+    return () => {
+      window.removeEventListener("beforeunload", handlePageExit);
+      window.removeEventListener("pagehide", handlePageExit);
+    };
+  }, [operatorActive, userId]);
 
   async function loadTxs(shiftId: string) {
     const txRes = await supabase.from("transactions").select("id,amount,payment_method,sold_at,ticket_reference,note,company_id,boarding_tax_state,boarding_tax_federal").eq("shift_id",shiftId).eq("status","posted").order("sold_at",{ascending:false}).limit(100);

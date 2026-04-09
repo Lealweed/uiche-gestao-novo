@@ -5,6 +5,7 @@ import { canAccessAdminArea, canManageUsers, getHomeRouteForRole, normalizeRole 
 const LOGIN_PATH = "/login";
 const API_ADMIN_USERS = "/api/admin/users";
 const API_REPASSE_BAIXAR = "/api/repasse/baixar";
+const API_ATTENDANCE_CHECKOUT = "/api/attendance/checkout";
 
 function copyCookies(from: NextResponse, to: NextResponse) {
   for (const cookie of from.cookies.getAll()) {
@@ -98,6 +99,10 @@ export async function proxy(request: NextRequest) {
     return jsonError(supabaseResponse, "Sem permissao para baixar repasse.", 403);
   }
 
+  if (pathname === API_ATTENDANCE_CHECKOUT && role !== "operator") {
+    return jsonError(supabaseResponse, "Sem permissao para encerrar ponto.", 403);
+  }
+
   return supabaseResponse;
 }
 
@@ -107,5 +112,6 @@ export const config = {
     "/rebuild/operator/:path*",
     "/api/admin/users",
     "/api/repasse/baixar",
+    "/api/attendance/checkout",
   ],
 };
