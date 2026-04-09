@@ -9,7 +9,7 @@ import { Badge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
 import { Card } from "@/components/rebuild/ui/card";
 import { DataTable } from "@/components/rebuild/ui/table";
-import { Input } from "@/components/rebuild/ui/input";
+import { Input, Textarea } from "@/components/rebuild/ui/input";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { StatCard } from "@/components/rebuild/ui/stat-card";
 
@@ -82,8 +82,14 @@ type AdminFinanceSectionProps = {
   financeByBooth: FinanceByBoothRow[];
   cashMovementRows: CashMovementRow[];
   shiftCashClosingRows: ShiftCashClosingRow[];
+  responsavelConferencia: string;
+  dataAssinatura: string;
+  observacoesFinais: string;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
+  onResponsavelConferenciaChange: (value: string) => void;
+  onDataAssinaturaChange: (value: string) => void;
+  onObservacoesFinaisChange: (value: string) => void;
   onApplyFilters: () => void | Promise<void>;
   onClearFilters: () => void | Promise<void>;
 };
@@ -130,8 +136,14 @@ export function AdminFinanceSection({
   financeByBooth,
   cashMovementRows,
   shiftCashClosingRows,
+  responsavelConferencia,
+  dataAssinatura,
+  observacoesFinais,
   onDateFromChange,
   onDateToChange,
+  onResponsavelConferenciaChange,
+  onDataAssinaturaChange,
+  onObservacoesFinaisChange,
   onApplyFilters,
   onClearFilters,
 }: AdminFinanceSectionProps) {
@@ -252,6 +264,7 @@ export function AdminFinanceSection({
   const boothDetailLabel = selectedBoothSummary?.boothLabel ?? "Todos os guiches";
   const reportGeneratedAt = new Date().toLocaleString("pt-BR");
   const reportReference = selectedBoothId === "all" ? `FIN-GERAL-${visibleFinanceByBooth.length}` : `FIN-${selectedBoothId.slice(0, 8).toUpperCase()}`;
+  const signatureDateLabel = formatPeriodDate(dataAssinatura) ?? "Nao informada";
   const reportSummaryText = `${boothDetailLabel} registrou ${financeSnapshot.txCount} venda(s), faturamento bruto de ${formatCurrency(financeSnapshot.grossSales)} e ${overallDifferenceStatus.label.toLowerCase()} de caixa no periodo analisado.`;
 
   function handleViewAll() {
@@ -259,9 +272,17 @@ export function AdminFinanceSection({
   }
 
   function handlePrintReport() {
-    if (typeof window !== "undefined") {
-      window.print();
-    }
+    if (typeof window === "undefined") return;
+
+    const cleanup = () => {
+      document.body.classList.remove("printing-finance-report");
+      window.removeEventListener("afterprint", cleanup);
+    };
+
+    document.body.classList.add("printing-finance-report");
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+    window.setTimeout(cleanup, 1000);
   }
 
   function handleExportFinanceReport() {
@@ -295,6 +316,9 @@ export function AdminFinanceSection({
         conferencia: overallDifferenceStatus.label,
         total_movimentos: filteredCashMovementRows.length,
         total_fechamentos: filteredShiftCashClosingRows.length,
+        responsavel_conferencia: responsavelConferencia,
+        data_assinatura: signatureDateLabel,
+        observacoes_finais: observacoesFinais,
         observacao: periodLabel,
       },
       ...rankedFinanceByBooth.map((row) => ({
@@ -325,6 +349,9 @@ export function AdminFinanceSection({
         conferencia: row.conference.label,
         total_movimentos: row.movementCount,
         total_fechamentos: row.closingCount,
+        responsavel_conferencia: responsavelConferencia,
+        data_assinatura: signatureDateLabel,
+        observacoes_finais: observacoesFinais,
         observacao: `Ranking ${row.rank}`,
       })),
       ...filteredCashMovementRows.map((row) => ({
@@ -358,6 +385,9 @@ export function AdminFinanceSection({
         conferencia: row.movement_type === "suprimento" ? "Suprimento" : row.movement_type === "sangria" ? "Sangria" : "Ajuste",
         total_movimentos: "",
         total_fechamentos: "",
+        responsavel_conferencia: responsavelConferencia,
+        data_assinatura: signatureDateLabel,
+        observacoes_finais: observacoesFinais,
         observacao: row.note ?? "",
       })),
       ...filteredShiftCashClosingRows.map((row) => ({
@@ -391,6 +421,9 @@ export function AdminFinanceSection({
         conferencia: getDifferenceStatus(Number(row.difference)).label,
         total_movimentos: "",
         total_fechamentos: "",
+        responsavel_conferencia: responsavelConferencia,
+        data_assinatura: signatureDateLabel,
+        observacoes_finais: observacoesFinais,
         observacao: row.note ?? "",
       })),
     ];
@@ -426,13 +459,16 @@ export function AdminFinanceSection({
         { key: "conferencia", label: "Conferencia" },
         { key: "total_movimentos", label: "Movimentos" },
         { key: "total_fechamentos", label: "Fechamentos" },
+        { key: "responsavel_conferencia", label: "Responsavel pela conferencia" },
+        { key: "data_assinatura", label: "Data da assinatura" },
+        { key: "observacoes_finais", label: "Observacoes finais" },
         { key: "observacao", label: "Observacao" },
       ]
     );
   }
 
   return (
-    <div className="space-y-6 print:space-y-4">
+    <div className="finance-report-print-scope space-y-6 print:space-y-4">
       <div className="print:hidden space-y-6">
         <SectionHeader
           title="Financeiro Operacional"
@@ -912,18 +948,50 @@ export function AdminFinanceSection({
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="rounded-lg border border-dashed border-border p-4">
-            <p className="text-xs text-muted">Responsavel pela conferencia</p>
-            <div className="mt-8 border-b border-border" />
+            <div className="print:hidden">
+              <Input
+                label="Responsavel pela conferencia"
+                value={responsavelConferencia}
+                onChange={(e) => onResponsavelConferenciaChange(e.target.value)}
+                placeholder="Digite o nome do responsavel"
+              />
+            </div>
+            <div className="hidden print:block">
+              <p className="text-xs text-muted">Responsavel pela conferencia</p>
+              <p className="mt-6 text-sm font-semibold text-foreground">{responsavelConferencia || "________________________________"}</p>
+            </div>
           </div>
+
           <div className="rounded-lg border border-dashed border-border p-4">
-            <p className="text-xs text-muted">Data / assinatura</p>
-            <div className="mt-8 border-b border-border" />
+            <div className="print:hidden">
+              <Input
+                type="date"
+                label="Data / assinatura"
+                value={dataAssinatura}
+                onChange={(e) => onDataAssinaturaChange(e.target.value)}
+              />
+            </div>
+            <div className="hidden print:block">
+              <p className="text-xs text-muted">Data / assinatura</p>
+              <p className="mt-6 text-sm font-semibold text-foreground">{signatureDateLabel}</p>
+            </div>
           </div>
         </div>
 
         <div className="mt-4 rounded-lg border border-dashed border-border p-4">
-          <p className="text-xs text-muted">Observacoes finais</p>
-          <div className="mt-12 border-b border-border" />
+          <div className="print:hidden">
+            <Textarea
+              label="Observacoes finais"
+              value={observacoesFinais}
+              onChange={(e) => onObservacoesFinaisChange(e.target.value)}
+              placeholder="Digite observacoes importantes para a conferencia ou emissao do relatorio"
+              className="min-h-[120px]"
+            />
+          </div>
+          <div className="hidden print:block">
+            <p className="text-xs text-muted">Observacoes finais</p>
+            <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">{observacoesFinais || "Sem observacoes adicionais."}</p>
+          </div>
         </div>
       </Card>
     </div>

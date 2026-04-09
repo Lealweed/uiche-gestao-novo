@@ -185,6 +185,9 @@ export default function AdminRebuildPage() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
+  const [responsavelConferencia, setResponsavelConferencia] = useState("");
+  const [dataAssinatura, setDataAssinatura] = useState(() => new Date().toISOString().slice(0, 10));
+  const [observacoesFinais, setObservacoesFinais] = useState("");
   const [profileSearch, setProfileSearch] = useState("");
   const [boothSearch, setBoothSearch]     = useState("");
   const [companyName, setCompanyName]     = useState("");
@@ -1857,8 +1860,14 @@ export default function AdminRebuildPage() {
             financeByBooth={financeByBooth}
             cashMovementRows={cashMovementRows}
             shiftCashClosingRows={shiftCashClosingRows}
+            responsavelConferencia={responsavelConferencia}
+            dataAssinatura={dataAssinatura}
+            observacoesFinais={observacoesFinais}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
+            onResponsavelConferenciaChange={setResponsavelConferencia}
+            onDataAssinaturaChange={setDataAssinatura}
+            onObservacoesFinaisChange={setObservacoesFinais}
             onApplyFilters={applyDateFilters}
             onClearFilters={clearDateFilters}
           />

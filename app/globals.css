@@ -123,3 +123,37 @@
     backdrop-filter: blur(8px);
   }
 }
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body.printing-finance-report {
+    background: #ffffff !important;
+  }
+
+  body.printing-finance-report * {
+    visibility: hidden !important;
+  }
+
+  body.printing-finance-report .finance-report-print-scope,
+  body.printing-finance-report .finance-report-print-scope * {
+    visibility: visible !important;
+  }
+
+  body.printing-finance-report .finance-report-print-scope {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 0;
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+  }
+
+  body.printing-finance-report .finance-report-print-scope .print\:hidden {
+    display: none !important;
+  }
+}
+
