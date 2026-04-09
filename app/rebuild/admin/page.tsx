@@ -406,7 +406,7 @@ export default function AdminRebuildPage() {
       let txQ = supabase
         .from("transactions")
         .select("id,status,amount,sold_at,payment_method,operator_id,booth_id,company_id,category_id,subcategory_id")
-        .eq("status", "posted")
+        .neq("status", "voided")
         .order("sold_at", { ascending: false })
         .limit(5000);
       let cashQ = supabase
