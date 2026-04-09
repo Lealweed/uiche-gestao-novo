@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Building2, RefreshCw, Wallet } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Building2, Download, Eye, RefreshCw, Wallet } from "lucide-react";
 
 import { boothOf, formatCurrency, nameOf } from "@/lib/admin/admin-helpers";
+import { exportToCSV } from "@/lib/csv-export";
 import { Badge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
 import { Card } from "@/components/rebuild/ui/card";
@@ -182,6 +183,126 @@ export function AdminFinanceSection({
 
   const boothDetailLabel = selectedBoothSummary?.boothLabel ?? "Todos os guiches";
 
+  function handleViewAll() {
+    setSelectedBoothId("all");
+  }
+
+  function handleExportFinanceReport() {
+    const rows = [
+      ...visibleFinanceByBooth.map((row) => ({
+        tipo_registro: "resumo_guiche",
+        guiche: row.boothLabel,
+        data: "",
+        operador: "",
+        vendas: row.txCount,
+        faturamento_bruto: row.grossSales,
+        pix: row.pixSales,
+        credito: row.creditSales,
+        debito: row.debitSales,
+        dinheiro: row.cashSales,
+        suprimento: row.suprimento,
+        sangria: row.sangria,
+        ajuste: row.ajuste,
+        taxa_estadual_qtd: row.stateTaxCount,
+        taxa_estadual_valor: row.stateTaxValue,
+        taxa_federal_qtd: row.federalTaxCount,
+        taxa_federal_valor: row.federalTaxValue,
+        caixa_estimado: row.saldo,
+        esperado: row.expected,
+        declarado: row.declared,
+        diferenca: row.difference,
+        conferencia: row.difference === 0 ? "Conferido" : row.difference > 0 ? "Sobra" : "Falta",
+        observacao: "",
+      })),
+      ...filteredCashMovementRows.map((row) => ({
+        tipo_registro: "movimento_caixa",
+        guiche: (() => {
+          const booth = boothOf(row.booths);
+          return booth ? `${booth.code} - ${booth.name}` : "-";
+        })(),
+        data: new Date(row.created_at).toLocaleString("pt-BR"),
+        operador: nameOf(row.profiles) ?? "-",
+        vendas: "",
+        faturamento_bruto: "",
+        pix: "",
+        credito: "",
+        debito: "",
+        dinheiro: "",
+        suprimento: row.movement_type === "suprimento" ? Number(row.amount) : "",
+        sangria: row.movement_type === "sangria" ? Number(row.amount) : "",
+        ajuste: row.movement_type === "ajuste" ? Number(row.amount) : "",
+        taxa_estadual_qtd: "",
+        taxa_estadual_valor: "",
+        taxa_federal_qtd: "",
+        taxa_federal_valor: "",
+        caixa_estimado: "",
+        esperado: "",
+        declarado: "",
+        diferenca: "",
+        conferencia: row.movement_type === "suprimento" ? "Suprimento" : row.movement_type === "sangria" ? "Sangria" : "Ajuste",
+        observacao: row.note ?? "",
+      })),
+      ...filteredShiftCashClosingRows.map((row) => ({
+        tipo_registro: "fechamento_caixa",
+        guiche: (() => {
+          const booth = boothOf(row.booths);
+          return booth ? `${booth.code} - ${booth.name}` : "-";
+        })(),
+        data: new Date(row.created_at).toLocaleString("pt-BR"),
+        operador: nameOf(row.profiles) ?? "-",
+        vendas: "",
+        faturamento_bruto: "",
+        pix: "",
+        credito: "",
+        debito: "",
+        dinheiro: "",
+        suprimento: "",
+        sangria: "",
+        ajuste: "",
+        taxa_estadual_qtd: "",
+        taxa_estadual_valor: "",
+        taxa_federal_qtd: "",
+        taxa_federal_valor: "",
+        caixa_estimado: "",
+        esperado: Number(row.expected_cash),
+        declarado: Number(row.declared_cash),
+        diferenca: Number(row.difference),
+        conferencia: Number(row.difference) === 0 ? "Conferido" : Number(row.difference) > 0 ? "Sobra" : "Falta",
+        observacao: row.note ?? "",
+      })),
+    ];
+
+    exportToCSV(
+      selectedBoothId === "all" ? "relatorio-financeiro-geral" : `relatorio-${selectedBoothId}`,
+      rows,
+      [
+        { key: "tipo_registro", label: "Tipo de registro" },
+        { key: "guiche", label: "Guiche" },
+        { key: "data", label: "Data" },
+        { key: "operador", label: "Operador" },
+        { key: "vendas", label: "Qtd. vendas" },
+        { key: "faturamento_bruto", label: "Faturamento bruto" },
+        { key: "pix", label: "PIX" },
+        { key: "credito", label: "Credito" },
+        { key: "debito", label: "Debito" },
+        { key: "dinheiro", label: "Dinheiro" },
+        { key: "suprimento", label: "Suprimento" },
+        { key: "sangria", label: "Sangria" },
+        { key: "ajuste", label: "Ajuste" },
+        { key: "taxa_estadual_qtd", label: "Qtd taxa estadual" },
+        { key: "taxa_estadual_valor", label: "Valor taxa estadual" },
+        { key: "taxa_federal_qtd", label: "Qtd taxa federal" },
+        { key: "taxa_federal_valor", label: "Valor taxa federal" },
+        { key: "caixa_estimado", label: "Caixa estimado" },
+        { key: "esperado", label: "Esperado" },
+        { key: "declarado", label: "Declarado" },
+        { key: "diferenca", label: "Diferenca" },
+        { key: "conferencia", label: "Conferencia" },
+        { key: "observacao", label: "Observacao" },
+      ]
+    );
+  }
+
   return (
     <div className="space-y-6">
       <SectionHeader
@@ -211,6 +332,19 @@ export function AdminFinanceSection({
           </div>
 
           <Button type="submit">Aplicar filtros</Button>
+          <Button variant="ghost" type="button" onClick={handleViewAll}>
+            <Eye className="mr-2 h-4 w-4" />
+            Visualizar geral
+          </Button>
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={handleExportFinanceReport}
+            disabled={!visibleFinanceByBooth.length && !filteredCashMovementRows.length && !filteredShiftCashClosingRows.length}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Baixar relatorio
+          </Button>
           <Button variant="ghost" type="button" onClick={() => void onClearFilters()}>
             Limpar
           </Button>
