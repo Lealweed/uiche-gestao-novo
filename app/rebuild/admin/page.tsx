@@ -97,7 +97,7 @@ type Subcategory = { id: string; name: string; active: boolean; category_id: str
 type OperatorBoothLink = { id: string; active: boolean; operator_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { name: string; code: string }|{ name: string; code: string }[]|null };
 type AuditLog  = { id: string; action: string; entity: string|null; details: Record<string,unknown>; created_at: string; created_by?: string; profiles: { full_name: string }|{ full_name: string }[]|null };
 type Adjustment = { id: string; transaction_id: string; reason: string; status: "pending"|"approved"|"rejected"; created_at: string; requested_by?: string; profiles: { full_name: string }|{ full_name: string }[]|null; transactions: { amount: number; payment_method: string; companies: { name: string }|{ name: string }[]|null }|null };
-type TxForReport = { id: string; status?: string; amount: number; sold_at?: string; payment_method?: string; operator_id?: string; booth_id?: string; company_id?: string; category_id?: string; subcategory_id?: string; profiles?: { full_name: string }|{ full_name: string }[]|null; booths?: { name: string; code: string }|{ name: string; code: string }[]|null; companies?: { name: string }|{ name: string }[]|null; transaction_categories: { name: string }|{ name: string }[]|null; transaction_subcategories: { name: string }|{ name: string }[]|null };
+type TxForReport = { id: string; status?: string; amount: number; sold_at?: string; payment_method?: string; operator_id?: string; booth_id?: string; company_id?: string; category_id?: string; subcategory_id?: string; boarding_tax_state?: number | null; boarding_tax_federal?: number | null; profiles?: { full_name: string }|{ full_name: string }[]|null; booths?: { name: string; code: string }|{ name: string; code: string }[]|null; companies?: { name: string }|{ name: string }[]|null; transaction_categories: { name: string }|{ name: string }[]|null; transaction_subcategories: { name: string }|{ name: string }[]|null };
 type TimePunchRow = { id: string; punch_type: string; punched_at: string; note: string|null; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type CashMovementRow = { id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type ShiftCashClosingRow = { id: string; expected_cash: number; declared_cash: number; difference: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
@@ -405,7 +405,7 @@ export default function AdminRebuildPage() {
       let shiftQ = supabase.from("v_shift_totals").select("*").order("opened_at", { ascending: false }).limit(200);
       let txQ = supabase
         .from("transactions")
-        .select("id,status,amount,sold_at,payment_method,operator_id,booth_id,company_id,category_id,subcategory_id")
+        .select("id,status,amount,sold_at,payment_method,operator_id,booth_id,company_id,category_id,subcategory_id,boarding_tax_state,boarding_tax_federal")
         .neq("status", "voided")
         .order("sold_at", { ascending: false })
         .limit(5000);
@@ -737,6 +737,20 @@ export default function AdminRebuildPage() {
       viacoes: Array.from(comps.values()).sort((a,b) => b.amount - a.amount),
     };
   }, [reportTxs, companies]);
+
+  const boardingTaxAudit = useMemo(() => {
+    let qtd_estadual = 0;
+    let valor_estadual = 0;
+    let qtd_federal = 0;
+    let valor_federal = 0;
+    for (const tx of reportTxs) {
+      const es = Number(tx.boarding_tax_state ?? 0);
+      const fed = Number(tx.boarding_tax_federal ?? 0);
+      if (es > 0) { qtd_estadual += 1; valor_estadual += es; }
+      if (fed > 0) { qtd_federal += 1; valor_federal += fed; }
+    }
+    return { qtd_estadual, valor_estadual, qtd_federal, valor_federal };
+  }, [reportTxs]);
 
   const summary = useMemo(() => ({
     totalDia:       rows.reduce((a,r) => a + Number(r.gross_amount||0), 0),
@@ -1646,6 +1660,7 @@ export default function AdminRebuildPage() {
             onApplyFilters={applyDateFilters}
             onClearFilters={clearDateFilters}
             repassesComputed={repassesComputed}
+            boardingTaxAudit={boardingTaxAudit}
             reportTxCount={reportTxs.length}
             summary={summary}
             dailyRevenueData={dailyRevenueData}

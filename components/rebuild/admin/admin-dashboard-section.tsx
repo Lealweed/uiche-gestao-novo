@@ -119,6 +119,12 @@ type AdminDashboardSectionProps = {
   onForceCloseShift: (shiftId: string) => void;
   onApproveAdjustment: (adjId: string, txId: string) => void;
   onRejectAdjustment: (adjId: string) => void;
+  boardingTaxAudit: {
+    qtd_estadual: number;
+    valor_estadual: number;
+    qtd_federal: number;
+    valor_federal: number;
+  };
 };
 
 export function AdminDashboardSection({
@@ -141,6 +147,7 @@ export function AdminDashboardSection({
   cashSaldo,
   rows,
   adjustments,
+  boardingTaxAudit,
   onExportCSV,
   onForceCloseShift,
   onApproveAdjustment,
@@ -254,6 +261,38 @@ export function AdminDashboardSection({
           </div>
         </Card>
       </div>
+
+      {/* Auditoria de Taxas de Embarque */}
+      <Card>
+        <div className="mb-4 flex items-center gap-2">
+          <CreditCard className="h-4 w-4 text-indigo-400" />
+          <h3 className="text-base font-semibold text-foreground">Auditoria de Taxas de Embarque</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {/* Estadual */}
+          <div className="flex items-center gap-4 rounded-lg bg-indigo-500/10 p-4 ring-1 ring-indigo-500/20">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-400">
+              <Banknote className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs text-muted">Taxa Estadual</p>
+              <p className="text-xl font-bold text-indigo-400">{formatCurrency(boardingTaxAudit.valor_estadual)}</p>
+              <p className="mt-0.5 text-xs text-muted">{boardingTaxAudit.qtd_estadual} emitida{boardingTaxAudit.qtd_estadual !== 1 ? "s" : ""}</p>
+            </div>
+          </div>
+          {/* Federal */}
+          <div className="flex items-center gap-4 rounded-lg bg-rose-500/10 p-4 ring-1 ring-rose-500/20">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400">
+              <Banknote className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs text-muted">Taxa Federal</p>
+              <p className="text-xl font-bold text-rose-400">{formatCurrency(boardingTaxAudit.valor_federal)}</p>
+              <p className="mt-0.5 text-xs text-muted">{boardingTaxAudit.qtd_federal} emitida{boardingTaxAudit.qtd_federal !== 1 ? "s" : ""}</p>
+            </div>
+          </div>
+        </div>
+      </Card>
 
       {isMounted && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
