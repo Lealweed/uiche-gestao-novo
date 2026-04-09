@@ -353,7 +353,13 @@ export default function OperatorRebuildPage() {
 
   async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string,unknown>) {
     if (!userId) return;
-    await supabase.from("audit_logs").insert({ created_by:userId, action, entity:entity??null, entity_id:entityId??null, details:details??{} });
+    const { error } = await supabase
+      .from("audit_logs")
+      .insert({ created_by:userId, action, entity:entity??null, entity_id:entityId??null, details:details??{} });
+
+    if (error && !isSchemaToleranceError(error)) {
+      console.warn("Falha ao registrar auditoria operador:", error.message);
+    }
   }
 
   async function openShift() {
@@ -629,7 +635,7 @@ export default function OperatorRebuildPage() {
       const allMessages: ChatMessage[] = await Promise.all(((query.data as ChatMessage[]) || []).map(async (msg) => ({
         ...msg,
         booth_id: msg.booth_id ?? null,
-        sender_role: msg.sender_role === "admin" ? "admin" : "operator",
+        sender_role: msg.sender_role === "operator" ? "operator" : "admin",
         attachment_path: msg.attachment_path ?? null,
         attachment_name: msg.attachment_name ?? null,
         attachment_type: msg.attachment_type ?? null,
@@ -714,7 +720,7 @@ export default function OperatorRebuildPage() {
           const normalized: ChatMessage = {
             ...raw,
             booth_id: raw.booth_id ?? null,
-            sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+            sender_role: raw.sender_role === "operator" ? "operator" : "admin",
             attachment_path: raw.attachment_path ?? null,
             attachment_name: raw.attachment_name ?? null,
             attachment_type: raw.attachment_type ?? null,
@@ -744,7 +750,7 @@ export default function OperatorRebuildPage() {
           const updated: ChatMessage = {
             ...raw,
             booth_id: raw.booth_id ?? null,
-            sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+            sender_role: raw.sender_role === "operator" ? "operator" : "admin",
             attachment_path: raw.attachment_path ?? null,
             attachment_name: raw.attachment_name ?? null,
             attachment_type: raw.attachment_type ?? null,

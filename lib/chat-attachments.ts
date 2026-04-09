@@ -23,8 +23,12 @@ export function isImageChatAttachment(attachmentType?: string | null, attachment
   return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(attachmentName ?? "");
 }
 
+function isSafeAttachmentPath(path: string) {
+  return /^[0-9a-fA-F-]+\/[0-9]+-[a-zA-Z0-9._-]+$/.test(path);
+}
+
 export async function getChatAttachmentUrl(supabase: any, attachmentPath?: string | null) {
-  if (!attachmentPath) return null;
+  if (!attachmentPath || !isSafeAttachmentPath(attachmentPath)) return null;
 
   const signed = await supabase.storage.from(CHAT_ATTACHMENT_BUCKET).createSignedUrl(attachmentPath, 60 * 60 * 8);
   if (signed.error) return null;

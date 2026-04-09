@@ -19,7 +19,7 @@ begin
   end if;
 
   if not exists (select 1 from pg_type where typname = 'tx_status') then
-    create type public.tx_status as enum ('posted', 'voided');
+    create type public.tx_status as enum ('posted', 'voided', 'settled');
   end if;
 end $$;
 
@@ -212,6 +212,10 @@ begin
   if exists (select 1 from pg_type where typname = 'app_role') then
     begin alter type public.app_role add value if not exists 'tenant_admin'; exception when duplicate_object then null; end;
     begin alter type public.app_role add value if not exists 'financeiro'; exception when duplicate_object then null; end;
+  end if;
+
+  if exists (select 1 from pg_type where typname = 'tx_status') then
+    begin alter type public.tx_status add value if not exists 'settled'; exception when duplicate_object then null; end;
   end if;
 end $$;
 
@@ -434,16 +438,16 @@ select
   s.opened_at,
   s.closed_at,
   s.status,
-  count(t.id) filter (where t.status = 'posted') as tx_count,
-  coalesce(sum(t.amount) filter (where t.status = 'posted'), 0)::numeric(12,2) as gross_amount,
-  coalesce(sum(t.commission_amount) filter (where t.status = 'posted'), 0)::numeric(12,2) as commission_amount,
-  coalesce(sum(t.amount) filter (where t.status = 'posted' and t.payment_method='pix'), 0)::numeric(12,2) as total_pix,
-  coalesce(sum(t.amount) filter (where t.status = 'posted' and t.payment_method='credit'), 0)::numeric(12,2) as total_credit,
-  coalesce(sum(t.amount) filter (where t.status = 'posted' and t.payment_method='debit'), 0)::numeric(12,2) as total_debit,
-  coalesce(sum(t.amount) filter (where t.status = 'posted' and t.payment_method='cash'), 0)::numeric(12,2) as total_cash,
-  count(t.id) filter (where t.status='posted' and t.payment_method in ('credit','debit')) as card_tx_count,
+  count(t.id) filter (where t.status <> 'voided') as tx_count,
+  coalesce(sum(t.amount) filter (where t.status <> 'voided'), 0)::numeric(12,2) as gross_amount,
+  coalesce(sum(t.commission_amount) filter (where t.status <> 'voided'), 0)::numeric(12,2) as commission_amount,
+  coalesce(sum(t.amount) filter (where t.status <> 'voided' and t.payment_method='pix'), 0)::numeric(12,2) as total_pix,
+  coalesce(sum(t.amount) filter (where t.status <> 'voided' and t.payment_method='credit'), 0)::numeric(12,2) as total_credit,
+  coalesce(sum(t.amount) filter (where t.status <> 'voided' and t.payment_method='debit'), 0)::numeric(12,2) as total_debit,
+  coalesce(sum(t.amount) filter (where t.status <> 'voided' and t.payment_method='cash'), 0)::numeric(12,2) as total_cash,
+  count(t.id) filter (where t.status <> 'voided' and t.payment_method in ('credit','debit')) as card_tx_count,
   count(r.id) as card_receipt_count,
-  (count(t.id) filter (where t.status='posted' and t.payment_method in ('credit','debit')) - count(r.id)) as missing_card_receipts
+  (count(t.id) filter (where t.status <> 'voided' and t.payment_method in ('credit','debit')) - count(r.id)) as missing_card_receipts
 from public.shifts s
 join public.booths b on b.id = s.booth_id
 join public.profiles p on p.user_id = s.operator_id

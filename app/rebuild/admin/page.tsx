@@ -382,7 +382,14 @@ export default function AdminRebuildPage() {
   async function logAction(action: string, entity?: string, entityId?: string, details?: Record<string,unknown>) {
     const { data } = await supabase.auth.getUser();
     if (!data.user) return;
-    await supabase.from("audit_logs").insert({ created_by: data.user.id, action, entity: entity ?? null, entity_id: entityId ?? null, details: details ?? {} });
+
+    const { error } = await supabase
+      .from("audit_logs")
+      .insert({ created_by: data.user.id, action, entity: entity ?? null, entity_id: entityId ?? null, details: details ?? {} });
+
+    if (error && !isSchemaToleranceError(error)) {
+      console.warn("Falha ao registrar auditoria admin:", error.message);
+    }
   }
 
   async function loadVisibleProfiles() {
@@ -553,7 +560,7 @@ export default function AdminRebuildPage() {
     const normalizeMessage = async (m: { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null; attachment_path?: string | null; attachment_name?: string | null; attachment_type?: string | null; attachment_size?: number | null; }): Promise<OperatorMessage> => ({
       ...m,
       booth_id: m.booth_id ?? null,
-      sender_role: m.sender_role === "admin" ? "admin" : "operator",
+      sender_role: m.sender_role === "operator" ? "operator" : "admin",
       attachment_path: m.attachment_path ?? null,
       attachment_name: m.attachment_name ?? null,
       attachment_type: m.attachment_type ?? null,
@@ -607,7 +614,7 @@ export default function AdminRebuildPage() {
           const hydrated: OperatorMessage = {
             ...raw,
             booth_id: raw.booth_id ?? null,
-            sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+            sender_role: raw.sender_role === "operator" ? "operator" : "admin",
             attachment_path: raw.attachment_path ?? null,
             attachment_name: raw.attachment_name ?? null,
             attachment_type: raw.attachment_type ?? null,
@@ -644,7 +651,7 @@ export default function AdminRebuildPage() {
                     created_at: updated.created_at,
                     operator_id: updated.operator_id,
                     booth_id: updated.booth_id ?? null,
-                    sender_role: updated.sender_role === "admin" ? "admin" : "operator",
+                    sender_role: updated.sender_role === "operator" ? "operator" : "admin",
                     attachment_path: updated.attachment_path ?? null,
                     attachment_name: updated.attachment_name ?? null,
                     attachment_type: updated.attachment_type ?? null,
@@ -1012,6 +1019,17 @@ export default function AdminRebuildPage() {
     if (dateFrom && dateTo && dateFrom > dateTo) {
       setToastType("warning");
       return setMessage("A data inicial nao pode ser maior que a data final.");
+    }
+
+    if (dateFrom && dateTo) {
+      const start = new Date(`${dateFrom}T00:00:00`);
+      const end = new Date(`${dateTo}T00:00:00`);
+      const diffDays = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (diffDays > 365) {
+        setToastType("warning");
+        return setMessage("Para manter o sistema estavel, consulte periodos de ate 365 dias por vez.");
+      }
     }
 
     await refreshData(dateFrom, dateTo);

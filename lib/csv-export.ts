@@ -1,19 +1,28 @@
+function sanitizeCsvCell(value: unknown) {
+  let normalized = "";
+
+  if (value !== null && value !== undefined) {
+    normalized = typeof value === "number"
+      ? value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })
+      : String(value);
+  }
+
+  const trimmedStart = normalized.trimStart();
+  if (/^[=+\-@]/.test(trimmedStart) || /^[\t\r]/.test(normalized)) {
+    normalized = `'${normalized}`;
+  }
+
+  normalized = normalized.replace(/"/g, '""');
+  return `"${normalized}"`;
+}
+
 export function exportToCSV(filename: string, rows: any[], columns: { key: string; label: string }[]) {
   if (!rows || !rows.length) return;
   const separator = ";";
   const header = columns.map(c => `"${c.label}"`).join(separator);
   
   const csvData = rows.map(row => {
-    return columns.map(c => {
-      let val = row[c.key];
-      if (val === null || val === undefined) val = "";
-      // Handle formatting for numbers/money if passed as raw
-      if (typeof val === "number") {
-        val = val.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-      }
-      if (typeof val === "string") val = val.replace(/"/g, '""');
-      return `"${val}"`;
-    }).join(separator);
+    return columns.map(c => sanitizeCsvCell(row[c.key])).join(separator);
   });
   
   const csvContent = [header, ...csvData].join("\n");
