@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
-import { AlertCircle, CheckCheck, Eye, MessageSquare, RefreshCw, Send, Store, Users } from "lucide-react";
+import { type ChangeEvent, useMemo } from "react";
+import { AlertCircle, CheckCheck, Download, Eye, MessageSquare, Paperclip, RefreshCw, Send, Store, Users, X } from "lucide-react";
 
 import { boothOf, nameOf } from "@/lib/admin/admin-helpers";
+import { isImageChatAttachment } from "@/lib/chat-attachments";
 import { Badge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
 import { Card } from "@/components/rebuild/ui/card";
@@ -19,6 +20,11 @@ type OperatorMessageRow = {
   operator_id: string;
   booth_id: string | null;
   sender_role: "operator" | "admin";
+  attachment_path?: string | null;
+  attachment_name?: string | null;
+  attachment_type?: string | null;
+  attachment_size?: number | null;
+  attachment_url?: string | null;
   profiles: { full_name: string } | { full_name: string }[] | null;
   booths: { name: string; code: string } | { name: string; code: string }[] | null;
 };
@@ -53,8 +59,12 @@ type AdminMessagesSectionProps = {
   operatorBoothLinks: OperatorBoothLinkRow[];
   activeConversation: MessageConversation | null;
   adminReply: string;
+  adminReplyAttachmentName: string | null;
+  adminReplyAttachmentKey: number;
   isMounted: boolean;
   onAdminReplyChange: (value: string) => void;
+  onAdminReplyAttachmentChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onClearAdminReplyAttachment: () => void;
   onRefresh: () => void | Promise<void>;
   onMarkAllRead: () => void | Promise<void>;
   onMarkAsRead: (messageId: string) => void | Promise<void>;
@@ -68,8 +78,12 @@ export function AdminMessagesSection({
   operatorBoothLinks,
   activeConversation,
   adminReply,
+  adminReplyAttachmentName,
+  adminReplyAttachmentKey,
   isMounted,
   onAdminReplyChange,
+  onAdminReplyAttachmentChange,
+  onClearAdminReplyAttachment,
   onRefresh,
   onMarkAllRead,
   onMarkAsRead,
@@ -258,6 +272,29 @@ export function AdminMessagesSection({
                             {!sentByAdmin && !message.read && <Badge variant="warning">Nova</Badge>}
                           </div>
                           <p className="whitespace-pre-wrap text-sm text-foreground/90">{message.message}</p>
+                          {message.attachment_url && (
+                            <div className="mt-3">
+                              {isImageChatAttachment(message.attachment_type, message.attachment_name) ? (
+                                <a href={message.attachment_url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border">
+                                  <img
+                                    src={message.attachment_url}
+                                    alt={message.attachment_name ?? "Imagem anexada"}
+                                    className="max-h-64 w-full object-cover"
+                                  />
+                                </a>
+                              ) : (
+                                <a
+                                  href={message.attachment_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground hover:bg-muted/40"
+                                >
+                                  <Download className="h-4 w-4" />
+                                  {message.attachment_name ?? "Baixar arquivo"}
+                                </a>
+                              )}
+                            </div>
+                          )}
                           <div className={`mt-2 flex items-center gap-2 text-xs text-muted ${sentByAdmin ? "justify-end" : "justify-between"}`}>
                             <span>{isMounted ? new Date(message.created_at).toLocaleString("pt-BR") : "--"}</span>
                             {!sentByAdmin && !message.read && (
@@ -274,6 +311,28 @@ export function AdminMessagesSection({
               </div>
 
               <div className="mt-4 border-t border-border pt-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground hover:bg-muted/40">
+                    <Paperclip className="h-4 w-4" />
+                    Anexar arquivo
+                    <input
+                      key={adminReplyAttachmentKey}
+                      type="file"
+                      className="hidden"
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+                      onChange={onAdminReplyAttachmentChange}
+                    />
+                  </label>
+
+                  {adminReplyAttachmentName && (
+                    <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-foreground">
+                      <span className="max-w-[220px] truncate">{adminReplyAttachmentName}</span>
+                      <button type="button" onClick={onClearAdminReplyAttachment} className="text-muted hover:text-foreground">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <Input
                     value={adminReply}
@@ -287,7 +346,7 @@ export function AdminMessagesSection({
                       }
                     }}
                   />
-                  <Button variant="primary" onClick={() => void onSendReply()} disabled={!adminReply.trim()}>
+                  <Button variant="primary" onClick={() => void onSendReply()} disabled={!adminReply.trim() && !adminReplyAttachmentName}>
                     <Send className="h-4 w-4" />
                     Enviar
                   </Button>

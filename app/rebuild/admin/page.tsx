@@ -1,5 +1,5 @@
 "use client";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { canAccessAdminArea, canAccessAdminSection, getDefaultAdminSectionForRole, getHomeRouteForRole, type AppRole } from "@/lib/rbac";
@@ -30,6 +30,7 @@ import { Breadcrumb } from "@/components/rebuild/ui/breadcrumb";
 import { SkeletonTable } from "@/components/rebuild/ui/skeleton";
 import { exportToCSV } from "@/lib/csv-export";
 import { ADMIN_CHART_COLORS, boothOf, formatCurrency, getCompanyPct, nameOf } from "@/lib/admin/admin-helpers";
+import { getChatAttachmentUrl, uploadChatAttachment, validateChatAttachment } from "@/lib/chat-attachments";
 import { 
   DollarSign, 
   TrendingUp, 
@@ -110,6 +111,11 @@ type OperatorMessage = {
   operator_id: string;
   booth_id: string | null;
   sender_role: "operator" | "admin";
+  attachment_path?: string | null;
+  attachment_name?: string | null;
+  attachment_type?: string | null;
+  attachment_size?: number | null;
+  attachment_url?: string | null;
   profiles: { full_name: string }|{ full_name: string }[]|null;
   booths: { name: string; code: string }|{ name: string; code: string }[]|null;
 };
@@ -251,6 +257,8 @@ export default function AdminRebuildPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeConversation, setActiveConversation] = useState<MessageConversation | null>(null);
   const [adminReply, setAdminReply] = useState("");
+  const [adminReplyAttachment, setAdminReplyAttachment] = useState<File | null>(null);
+  const [adminReplyAttachmentKey, setAdminReplyAttachmentKey] = useState(0);
   const [attendanceRows, setAttendanceRows] = useState<AttendanceRow[]>([]);
   const [currentRole, setCurrentRole] = useState<AppRole | "">("");
   const currentRoleRef = useRef<AppRole | "">("");
@@ -516,25 +524,53 @@ export default function AdminRebuildPage() {
   }
 
   // ===== FUNCOES MENSAGENS OPERADORES =====
+  function resetAdminReplyAttachment() {
+    setAdminReplyAttachment(null);
+    setAdminReplyAttachmentKey((prev) => prev + 1);
+  }
+
+  function handleAdminReplyAttachmentChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      resetAdminReplyAttachment();
+      return;
+    }
+
+    const validationError = validateChatAttachment(file);
+    if (validationError) {
+      setToastType("warning");
+      setMessage(validationError);
+      resetAdminReplyAttachment();
+      return;
+    }
+
+    setAdminReplyAttachment(file);
+  }
+
   const loadOperatorMessages = useCallback(async () => {
     const profileMap = new Map(profilesRef.current.map((p) => [p.user_id, p.full_name]));
     const boothMap = new Map(boothsRef.current.map((b) => [b.id, { name: b.name, code: b.code }]));
-    const normalizeMessage = (m: { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null; }): OperatorMessage => ({
+    const normalizeMessage = async (m: { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null; attachment_path?: string | null; attachment_name?: string | null; attachment_type?: string | null; attachment_size?: number | null; }): Promise<OperatorMessage> => ({
       ...m,
       booth_id: m.booth_id ?? null,
       sender_role: m.sender_role === "admin" ? "admin" : "operator",
+      attachment_path: m.attachment_path ?? null,
+      attachment_name: m.attachment_name ?? null,
+      attachment_type: m.attachment_type ?? null,
+      attachment_size: m.attachment_size ?? null,
+      attachment_url: await getChatAttachmentUrl(supabase, m.attachment_path ?? null),
       profiles: { full_name: profileMap.get(m.operator_id) ?? "Operador" },
       booths: m.booth_id ? boothMap.get(m.booth_id) ?? null : null,
     });
 
     const query = await supabase
       .from("operator_messages")
-      .select("id, message, read, created_at, operator_id, booth_id, sender_role")
+      .select("id, message, read, created_at, operator_id, booth_id, sender_role, attachment_path, attachment_name, attachment_type, attachment_size")
       .order("created_at", { ascending: false })
       .limit(200);
 
     if (!query.error && query.data) {
-      const hydratedMessages = query.data.map(normalizeMessage);
+      const hydratedMessages = await Promise.all(query.data.map(normalizeMessage));
       setOperatorMessages(hydratedMessages);
       setUnreadCount(hydratedMessages.filter((m) => !m.read && m.sender_role === "operator").length);
       return;
@@ -548,8 +584,10 @@ export default function AdminRebuildPage() {
         .limit(200);
 
       if (!fallback.error && fallback.data) {
-        const hydratedMessages = fallback.data.map((m: { id: string; message: string; read: boolean; created_at: string; operator_id: string }) =>
-          normalizeMessage({ ...m, booth_id: null, sender_role: "operator" })
+        const hydratedMessages = await Promise.all(
+          fallback.data.map((m: { id: string; message: string; read: boolean; created_at: string; operator_id: string }) =>
+            normalizeMessage({ ...m, booth_id: null, sender_role: "operator", attachment_path: null, attachment_name: null, attachment_type: null, attachment_size: null })
+          )
         );
         setOperatorMessages(hydratedMessages);
         setUnreadCount(hydratedMessages.filter((m) => !m.read && m.sender_role === "operator").length);
@@ -562,49 +600,64 @@ export default function AdminRebuildPage() {
     const channel = supabase
       .channel("admin-messages")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "operator_messages" }, (payload) => {
-        const raw = payload.new as { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null };
-        const profileMap = new Map(profilesRef.current.map((p) => [p.user_id, p.full_name]));
-        const boothMap = new Map(boothsRef.current.map((b) => [b.id, { name: b.name, code: b.code }]));
-        const hydrated: OperatorMessage = {
-          ...raw,
-          booth_id: raw.booth_id ?? null,
-          sender_role: raw.sender_role === "admin" ? "admin" : "operator",
-          profiles: { full_name: profileMap.get(raw.operator_id) ?? "Operador" },
-          booths: raw.booth_id ? boothMap.get(raw.booth_id) ?? null : null,
-        };
+        void (async () => {
+          const raw = payload.new as { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null; attachment_path?: string | null; attachment_name?: string | null; attachment_type?: string | null; attachment_size?: number | null };
+          const profileMap = new Map(profilesRef.current.map((p) => [p.user_id, p.full_name]));
+          const boothMap = new Map(boothsRef.current.map((b) => [b.id, { name: b.name, code: b.code }]));
+          const hydrated: OperatorMessage = {
+            ...raw,
+            booth_id: raw.booth_id ?? null,
+            sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+            attachment_path: raw.attachment_path ?? null,
+            attachment_name: raw.attachment_name ?? null,
+            attachment_type: raw.attachment_type ?? null,
+            attachment_size: raw.attachment_size ?? null,
+            attachment_url: await getChatAttachmentUrl(supabase, raw.attachment_path ?? null),
+            profiles: { full_name: profileMap.get(raw.operator_id) ?? "Operador" },
+            booths: raw.booth_id ? boothMap.get(raw.booth_id) ?? null : null,
+          };
 
-        setOperatorMessages((prev) => (prev.some((message) => message.id === hydrated.id) ? prev : [hydrated, ...prev]));
+          setOperatorMessages((prev) => (prev.some((message) => message.id === hydrated.id) ? prev : [hydrated, ...prev]));
 
-        if (!hydrated.read && hydrated.sender_role === "operator") {
-          setUnreadCount((prev) => prev + 1);
-          if (menuRef.current !== "mensagens") {
-            setToastType("info");
-            setMessage(`Nova mensagem de ${nameOf(hydrated.profiles) ?? "Operador"}.`);
+          if (!hydrated.read && hydrated.sender_role === "operator") {
+            setUnreadCount((prev) => prev + 1);
+            if (menuRef.current !== "mensagens") {
+              setToastType("info");
+              setMessage(`Nova mensagem de ${nameOf(hydrated.profiles) ?? "Operador"}.`);
+            }
           }
-        }
+        })();
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "operator_messages" }, (payload) => {
-        const updated = payload.new as { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null };
-        const boothMap = new Map(boothsRef.current.map((b) => [b.id, { name: b.name, code: b.code }]));
+        void (async () => {
+          const updated = payload.new as { id: string; message: string; read: boolean; created_at: string; operator_id: string; booth_id?: string | null; sender_role?: string | null; attachment_path?: string | null; attachment_name?: string | null; attachment_type?: string | null; attachment_size?: number | null };
+          const boothMap = new Map(boothsRef.current.map((b) => [b.id, { name: b.name, code: b.code }]));
+          const attachmentUrl = await getChatAttachmentUrl(supabase, updated.attachment_path ?? null);
 
-        setOperatorMessages((prev) => {
-          const next: OperatorMessage[] = prev.map((message): OperatorMessage =>
-            message.id === updated.id
-              ? {
-                  ...message,
-                  message: updated.message,
-                  read: updated.read,
-                  created_at: updated.created_at,
-                  operator_id: updated.operator_id,
-                  booth_id: updated.booth_id ?? null,
-                  sender_role: updated.sender_role === "admin" ? "admin" : "operator",
-                  booths: updated.booth_id ? boothMap.get(updated.booth_id) ?? null : message.booths,
-                }
-              : message
-          );
-          setUnreadCount(next.filter((message) => !message.read && message.sender_role === "operator").length);
-          return next;
-        });
+          setOperatorMessages((prev) => {
+            const next: OperatorMessage[] = prev.map((message): OperatorMessage =>
+              message.id === updated.id
+                ? {
+                    ...message,
+                    message: updated.message,
+                    read: updated.read,
+                    created_at: updated.created_at,
+                    operator_id: updated.operator_id,
+                    booth_id: updated.booth_id ?? null,
+                    sender_role: updated.sender_role === "admin" ? "admin" : "operator",
+                    attachment_path: updated.attachment_path ?? null,
+                    attachment_name: updated.attachment_name ?? null,
+                    attachment_type: updated.attachment_type ?? null,
+                    attachment_size: updated.attachment_size ?? null,
+                    attachment_url: attachmentUrl,
+                    booths: updated.booth_id ? boothMap.get(updated.booth_id) ?? null : message.booths,
+                  }
+                : message
+            );
+            setUnreadCount(next.filter((message) => !message.read && message.sender_role === "operator").length);
+            return next;
+          });
+        })();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -638,6 +691,7 @@ export default function AdminRebuildPage() {
   async function openMessageConversation(conversation: MessageConversation) {
     setActiveConversation(conversation);
     setAdminReply("");
+    resetAdminReplyAttachment();
 
     const { data } = await supabase.auth.getUser();
     let query = supabase
@@ -660,14 +714,38 @@ export default function AdminRebuildPage() {
   }
 
   async function sendAdminReply() {
-    if (!activeConversation || !adminReply.trim()) return;
+    if (!activeConversation || (!adminReply.trim() && !adminReplyAttachment)) return;
+
+    let attachmentPayload: {
+      attachment_path?: string;
+      attachment_name?: string;
+      attachment_type?: string;
+      attachment_size?: number;
+    } = {};
+
+    if (adminReplyAttachment) {
+      try {
+        const uploaded = await uploadChatAttachment(supabase, activeConversation.operatorId, adminReplyAttachment);
+        attachmentPayload = {
+          attachment_path: uploaded.attachment_path,
+          attachment_name: uploaded.attachment_name,
+          attachment_type: uploaded.attachment_type,
+          attachment_size: uploaded.attachment_size,
+        };
+      } catch (error) {
+        setToastType("error");
+        setMessage(`Erro ao enviar anexo: ${error instanceof Error ? error.message : "falha no upload"}`);
+        return;
+      }
+    }
 
     const payload = {
       operator_id: activeConversation.operatorId,
       booth_id: activeConversation.boothId,
       sender_role: "admin" as const,
-      message: adminReply.trim(),
+      message: adminReply.trim() || `Anexo enviado: ${adminReplyAttachment?.name ?? "arquivo"}`,
       read: false,
+      ...attachmentPayload,
     };
 
     const { error } = await supabase.from("operator_messages").insert(payload);
@@ -676,13 +754,14 @@ export default function AdminRebuildPage() {
       setToastType("error");
       setMessage(
         isSchemaToleranceError(error)
-          ? "Chat privado requer a migration de mensagens por guiche antes do envio do admin."
+          ? "Chat com anexos requer a migration de arquivos da conversa antes do envio."
           : `Erro: ${error.message}`
       );
       return;
     }
 
     setAdminReply("");
+    resetAdminReplyAttachment();
     setToastType("success");
     setMessage(`Mensagem enviada para ${activeConversation.boothName}.`);
     await loadOperatorMessages();
@@ -1919,8 +1998,12 @@ export default function AdminRebuildPage() {
             operatorBoothLinks={operatorBoothLinks}
             activeConversation={activeConversation}
             adminReply={adminReply}
+            adminReplyAttachmentName={adminReplyAttachment?.name ?? null}
+            adminReplyAttachmentKey={adminReplyAttachmentKey}
             isMounted={isMounted}
             onAdminReplyChange={setAdminReply}
+            onAdminReplyAttachmentChange={handleAdminReplyAttachmentChange}
+            onClearAdminReplyAttachment={resetAdminReplyAttachment}
             onRefresh={loadOperatorMessages}
             onMarkAllRead={markAllMessagesAsRead}
             onMarkAsRead={markMessageAsRead}

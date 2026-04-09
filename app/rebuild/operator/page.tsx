@@ -13,7 +13,8 @@ import { Button } from "@/components/rebuild/ui/button";
 import { DataTable } from "@/components/rebuild/ui/table";
 import { Badge, PaymentBadge } from "@/components/rebuild/ui/badge";
 import { Toast } from "@/components/rebuild/ui/toast";
-import { Plus, RefreshCw, Banknote, CreditCard, Clock, AlertTriangle, Delete, Send, MessageSquare, Link2, Smartphone, Wallet, MapPin, Settings, X, Check, ChevronRight, Bell } from "lucide-react";
+import { getChatAttachmentUrl, isImageChatAttachment, uploadChatAttachment, validateChatAttachment } from "@/lib/chat-attachments";
+import { Plus, RefreshCw, Banknote, CreditCard, Clock, AlertTriangle, Delete, Download, Paperclip, Send, MessageSquare, Link2, Smartphone, Wallet, MapPin, Settings, X, Check, ChevronRight, Bell } from "lucide-react";
 
 const supabase = createClient();
 
@@ -126,9 +127,16 @@ export default function OperatorRebuildPage() {
     read: boolean;
     booth_id: string | null;
     sender_role: "operator" | "admin";
+    attachment_path?: string | null;
+    attachment_name?: string | null;
+    attachment_type?: string | null;
+    attachment_size?: number | null;
+    attachment_url?: string | null;
   };
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newChatMessage, setNewChatMessage] = useState("");
+  const [newChatAttachment, setNewChatAttachment] = useState<File | null>(null);
+  const [chatAttachmentKey, setChatAttachmentKey] = useState(0);
   const [showChat, setShowChat] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -585,22 +593,49 @@ export default function OperatorRebuildPage() {
   }
 
   // ===== FUNCOES CHAT =====
+  function resetChatAttachment() {
+    setNewChatAttachment(null);
+    setChatAttachmentKey((prev) => prev + 1);
+  }
+
+  function handleChatAttachmentChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    if (!file) {
+      resetChatAttachment();
+      return;
+    }
+
+    const validationError = validateChatAttachment(file);
+    if (validationError) {
+      setMessage(validationError);
+      resetChatAttachment();
+      return;
+    }
+
+    setNewChatAttachment(file);
+  }
+
   const loadChatMessages = useCallback(async () => {
     if (!userId) return;
 
     const query = await supabase
       .from("operator_messages")
-      .select("id, message, created_at, read, booth_id, sender_role")
+      .select("id, message, created_at, read, booth_id, sender_role, attachment_path, attachment_name, attachment_type, attachment_size")
       .eq("operator_id", userId)
       .order("created_at", { ascending: true })
       .limit(150);
 
     if (!query.error && query.data) {
-      const allMessages: ChatMessage[] = ((query.data as ChatMessage[]) || []).map((msg) => ({
+      const allMessages: ChatMessage[] = await Promise.all(((query.data as ChatMessage[]) || []).map(async (msg) => ({
         ...msg,
         booth_id: msg.booth_id ?? null,
         sender_role: msg.sender_role === "admin" ? "admin" : "operator",
-      }));
+        attachment_path: msg.attachment_path ?? null,
+        attachment_name: msg.attachment_name ?? null,
+        attachment_type: msg.attachment_type ?? null,
+        attachment_size: msg.attachment_size ?? null,
+        attachment_url: await getChatAttachmentUrl(supabase, msg.attachment_path ?? null),
+      })));
       const visibleMessages: ChatMessage[] = activeChatBoothId
         ? allMessages.filter((msg) => (msg.booth_id ?? activeChatBoothId) === activeChatBoothId)
         : allMessages;
@@ -624,6 +659,11 @@ export default function OperatorRebuildPage() {
           ...msg,
           booth_id: activeChatBoothId || null,
           sender_role: "operator" as const,
+          attachment_path: null,
+          attachment_name: null,
+          attachment_type: null,
+          attachment_size: null,
+          attachment_url: null,
         }));
         setChatMessages(legacyMessages);
         setUnreadChatCount(0);
@@ -669,39 +709,53 @@ export default function OperatorRebuildPage() {
     const channel = supabase
       .channel(`op-messages-${userId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "operator_messages", filter: `operator_id=eq.${userId}` }, (payload) => {
-        const raw = payload.new as ChatMessage;
-        const normalized: ChatMessage = {
-          ...raw,
-          booth_id: raw.booth_id ?? null,
-          sender_role: raw.sender_role === "admin" ? "admin" : "operator",
-        };
-        const belongsToCurrentBooth = !activeChatBoothId || (normalized.booth_id ?? activeChatBoothId) === activeChatBoothId;
+        void (async () => {
+          const raw = payload.new as ChatMessage;
+          const normalized: ChatMessage = {
+            ...raw,
+            booth_id: raw.booth_id ?? null,
+            sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+            attachment_path: raw.attachment_path ?? null,
+            attachment_name: raw.attachment_name ?? null,
+            attachment_type: raw.attachment_type ?? null,
+            attachment_size: raw.attachment_size ?? null,
+            attachment_url: await getChatAttachmentUrl(supabase, raw.attachment_path ?? null),
+          };
+          const belongsToCurrentBooth = !activeChatBoothId || (normalized.booth_id ?? activeChatBoothId) === activeChatBoothId;
 
-        if (belongsToCurrentBooth) {
-          setChatMessages((prev) => (prev.some((msg) => msg.id === normalized.id) ? prev : [...prev, normalized]));
-          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-        }
-
-        if (normalized.sender_role === "admin") {
-          if (showChatRef.current && belongsToCurrentBooth) {
-            void markAdminChatAsRead();
-          } else {
-            setUnreadChatCount((prev) => prev + 1);
-            setMessage(`Nova mensagem do administrador para ${activeChatBoothName}.`);
+          if (belongsToCurrentBooth) {
+            setChatMessages((prev) => (prev.some((msg) => msg.id === normalized.id) ? prev : [...prev, normalized]));
+            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
           }
-        }
+
+          if (normalized.sender_role === "admin") {
+            if (showChatRef.current && belongsToCurrentBooth) {
+              void markAdminChatAsRead();
+            } else {
+              setUnreadChatCount((prev) => prev + 1);
+              setMessage(`Nova mensagem do administrador para ${activeChatBoothName}.`);
+            }
+          }
+        })();
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "operator_messages", filter: `operator_id=eq.${userId}` }, (payload) => {
-        const raw = payload.new as ChatMessage;
-        const updated: ChatMessage = {
-          ...raw,
-          booth_id: raw.booth_id ?? null,
-          sender_role: raw.sender_role === "admin" ? "admin" : "operator",
-        };
-        const belongsToCurrentBooth = !activeChatBoothId || (updated.booth_id ?? activeChatBoothId) === activeChatBoothId;
-        if (belongsToCurrentBooth) {
-          setChatMessages((prev) => prev.map((msg) => (msg.id === updated.id ? updated : msg)));
-        }
+        void (async () => {
+          const raw = payload.new as ChatMessage;
+          const updated: ChatMessage = {
+            ...raw,
+            booth_id: raw.booth_id ?? null,
+            sender_role: raw.sender_role === "admin" ? "admin" : "operator",
+            attachment_path: raw.attachment_path ?? null,
+            attachment_name: raw.attachment_name ?? null,
+            attachment_type: raw.attachment_type ?? null,
+            attachment_size: raw.attachment_size ?? null,
+            attachment_url: await getChatAttachmentUrl(supabase, raw.attachment_path ?? null),
+          };
+          const belongsToCurrentBooth = !activeChatBoothId || (updated.booth_id ?? activeChatBoothId) === activeChatBoothId;
+          if (belongsToCurrentBooth) {
+            setChatMessages((prev) => prev.map((msg) => (msg.id === updated.id ? updated : msg)));
+          }
+        })();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -709,17 +763,48 @@ export default function OperatorRebuildPage() {
   }, [activeChatBoothId, activeChatBoothName, userId]);
 
   async function sendChatMessage() {
-    if (!userId || !activeChatBoothId || !newChatMessage.trim()) return;
+    if (!userId || !activeChatBoothId || (!newChatMessage.trim() && !newChatAttachment)) return;
+
+    let attachmentPayload: {
+      attachment_path?: string;
+      attachment_name?: string;
+      attachment_type?: string;
+      attachment_size?: number;
+    } = {};
+
+    if (newChatAttachment) {
+      try {
+        const uploaded = await uploadChatAttachment(supabase, userId, newChatAttachment);
+        attachmentPayload = {
+          attachment_path: uploaded.attachment_path,
+          attachment_name: uploaded.attachment_name,
+          attachment_type: uploaded.attachment_type,
+          attachment_size: uploaded.attachment_size,
+        };
+      } catch (error) {
+        setMessage(`Erro ao enviar anexo: ${error instanceof Error ? error.message : "falha no upload"}`);
+        return;
+      }
+    }
+
     const payload = {
       operator_id: userId,
       booth_id: activeChatBoothId,
       sender_role: "operator" as const,
-      message: newChatMessage.trim(),
+      message: newChatMessage.trim() || `Anexo enviado: ${newChatAttachment?.name ?? "arquivo"}`,
       read: false,
+      ...attachmentPayload,
     };
     const { error } = await supabase.from("operator_messages").insert(payload);
-    if (error) return setMessage(`Erro: ${error.message}`);
+    if (error) {
+      return setMessage(
+        isSchemaToleranceError(error)
+          ? "Chat com anexos requer a migration de arquivos da conversa antes do envio."
+          : `Erro: ${error.message}`
+      );
+    }
     setNewChatMessage("");
+    resetChatAttachment();
     setMessage(`Mensagem enviada para o admin do guiche ${activeChatBoothName}.`);
     await loadChatMessages();
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 120);
@@ -1711,6 +1796,29 @@ export default function OperatorRebuildPage() {
                           {!sentByOperator && !msg.read && <Badge variant="warning">Nova</Badge>}
                         </div>
                         <p className="text-sm text-foreground">{msg.message}</p>
+                        {msg.attachment_url && (
+                          <div className="mt-3">
+                            {isImageChatAttachment(msg.attachment_type, msg.attachment_name) ? (
+                              <a href={msg.attachment_url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-border">
+                                <img
+                                  src={msg.attachment_url}
+                                  alt={msg.attachment_name ?? "Imagem anexada"}
+                                  className="max-h-64 w-full object-cover"
+                                />
+                              </a>
+                            ) : (
+                              <a
+                                href={msg.attachment_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground hover:bg-muted/40"
+                              >
+                                <Download size={14} />
+                                {msg.attachment_name ?? "Baixar arquivo"}
+                              </a>
+                            )}
+                          </div>
+                        )}
                         <div className={`mt-2 flex items-center gap-2 ${sentByOperator ? "justify-end" : "justify-between"}`}>
                           <p className="text-xs text-muted">
                             {isMounted ? new Date(msg.created_at).toLocaleString("pt-BR") : "--"}
@@ -1728,6 +1836,28 @@ export default function OperatorRebuildPage() {
             </div>
 
             <div className="border-t border-slate-700 pt-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-foreground hover:bg-muted/40">
+                  <Paperclip size={14} />
+                  Anexar arquivo
+                  <input
+                    key={chatAttachmentKey}
+                    type="file"
+                    className="hidden"
+                    accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip"
+                    onChange={handleChatAttachmentChange}
+                  />
+                </label>
+
+                {newChatAttachment && (
+                  <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-foreground">
+                    <span className="max-w-[220px] truncate">{newChatAttachment.name}</span>
+                    <button type="button" onClick={resetChatAttachment} className="text-muted hover:text-foreground">
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex gap-2">
                 <Input
                   value={newChatMessage}
@@ -1741,7 +1871,7 @@ export default function OperatorRebuildPage() {
                     }
                   }}
                 />
-                <Button variant="primary" onClick={() => void sendChatMessage()} disabled={!newChatMessage.trim()}>
+                <Button variant="primary" onClick={() => void sendChatMessage()} disabled={!newChatMessage.trim() && !newChatAttachment}>
                   <Send size={16} />
                 </Button>
               </div>
