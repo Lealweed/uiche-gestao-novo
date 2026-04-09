@@ -162,8 +162,14 @@ export default function AdminRebuildPage() {
   const [message, setMessage]     = useState<string|null>(null);
   const [toastType, setToastType] = useState<ToastType>("info");
   const [menu, setMenu]           = useState<MenuSection>("dashboard");
-  const [dateFrom, setDateFrom]   = useState("");
-  const [dateTo, setDateTo]       = useState("");
+  const [dateFrom, setDateFrom]   = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const [dateTo, setDateTo]       = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
   const [profileSearch, setProfileSearch] = useState("");
   const [boothSearch, setBoothSearch]     = useState("");
   const [companyName, setCompanyName]     = useState("");
@@ -895,9 +901,12 @@ export default function AdminRebuildPage() {
   }
 
   async function clearDateFilters() {
-    setDateFrom("");
-    setDateTo("");
-    await refreshData("", "");
+    const d = new Date();
+    const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    const to   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    setDateFrom(from);
+    setDateTo(to);
+    await refreshData(from, to);
   }
 
   const filteredProfiles = useMemo(() => { const t = profileSearch.trim().toLowerCase(); return t ? profiles.filter(p => [p.full_name, p.email??"", p.cpf??"", p.phone??"", p.role].join(" ").toLowerCase().includes(t)) : profiles; }, [profiles, profileSearch]);
