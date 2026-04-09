@@ -52,6 +52,11 @@ type ShiftCashClosingRow = {
 type FinanceByBoothRow = {
   boothId: string;
   boothLabel: string;
+  grossSales: number;
+  txCount: number;
+  pixSales: number;
+  creditSales: number;
+  debitSales: number;
   cashSales: number;
   suprimento: number;
   sangria: number;
@@ -60,6 +65,10 @@ type FinanceByBoothRow = {
   expected: number;
   declared: number;
   difference: number;
+  stateTaxCount: number;
+  stateTaxValue: number;
+  federalTaxCount: number;
+  federalTaxValue: number;
   movementCount: number;
   closingCount: number;
 };
@@ -127,6 +136,38 @@ export function AdminFinanceSection({
   const selectedBoothSummary = useMemo(
     () => selectedBoothId === "all" ? null : financeByBooth.find((row) => row.boothId === selectedBoothId) ?? null,
     [financeByBooth, selectedBoothId]
+  );
+
+  const financeSnapshot = useMemo(
+    () => visibleFinanceByBooth.reduce(
+      (acc, row) => ({
+        grossSales: acc.grossSales + Number(row.grossSales || 0),
+        txCount: acc.txCount + Number(row.txCount || 0),
+        pixSales: acc.pixSales + Number(row.pixSales || 0),
+        creditSales: acc.creditSales + Number(row.creditSales || 0),
+        debitSales: acc.debitSales + Number(row.debitSales || 0),
+        cashSales: acc.cashSales + Number(row.cashSales || 0),
+        stateTaxCount: acc.stateTaxCount + Number(row.stateTaxCount || 0),
+        stateTaxValue: acc.stateTaxValue + Number(row.stateTaxValue || 0),
+        federalTaxCount: acc.federalTaxCount + Number(row.federalTaxCount || 0),
+        federalTaxValue: acc.federalTaxValue + Number(row.federalTaxValue || 0),
+        difference: acc.difference + Number(row.difference || 0),
+      }),
+      {
+        grossSales: 0,
+        txCount: 0,
+        pixSales: 0,
+        creditSales: 0,
+        debitSales: 0,
+        cashSales: 0,
+        stateTaxCount: 0,
+        stateTaxValue: 0,
+        federalTaxCount: 0,
+        federalTaxValue: 0,
+        difference: 0,
+      }
+    ),
+    [visibleFinanceByBooth]
   );
 
   const filteredCashMovementRows = useMemo(
@@ -214,6 +255,60 @@ export function AdminFinanceSection({
         />
       </div>
 
+      <Card>
+        <SectionHeader
+          title={selectedBoothId === "all" ? "Resumo Completo por Guiche" : `Resumo Completo · ${boothDetailLabel}`}
+          subtitle="Visualize faturamento bruto, formas de pagamento e taxas de embarque geradas no periodo selecionado."
+          className="mb-4"
+        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Faturamento bruto"
+            value={formatCurrency(financeSnapshot.grossSales)}
+            icon={<Wallet className="h-5 w-5" />}
+            delta={`${financeSnapshot.txCount} venda(s)`}
+            deltaType="neutral"
+          />
+          <StatCard
+            label="Taxas estaduais"
+            value={formatCurrency(financeSnapshot.stateTaxValue)}
+            delta={`${financeSnapshot.stateTaxCount} gerada(s)`}
+            deltaType="neutral"
+          />
+          <StatCard
+            label="Taxas federais"
+            value={formatCurrency(financeSnapshot.federalTaxValue)}
+            delta={`${financeSnapshot.federalTaxCount} gerada(s)`}
+            deltaType="neutral"
+          />
+          <StatCard
+            label="Divergencia de caixa"
+            value={formatCurrency(financeSnapshot.difference)}
+            delta={financeSnapshot.difference === 0 ? "Conferido" : financeSnapshot.difference > 0 ? "Sobra" : "Falta"}
+            deltaType={financeSnapshot.difference === 0 ? "positive" : financeSnapshot.difference > 0 ? "neutral" : "negative"}
+          />
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-xs text-muted">PIX</p>
+            <p className="text-lg font-semibold text-foreground">{formatCurrency(financeSnapshot.pixSales)}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-xs text-muted">Credito</p>
+            <p className="text-lg font-semibold text-foreground">{formatCurrency(financeSnapshot.creditSales)}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-xs text-muted">Debito</p>
+            <p className="text-lg font-semibold text-foreground">{formatCurrency(financeSnapshot.debitSales)}</p>
+          </div>
+          <div className="rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-xs text-muted">Dinheiro</p>
+            <p className="text-lg font-semibold text-foreground">{formatCurrency(financeSnapshot.cashSales)}</p>
+          </div>
+        </div>
+      </Card>
+
       {selectedBoothSummary && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
@@ -242,17 +337,42 @@ export function AdminFinanceSection({
 
       <Card>
         <SectionHeader
-          title="Resumo Financeiro por Guiche"
-          subtitle={selectedBoothId === "all" ? "Consolidado por operacao de cada guiche no periodo selecionado." : `Detalhamento financeiro de ${boothDetailLabel}.`}
+          title="Relatorio Detalhado por Guiche"
+          subtitle={selectedBoothId === "all" ? "Resumo completo de cada guiche com vendas, formas de pagamento, fechamento e taxas geradas." : `Detalhamento financeiro completo de ${boothDetailLabel}.`}
           className="mb-4"
         />
         <DataTable
           columns={[
             { key: "guiche", header: "Guiche", render: (row) => <span className="font-semibold">{row.boothLabel}</span> },
+            { key: "vendas", header: "Vendas", render: (row) => row.txCount },
+            { key: "bruto", header: "Faturamento", render: (row) => <span className="font-semibold">{formatCurrency(row.grossSales)}</span> },
+            { key: "pix", header: "PIX", render: (row) => formatCurrency(row.pixSales) },
+            { key: "credito", header: "Credito", render: (row) => formatCurrency(row.creditSales) },
+            { key: "debito", header: "Debito", render: (row) => formatCurrency(row.debitSales) },
             { key: "dinheiro", header: "Dinheiro", render: (row) => formatCurrency(row.cashSales) },
             { key: "suprimento", header: "Suprimento", render: (row) => formatCurrency(row.suprimento) },
             { key: "sangria", header: "Sangria", render: (row) => formatCurrency(row.sangria) },
             { key: "ajuste", header: "Ajuste", render: (row) => formatCurrency(row.ajuste) },
+            {
+              key: "taxaEstadual",
+              header: "Taxa Estadual",
+              render: (row) => (
+                <div>
+                  <p className="font-semibold">{formatCurrency(row.stateTaxValue)}</p>
+                  <p className="text-xs text-muted">{row.stateTaxCount} gerada(s)</p>
+                </div>
+              ),
+            },
+            {
+              key: "taxaFederal",
+              header: "Taxa Federal",
+              render: (row) => (
+                <div>
+                  <p className="font-semibold">{formatCurrency(row.federalTaxValue)}</p>
+                  <p className="text-xs text-muted">{row.federalTaxCount} gerada(s)</p>
+                </div>
+              ),
+            },
             { key: "saldo", header: "Caixa estimado", render: (row) => <span className="font-semibold">{formatCurrency(row.saldo)}</span> },
             { key: "esperado", header: "Esperado", render: (row) => formatCurrency(row.expected) },
             { key: "declarado", header: "Declarado", render: (row) => formatCurrency(row.declared) },

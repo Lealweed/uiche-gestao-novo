@@ -125,6 +125,11 @@ type MessageConversation = {
 type FinanceByBoothSummary = {
   boothId: string;
   boothLabel: string;
+  grossSales: number;
+  txCount: number;
+  pixSales: number;
+  creditSales: number;
+  debitSales: number;
   cashSales: number;
   suprimento: number;
   sangria: number;
@@ -133,6 +138,10 @@ type FinanceByBoothSummary = {
   expected: number;
   declared: number;
   difference: number;
+  stateTaxCount: number;
+  stateTaxValue: number;
+  federalTaxCount: number;
+  federalTaxValue: number;
   movementCount: number;
   closingCount: number;
 };
@@ -842,6 +851,11 @@ export default function AdminRebuildPage() {
         summaryMap.set(normalizedBoothId, {
           boothId: normalizedBoothId,
           boothLabel,
+          grossSales: 0,
+          txCount: 0,
+          pixSales: 0,
+          creditSales: 0,
+          debitSales: 0,
           cashSales: 0,
           suprimento: 0,
           sangria: 0,
@@ -850,6 +864,10 @@ export default function AdminRebuildPage() {
           expected: 0,
           declared: 0,
           difference: 0,
+          stateTaxCount: 0,
+          stateTaxValue: 0,
+          federalTaxCount: 0,
+          federalTaxValue: 0,
           movementCount: 0,
           closingCount: 0,
         });
@@ -859,9 +877,29 @@ export default function AdminRebuildPage() {
     };
 
     for (const tx of reportTxs) {
-      if ((tx.payment_method ?? "").toLowerCase() !== "cash") continue;
       const summaryRow = ensureSummary(tx.booth_id, tx.booths ?? null);
-      summaryRow.cashSales += Number(tx.amount || 0);
+      const amount = Number(tx.amount || 0);
+      const paymentMethod = (tx.payment_method ?? "").toLowerCase();
+      const stateTax = Number(tx.boarding_tax_state || 0);
+      const federalTax = Number(tx.boarding_tax_federal || 0);
+
+      summaryRow.grossSales += amount;
+      summaryRow.txCount += 1;
+
+      if (paymentMethod === "pix") summaryRow.pixSales += amount;
+      else if (paymentMethod === "credit") summaryRow.creditSales += amount;
+      else if (paymentMethod === "debit") summaryRow.debitSales += amount;
+      else if (paymentMethod === "cash") summaryRow.cashSales += amount;
+
+      if (stateTax > 0) {
+        summaryRow.stateTaxCount += 1;
+        summaryRow.stateTaxValue += stateTax;
+      }
+
+      if (federalTax > 0) {
+        summaryRow.federalTaxCount += 1;
+        summaryRow.federalTaxValue += federalTax;
+      }
     }
 
     for (const movement of cashMovementRows) {
