@@ -295,7 +295,7 @@ export default function OperatorRebuildPage() {
 
   async function openShift() {
     if (!boothId) return setMessage("Selecione um guiche.");
-    const { data, error } = await supabase.rpc("open_shift",{p_booth_id:boothId,p_ip:null});
+    const { data, error } = await supabase.rpc("open_shift",{p_booth_id:boothId});
     if (error) return setMessage(`Erro: ${error.message}`);
     await logAction("OPEN_SHIFT","shifts",(data as Shift).id,{booth_id:boothId});
     setLastCloseResult(null);
@@ -325,7 +325,7 @@ export default function OperatorRebuildPage() {
       const normalizedDeclared = Number(declaredCash.toFixed(2));
       const { error: saveClosingError } = await supabase.from("shift_cash_closings").upsert({ shift_id:shift.id, booth_id:shift.booth_id, user_id:userId, expected_cash:normalizedExpected, declared_cash:normalizedDeclared, difference, note:obs });
       if (saveClosingError) { setMessage(`Erro ao registrar fechamento: ${saveClosingError.message}`); return; }
-      const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_ip:null,p_notes:obs});
+      const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_notes:obs});
       if (error) { setMessage(`Erro: ${error.message}`); return; }
       await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCashVal,declared_cash:declaredCash,difference});
       setLastCloseResult({ expectedCash: normalizedExpected, declaredCash: normalizedDeclared, difference, note: obs, closedAt: new Date().toISOString() });
