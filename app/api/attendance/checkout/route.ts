@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 
 import { createClient as createServerClient } from "@/lib/supabase/server";
+
+const RATE_LIMIT = { limit: 30, windowSeconds: 60 };
 
 type CheckoutBody = {
   user_id?: string;
@@ -31,6 +34,9 @@ async function parseCheckoutBody(req: Request): Promise<CheckoutBody> {
 
 export async function POST(req: Request) {
   try {
+    const rl = checkRateLimit(rateLimitKey(req, "attendance-checkout"), RATE_LIMIT);
+    if (!rl.allowed) return NextResponse.json({ error: "Muitas requisicoes." }, { status: 429 });
+
     const payload = await parseCheckoutBody(req);
     const supabase = createServerClient();
 

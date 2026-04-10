@@ -34,6 +34,8 @@ type AdminUsersSectionProps = {
   resetEmail: string;
   profileSearch: string;
   filteredProfiles: UserRow[];
+  savingProfile?: boolean;
+  sendingReset?: boolean;
   onNewProfileUserIdChange: ChangeEventHandler<HTMLInputElement>;
   onNewProfileNameChange: ChangeEventHandler<HTMLInputElement>;
   onNewProfileCpfChange: ChangeEventHandler<HTMLInputElement>;
@@ -61,6 +63,8 @@ export function AdminUsersSection({
   resetEmail,
   profileSearch,
   filteredProfiles,
+  savingProfile = false,
+  sendingReset = false,
   onNewProfileUserIdChange,
   onNewProfileNameChange,
   onNewProfileCpfChange,
@@ -100,8 +104,8 @@ export function AdminUsersSection({
               <input type="checkbox" checked={newProfileActive} onChange={onNewProfileActiveChange} className="rounded" />
               Usuario ativo
             </label>
-            <Button type="submit" className="w-full">
-              Salvar Usuario
+            <Button type="submit" className="w-full" loading={savingProfile}>
+              {savingProfile ? "Salvando..." : "Salvar Usuario"}
             </Button>
           </form>
         </SectionCard>
@@ -109,8 +113,8 @@ export function AdminUsersSection({
         <SectionCard title="Redefinicao de Senha">
           <form onSubmit={onSendResetLink} className="space-y-4">
             <Input value={resetEmail} onChange={onResetEmailChange} required type="email" placeholder="E-mail do usuario" />
-            <Button type="submit" className="w-full">
-              Enviar Link de Redefinicao
+            <Button type="submit" className="w-full" loading={sendingReset}>
+              {sendingReset ? "Enviando..." : "Enviar Link de Redefinicao"}
             </Button>
           </form>
         </SectionCard>

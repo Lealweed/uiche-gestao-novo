@@ -1,9 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { canAccessAdminArea } from "@/lib/rbac";
 import { NextResponse } from "next/server";
+import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
+
+const RATE_LIMIT = { limit: 10, windowSeconds: 60 };
 
 export async function POST(req: Request) {
   try {
+    const rl = checkRateLimit(rateLimitKey(req, "repasse-baixar"), RATE_LIMIT);
+    if (!rl.allowed) return NextResponse.json({ error: "Muitas requisicoes. Tente novamente em instantes." }, { status: 429 });
     const formData = await req.formData();
     const company = String(formData.get("company") ?? "").trim();
     if (!company) return NextResponse.json({ error: "Empresa não informada" }, { status: 400 });

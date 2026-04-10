@@ -214,6 +214,8 @@ export default function AdminRebuildPage() {
   const [newProfileAvatarUrl, setNewProfileAvatarUrl] = useState("");
   const [newProfileActive, setNewProfileActive]       = useState(true);
   const [resetEmail, setResetEmail]                   = useState("");
+  const [savingProfile, setSavingProfile]             = useState(false);
+  const [sendingReset, setSendingReset]               = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [punchPage, setPunchPage] = useState(1);
   const PUNCH_PER_PAGE = 10;
@@ -1353,19 +1355,29 @@ export default function AdminRebuildPage() {
 
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
-    const uid = newProfileUserId.trim();
-    const { error } = await supabase.from("profiles").upsert({ user_id: uid, full_name: newProfileName.trim(), cpf: newProfileCpf.trim()||null, address: newProfileAddress.trim()||null, phone: newProfilePhone.trim()||null, avatar_url: newProfileAvatarUrl.trim()||null, role: newProfileRole, active: newProfileActive });
-    if (error) { setToastType("error"); return setMessage(`Erro: ${error.message}`); }
-    setNewProfileUserId(""); setNewProfileName(""); setNewProfileCpf(""); setNewProfilePhone(""); setNewProfileAddress(""); setNewProfileAvatarUrl(""); setNewProfileRole("operator"); setNewProfileActive(true);
-    await logAction("UPSERT_PROFILE","profiles",uid,{role:newProfileRole});
-    setToastType("success"); setMessage("Perfil salvo com sucesso!"); await refreshData();
+    setSavingProfile(true);
+    try {
+      const uid = newProfileUserId.trim();
+      const { error } = await supabase.from("profiles").upsert({ user_id: uid, full_name: newProfileName.trim(), cpf: newProfileCpf.trim()||null, address: newProfileAddress.trim()||null, phone: newProfilePhone.trim()||null, avatar_url: newProfileAvatarUrl.trim()||null, role: newProfileRole, active: newProfileActive });
+      if (error) { setToastType("error"); return setMessage(`Erro: ${error.message}`); }
+      setNewProfileUserId(""); setNewProfileName(""); setNewProfileCpf(""); setNewProfilePhone(""); setNewProfileAddress(""); setNewProfileAvatarUrl(""); setNewProfileRole("operator"); setNewProfileActive(true);
+      await logAction("UPSERT_PROFILE","profiles",uid,{role:newProfileRole});
+      setToastType("success"); setMessage("Perfil salvo com sucesso!"); await refreshData();
+    } finally {
+      setSavingProfile(false);
+    }
   }
 
   async function sendResetLink(e: FormEvent) {
     e.preventDefault();
-    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim());
-    if (error) { setToastType("error"); return setMessage(`Erro: ${error.message}`); }
-    setResetEmail(""); setToastType("success"); setMessage("Link de reset enviado com sucesso!");
+    setSendingReset(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim());
+      if (error) { setToastType("error"); return setMessage(`Erro: ${error.message}`); }
+      setResetEmail(""); setToastType("success"); setMessage("Link de reset enviado com sucesso!");
+    } finally {
+      setSendingReset(false);
+    }
   }
 
   function confirmToggleCompany(c: Company) {
@@ -1912,6 +1924,8 @@ export default function AdminRebuildPage() {
             resetEmail={resetEmail}
             profileSearch={profileSearch}
             filteredProfiles={filteredProfiles}
+            savingProfile={savingProfile}
+            sendingReset={sendingReset}
             onNewProfileUserIdChange={(e) => setNewProfileUserId(e.target.value)}
             onNewProfileNameChange={(e) => setNewProfileName(e.target.value)}
             onNewProfileCpfChange={(e) => setNewProfileCpf(e.target.value)}

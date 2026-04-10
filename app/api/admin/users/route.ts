@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { canAccessAdminArea, canManageUsers, type AppRole } from "@/lib/rbac";
 import { isSchemaToleranceError } from "@/lib/schema-tolerance";
+import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
+
+const RATE_LIMIT_READ = { limit: 60, windowSeconds: 60 };
+const RATE_LIMIT_WRITE = { limit: 20, windowSeconds: 60 };
 
 type CreateUserBody = {
   name?: string;
@@ -101,6 +105,9 @@ async function resolveRequester(req: Request, access: "read" | "manage" = "manag
 
 export async function GET(req: Request) {
   try {
+    const rl = checkRateLimit(rateLimitKey(req, "admin-users-get"), RATE_LIMIT_READ);
+    if (!rl.allowed) return NextResponse.json({ error: "Muitas requisicoes. Tente novamente em instantes." }, { status: 429 });
+
     const requester = await resolveRequester(req, "read");
     if ("error" in requester) return requester.error;
 
@@ -206,6 +213,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const rl = checkRateLimit(rateLimitKey(req, "admin-users-post"), RATE_LIMIT_WRITE);
+    if (!rl.allowed) return NextResponse.json({ error: "Muitas requisicoes. Tente novamente em instantes." }, { status: 429 });
+
     const requester = await resolveRequester(req);
     if ("error" in requester) return requester.error;
 
@@ -312,6 +322,9 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    const rl = checkRateLimit(rateLimitKey(req, "admin-users-del"), RATE_LIMIT_WRITE);
+    if (!rl.allowed) return NextResponse.json({ error: "Muitas requisicoes. Tente novamente em instantes." }, { status: 429 });
+
     const requester = await resolveRequester(req);
     if ("error" in requester) return requester.error;
 
