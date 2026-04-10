@@ -220,8 +220,12 @@ export async function POST(req: Request) {
     if (!name || !email || !password) {
       return NextResponse.json({ error: "Nome, e-mail e senha são obrigatórios." }, { status: 400 });
     }
-    if (!email.includes("@")) return NextResponse.json({ error: "E-mail inválido." }, { status: 400 });
-    if (password.length < 6) return NextResponse.json({ error: "Senha precisa ter ao menos 6 caracteres." }, { status: 400 });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return NextResponse.json({ error: "E-mail inválido." }, { status: 400 });
+    if (name.length > 120) return NextResponse.json({ error: "Nome muito longo (máximo 120 caracteres)." }, { status: 400 });
+    if (password.length < 8) return NextResponse.json({ error: "Senha precisa ter ao menos 8 caracteres." }, { status: 400 });
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      return NextResponse.json({ error: "Senha deve conter letras e números." }, { status: 400 });
+    }
 
     const url = envOrThrow("NEXT_PUBLIC_SUPABASE_URL");
     const serviceRole = envOrThrow("SUPABASE_SERVICE_ROLE_KEY", ["SUPABASE_SERVICE_KEY", "SUPABASE_SECRET_KEY"]);
@@ -292,6 +296,14 @@ export async function POST(req: Request) {
       }
     }
 
+    await adminClient.from("audit_logs").insert({
+      created_by: requester.requesterId,
+      action: "user_created",
+      entity: "profiles",
+      entity_id: newUserId,
+      details: { name, email, role, active },
+    }).then(() => {});
+
     return NextResponse.json({ ok: true, userId: newUserId });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Erro inesperado." }, { status: 500 });
@@ -334,6 +346,14 @@ export async function DELETE(req: Request) {
 
     const { error: authDeleteError } = await adminClient.auth.admin.deleteUser(userId);
     if (authDeleteError) return NextResponse.json({ error: `Perfil removido, mas falhou ao remover auth user: ${authDeleteError.message}` }, { status: 400 });
+
+    await adminClient.from("audit_logs").insert({
+      created_by: requester.requesterId,
+      action: "user_deleted",
+      entity: "profiles",
+      entity_id: userId,
+      details: {},
+    }).then(() => {});
 
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -8,7 +8,7 @@ function sanitizeCsvCell(value: unknown) {
   }
 
   const trimmedStart = normalized.trimStart();
-  if (/^[=+\-@]/.test(trimmedStart) || /^[\t\r]/.test(normalized)) {
+  if (/^[=+\-@|]/.test(trimmedStart) || /^[\t\r]/.test(normalized)) {
     normalized = `'${normalized}`;
   }
 
@@ -36,4 +36,5 @@ export function exportToCSV(filename: string, rows: any[], columns: { key: strin
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }

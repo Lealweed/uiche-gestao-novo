@@ -1,14 +1,7 @@
 const fs = require('fs');
-const { Client } = require('pg');
+const { createDbClient } = require('./db-client');
 
-const client = new Client({
-  host: 'aws-1-sa-east-1.pooler.supabase.com',
-  port: 6543,
-  database: 'postgres',
-  user: 'postgres.txswessunrkuvsexxjuu',
-  password: 'Deus2026!@#$',
-  ssl: { rejectUnauthorized: false },
-});
+const client = createDbClient();
 
 (async () => {
   await client.connect();

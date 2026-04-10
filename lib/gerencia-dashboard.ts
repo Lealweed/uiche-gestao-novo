@@ -12,23 +12,23 @@ export async function getGerenciaDashboardData() {
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   const lastDayISO = lastDay.toISOString();
 
-  // Busca todas as vendas do mês
+  // Busca todas as vendas do mês (posted + settled)
   const { data: vendas, error } = await supabase
     .from("transactions")
-    .select(`id, amount, sold_at, payment_method, company:company_id(name), operador:operator_id(full_name), passageiro, empresa_parceira, forma_pagamento`)
+    .select(`id, amount, commission_amount, sold_at, payment_method, company:company_id(name), operador:operator_id(full_name), passageiro, empresa_parceira, forma_pagamento`)
     .gte("sold_at", firstDayISO)
     .lte("sold_at", lastDayISO)
-    .eq("status", "posted")
+    .in("status", ["posted", "settled"])
     .order("sold_at", { ascending: false });
 
   if (error) {
     throw new Error("Erro ao buscar vendas: " + error.message);
   }
 
-  // Faturamento bruto
+  // Faturamento bruto e cálculos usando commission_amount real de cada transação
   const faturamento = vendas?.reduce((acc, v) => acc + Number(v.amount || 0), 0) || 0;
-  const repasse = faturamento * 0.85;
-  const lucro = faturamento * 0.15;
+  const lucro = vendas?.reduce((acc, v) => acc + Number(v.commission_amount || 0), 0) || 0;
+  const repasse = faturamento - lucro;
 
   // Últimas 10 operações
   const ultimas = (vendas || []).slice(0, 10).map((v) => [

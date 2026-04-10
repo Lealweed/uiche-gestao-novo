@@ -32,6 +32,7 @@ export async function POST(req: Request) {
       .from("companies")
       .select("id,name")
       .ilike("name", company)
+      .eq("active", true)
       .maybeSingle();
 
     if (companyError) {

@@ -1,15 +1,14 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getHomeRouteForRole, getRoleLabel } from "@/lib/rbac";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 
-const supabase = createClient();
-
 export default function LoginPage() {
   const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);

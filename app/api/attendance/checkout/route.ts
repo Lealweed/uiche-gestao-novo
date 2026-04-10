@@ -43,11 +43,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Sessao invalida." }, { status: 401 });
     }
 
-    const requestedUserId = payload.user_id?.trim();
-    if (requestedUserId && requestedUserId !== user.id) {
-      return NextResponse.json({ error: "Sem permissao para encerrar o ponto deste usuario." }, { status: 403 });
-    }
-
     const url = envOrThrow("NEXT_PUBLIC_SUPABASE_URL");
     const serviceRole = envOrThrow("SUPABASE_SERVICE_ROLE_KEY", ["SUPABASE_SERVICE_KEY", "SUPABASE_SECRET_KEY"]);
     const adminClient = createAdminClient(url, serviceRole, {
