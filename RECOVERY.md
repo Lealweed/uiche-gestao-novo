@@ -50,6 +50,7 @@ on conflict (operator_id, booth_id) do update set active = true;
 - Abrir turno
 - Lançar venda
 - Anexar comprovante
+- Anexar imagem/arquivo no chat privado com o admin
 - Caixa PDV (suprimento/sangria/ajuste)
 - Encerrar turno
 
@@ -57,5 +58,5 @@ on conflict (operator_id, booth_id) do update set active = true;
 
 Isso indica dependência de banco ausente ou incompleta. Ação recomendada:
 1. Reaplicar o SQL de recovery.
-2. Verificar se tabelas/rpcs existem: `profiles`, `shifts`, `transactions`, `cash_movements`, `time_punches`, `transaction_receipts`, `open_shift`, `close_shift` e bucket `payment-receipts`.
+2. Verificar se tabelas/rpcs existem: `profiles`, `shifts`, `transactions`, `cash_movements`, `time_punches`, `transaction_receipts`, `operator_messages`, `open_shift`, `close_shift` e os buckets `payment-receipts` e `chat-attachments`.
 3. Recarregar a página.

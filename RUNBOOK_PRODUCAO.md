@@ -35,6 +35,13 @@ Esperado:
 - status limpo
 - validação local sem erro
 
+## Reset operacional antes da entrega
+> Faça backup do banco antes de limpar os testes.
+
+1. Execute `scripts/reset-go-live.sql` no **Supabase SQL Editor** para zerar vendas, turnos, caixa, comprovantes e chat de teste sem apagar cadastros-base.
+2. Rode `npm run storage:setup` para garantir os buckets privados `payment-receipts` e `chat-attachments`.
+3. Valide login, turno e chat privado já no ambiente limpo.
+
 ## Rotas para validar após deploy
 - `/login`
 - `/rebuild/admin`

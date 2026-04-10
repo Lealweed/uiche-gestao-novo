@@ -46,10 +46,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 
 ## Próximos passos
 1. Rodar SQL no Supabase
-2. Criar bucket `payment-receipts` (privado)
-3. Criar primeiro usuário admin no Auth
-4. Inserir role admin na tabela `profiles`
-5. Subir frontend e conectar domínio
+2. Configurar buckets privados `payment-receipts` e `chat-attachments`
+3. Executar `npm run storage:setup`
+4. Criar primeiro usuário admin no Auth
+5. Inserir role admin na tabela `profiles`
+6. Subir frontend e conectar domínio
 
 ## Recuperação rápida (banco resetado)
 

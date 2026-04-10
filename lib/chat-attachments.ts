@@ -12,6 +12,9 @@ function sanitizeFileName(name: string) {
 
 export function validateChatAttachment(file: File) {
   if (!file) return "Selecione um arquivo válido.";
+  if (file.size === 0) {
+    return "O anexo selecionado está vazio.";
+  }
   if (file.size > MAX_CHAT_ATTACHMENT_SIZE) {
     return "O anexo deve ter no máximo 10MB.";
   }
@@ -46,6 +49,16 @@ export async function uploadChatAttachment(supabase: any, ownerId: string, file:
   });
 
   if (upload.error) {
+    const loweredMessage = upload.error.message.toLowerCase();
+
+    if (loweredMessage.includes("bucket") || loweredMessage.includes("not found")) {
+      throw new Error("O bucket privado de anexos do chat ainda não foi configurado no Supabase.");
+    }
+
+    if (loweredMessage.includes("row-level security") || loweredMessage.includes("permission") || loweredMessage.includes("not allowed")) {
+      throw new Error("Seu usuário ainda não tem permissão para enviar anexos no chat.");
+    }
+
     throw new Error(upload.error.message);
   }
 
