@@ -1,7 +1,7 @@
 "use client";
 
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCheck, Download, Eye, MessageSquare, Paperclip, RefreshCw, Send, Store, Users, X } from "lucide-react";
+import { CheckCheck, Download, Eye, MessageSquare, Paperclip, RefreshCw, Send, Store, X } from "lucide-react";
 
 import { boothOf, nameOf } from "@/lib/admin/admin-helpers";
 import { isImageChatAttachment } from "@/lib/chat-attachments";
@@ -10,7 +10,6 @@ import { Button } from "@/components/rebuild/ui/button";
 import { Card } from "@/components/rebuild/ui/card";
 import { Input } from "@/components/rebuild/ui/input";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
-import { StatCard } from "@/components/rebuild/ui/stat-card";
 
 type OperatorMessageRow = {
   id: string;
@@ -211,7 +210,7 @@ export function AdminMessagesSection({
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <Card className="space-y-3">
+        <Card className={`space-y-3 ${activeConversation ? "hidden xl:block" : ""}`}>
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-semibold text-foreground">Guiches</h3>
@@ -265,9 +264,14 @@ export function AdminMessagesSection({
           {selectedConversation ? (
             <>
               <div className="mb-4 flex items-center justify-between border-b border-border pb-4">
-                <div>
-                  <h3 className="font-semibold text-foreground">{selectedConversation.boothName}</h3>
-                  <p className="text-xs text-muted">Conversa com {selectedConversation.operatorName}</p>
+                <div className="flex items-center gap-3">
+                  <Button variant="ghost" size="sm" className="xl:hidden" onClick={() => void onSelectConversation({ operatorId: "", boothId: null, operatorName: "", boothName: "" })}>
+                    ← Voltar
+                  </Button>
+                  <div>
+                    <h3 className="font-semibold text-foreground">{selectedConversation.boothName}</h3>
+                    <p className="text-xs text-muted">Conversa com {selectedConversation.operatorName}</p>
+                  </div>
                 </div>
                 <Badge variant={selectedConversation.unreadMessages > 0 ? "warning" : "secondary"}>
                   {selectedConversation.unreadMessages > 0 ? `${selectedConversation.unreadMessages} nova(s)` : "Em dia"}
@@ -391,21 +395,6 @@ export function AdminMessagesSection({
             </div>
           )}
         </Card>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <StatCard title="Conversas" value={conversations.length.toString()} icon={<MessageSquare className="h-5 w-5" />} />
-        <StatCard
-          title="Nao Lidas"
-          value={unreadCount.toString()}
-          icon={<AlertCircle className="h-5 w-5" />}
-          trend={unreadCount > 0 ? { value: unreadCount, positive: false } : undefined}
-        />
-        <StatCard
-          title="Operadores Ativos"
-          value={new Set(conversations.map((conversation) => conversation.operatorId)).size.toString()}
-          icon={<Users className="h-5 w-5" />}
-        />
       </div>
     </div>
   );

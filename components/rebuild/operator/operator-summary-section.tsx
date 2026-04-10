@@ -197,32 +197,23 @@ export function OperatorSummarySection({
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Card className="bg-[hsl(var(--card-elevated))]">
-          <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">Total PIX</p>
+          <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">Dinheiro</p>
+          <p className="text-2xl font-bold text-success">{formatCurrency(totals.cash)}</p>
+        </Card>
+        <Card className="bg-[hsl(var(--card-elevated))]">
+          <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">PIX</p>
           <p className="text-2xl font-bold text-info">{formatCurrency(totals.pix)}</p>
         </Card>
         <Card className="bg-[hsl(var(--card-elevated))]">
-          <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">Total Cartoes</p>
+          <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">Cartoes</p>
           <p className="text-2xl font-bold text-primary">{formatCurrency(totals.credit + totals.debit)}</p>
         </Card>
         <Card className="bg-[hsl(var(--card-elevated))]">
-          <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">Total Dinheiro</p>
-          <p className="text-2xl font-bold text-success">{formatCurrency(totals.cash)}</p>
-        </Card>
-        {totals.taxState > 0 && (
-          <Card className="bg-indigo-500/10">
-            <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">Taxa Estadual</p>
-            <p className="text-2xl font-bold text-indigo-400">{formatCurrency(totals.taxState)}</p>
-          </Card>
-        )}
-        {totals.taxFederal > 0 && (
-          <Card className="bg-rose-500/10">
-            <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">Taxa Federal</p>
-            <p className="text-2xl font-bold text-rose-400">{formatCurrency(totals.taxFederal)}</p>
-          </Card>
-        )}
-        <Card className="bg-[hsl(var(--card-elevated))]">
           <p className="mb-2 text-[10px] uppercase tracking-widest text-muted">Total Geral</p>
           <p className="text-2xl font-bold text-foreground">{formatCurrency(totalGeral)}</p>
+          {(totals.taxState + totals.taxFederal) > 0 && (
+            <p className="text-xs text-muted mt-1">Taxas: {formatCurrency(totals.taxState + totals.taxFederal)}</p>
+          )}
         </Card>
       </div>
 
@@ -236,21 +227,21 @@ export function OperatorSummarySection({
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div className="rounded-lg bg-emerald-500/10 p-3">
+          <div className="rounded-lg border border-border p-3">
             <p className="text-[10px] uppercase tracking-widest text-muted">Caixa esperado</p>
-            <p className="text-lg font-bold text-emerald-400">{formatCurrency(cashTotals.saldo)}</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.saldo)}</p>
           </div>
-          <div className="rounded-lg bg-sky-500/10 p-3">
+          <div className="rounded-lg border border-border p-3">
             <p className="text-[10px] uppercase tracking-widest text-muted">Suprimento</p>
-            <p className="text-lg font-bold text-sky-400">{formatCurrency(cashTotals.suprimento)}</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.suprimento)}</p>
           </div>
-          <div className="rounded-lg bg-amber-500/10 p-3">
+          <div className="rounded-lg border border-border p-3">
             <p className="text-[10px] uppercase tracking-widest text-muted">Sangria</p>
-            <p className="text-lg font-bold text-amber-400">{formatCurrency(cashTotals.sangria)}</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.sangria)}</p>
           </div>
-          <div className="rounded-lg bg-indigo-500/10 p-3">
+          <div className="rounded-lg border border-border p-3">
             <p className="text-[10px] uppercase tracking-widest text-muted">Ajuste</p>
-            <p className="text-lg font-bold text-indigo-400">{formatCurrency(cashTotals.ajuste)}</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.ajuste)}</p>
           </div>
         </div>
 

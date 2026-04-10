@@ -23,7 +23,7 @@ import { Badge } from "@/components/rebuild/ui/badge";
 import { Button } from "@/components/rebuild/ui/button";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { Input } from "@/components/rebuild/ui/input";
-import { StatCard } from "@/components/rebuild/ui/stat-card";
+
 import { Card } from "@/components/rebuild/ui/card";
 import { Toast, type ToastType } from "@/components/rebuild/ui/toast";
 import { ConfirmDialog } from "@/components/rebuild/ui/confirm-dialog";
@@ -1829,7 +1829,6 @@ export default function AdminRebuildPage() {
             paymentMethodData={paymentMethodData}
             topCompaniesData={topCompaniesData}
             adjustmentsCount={adjustments.length}
-            auditLogsCount={auditLogs.length}
             cashSaldo={cashMovementTotals.saldo}
             rows={rows}
             adjustments={adjustments}

@@ -109,18 +109,19 @@ export function AdminAttendanceSection({ attendanceRows, isMounted, onRefresh }:
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <StatCard
-          title="Presentes Hoje"
+          label="Presentes Hoje"
           value={attendanceRows.length.toString()}
           icon={<Users className="h-5 w-5" />}
         />
         <StatCard
-          title="Em Atividade"
+          label="Em Atividade"
           value={activeCount.toString()}
           icon={<Clock className="h-5 w-5" />}
-          trend={activeCount > 0 ? { value: activeCount, positive: true } : undefined}
+          delta={activeCount > 0 ? `+${activeCount}` : undefined}
+          deltaType="positive"
         />
         <StatCard
-          title="Ja Saiu"
+          label="Ja Saiu"
           value={completedCount.toString()}
           icon={<ArrowDownRight className="h-5 w-5" />}
         />

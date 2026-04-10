@@ -1521,95 +1521,36 @@ export default function OperatorRebuildPage() {
                 )}
               </Card>
 
-              {/* KPIs Resumo */}
+              {/* Resumo compacto do Turno */}
               <Card>
-                <h3 className="text-xs text-muted uppercase tracking-wider mb-4">Resumo do Turno</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center p-3 bg-emerald-500/10 rounded-lg">
-                    <span className="text-sm text-muted flex items-center gap-2"><Banknote size={16} className="text-emerald-400" /> Dinheiro</span>
-                    <span className="font-bold text-emerald-400">{formatCurrency(totals.cash)}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-cyan-500/10 rounded-lg">
-                    <span className="text-sm text-muted flex items-center gap-2"><Smartphone size={16} className="text-cyan-400" /> PIX</span>
-                    <span className="font-bold text-cyan-400">{formatCurrency(totals.pix)}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-purple-500/10 rounded-lg">
-                    <span className="text-sm text-muted flex items-center gap-2"><CreditCard size={16} className="text-purple-400" /> Credito</span>
-                    <span className="font-bold text-purple-400">{formatCurrency(totals.credit)}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-blue-500/10 rounded-lg">
-                    <span className="text-sm text-muted flex items-center gap-2"><Wallet size={16} className="text-blue-400" /> Debito</span>
-                    <span className="font-bold text-blue-400">{formatCurrency(totals.debit)}</span>
-                  </div>
-                  {totals.taxState > 0 && (
-                    <div className="flex justify-between items-center p-3 bg-indigo-500/10 rounded-lg">
-                      <span className="text-sm text-muted">Taxa Estadual</span>
-                      <span className="font-bold text-indigo-400">{formatCurrency(totals.taxState)}</span>
-                    </div>
-                  )}
-                  {totals.taxFederal > 0 && (
-                    <div className="flex justify-between items-center p-3 bg-rose-500/10 rounded-lg">
-                      <span className="text-sm text-muted">Taxa Federal</span>
-                      <span className="font-bold text-rose-400">{formatCurrency(totals.taxFederal)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
-                    <span className="text-sm text-muted">Taxas de Embarque</span>
-                    <span className="font-bold text-amber-400">{formatCurrency(totals.taxState + totals.taxFederal)}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 bg-primary/10 rounded-lg border-t-2 border-primary">
-                    <span className="text-sm font-semibold text-foreground">Total Geral</span>
-                    <span className="font-bold text-xl text-foreground">{formatCurrency(totalGeral)}</span>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Acoes Rapidas */}
-              <Card>
-                <h3 className="text-xs text-muted uppercase tracking-wider mb-3">Acoes Rapidas</h3>
+                <h3 className="text-xs text-muted uppercase tracking-wider mb-3">Resumo do Turno</h3>
                 <div className="space-y-2">
-                  <Button 
-                    variant="ghost" 
-                    className="w-full justify-start" 
-                    onClick={() => setSection("historico")}
-                  >
-                    <ChevronRight size={16} className="mr-2" />
-                    Ver Historico Completo
-                  </Button>
-                  <Button 
-                    variant="danger" 
-                    className="w-full" 
-                    onClick={openCloseShiftModal}
-                    disabled={!shift || operatorBlocked}
-                  >
-                    Fechar Caixa PDV
-                  </Button>
-                  {!shift && (
-                    <p className="text-xs text-muted">Abra um turno para habilitar o fechamento do caixa.</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted">Dinheiro</span>
+                    <span className="font-semibold text-emerald-400">{formatCurrency(totals.cash)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted">PIX</span>
+                    <span className="font-semibold text-cyan-400">{formatCurrency(totals.pix)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted">Cartao</span>
+                    <span className="font-semibold text-purple-400">{formatCurrency(totals.credit + totals.debit)}</span>
+                  </div>
+                  {(totals.taxState + totals.taxFederal) > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted">Taxas</span>
+                      <span className="font-semibold text-amber-400">{formatCurrency(totals.taxState + totals.taxFederal)}</span>
+                    </div>
                   )}
+                  <div className="flex justify-between items-center pt-2 border-t border-border">
+                    <span className="text-sm font-semibold text-foreground">Total</span>
+                    <span className="font-bold text-lg text-foreground">{formatCurrency(totalGeral)}</span>
+                  </div>
                 </div>
               </Card>
             </div>
           </div>
-
-          {/* Ultimas Vendas */}
-          <Card>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-foreground">Ultimas Vendas</h3>
-              <Badge variant="secondary">{txs.length} hoje</Badge>
-            </div>
-            <DataTable
-              columns={[
-                { key: "hora", header: "Hora", render: (tx) => isMounted ? new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "--" },
-                { key: "empresa", header: "Empresa", render: (tx) => tx.company_name },
-                { key: "metodo", header: "Metodo", render: (tx) => <PaymentBadge method={tx.payment_method} /> },
-                { key: "valor", header: "Valor", render: (tx) => <span className="font-bold text-foreground">{formatCurrency(Number(tx.amount))}</span> },
-                { key: "comp", header: "Comprovante", render: (tx) => tx.receipt_count > 0 ? <Badge variant="success">OK</Badge> : (tx.payment_method==="credit"||tx.payment_method==="debit") ? <Badge variant="warning">PENDENTE</Badge> : <span className="text-muted">-</span> },
-              ]}
-              rows={txs.slice(0, 8)}
-              emptyMessage="Nenhuma venda registrada."
-            />
-          </Card>
         </div>
       )}
 

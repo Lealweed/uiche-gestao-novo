@@ -2,10 +2,8 @@
 
 import {
   AlertCircle,
-  ArrowUpRight,
   Banknote,
   BarChart3,
-  Clock,
   CreditCard,
   DollarSign,
   Download,
@@ -23,6 +21,7 @@ import {
   Legend,
   Pie,
   PieChart,
+  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -34,6 +33,7 @@ import { Card } from "@/components/rebuild/ui/card";
 import { Input } from "@/components/rebuild/ui/input";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { SkeletonDashboard } from "@/components/rebuild/ui/skeleton";
+import { StatCard } from "@/components/rebuild/ui/stat-card";
 import { DataTable } from "@/components/rebuild/ui/table";
 import { ADMIN_CHART_COLORS as CHART_COLORS, formatCurrency, nameOf } from "@/lib/admin/admin-helpers";
 
@@ -111,7 +111,6 @@ type AdminDashboardSectionProps = {
   paymentMethodData: PaymentMethodDatum[];
   topCompaniesData: TopCompanyDatum[];
   adjustmentsCount: number;
-  auditLogsCount: number;
   cashSaldo: number;
   rows: ShiftRow[];
   adjustments: AdjustmentRow[];
@@ -143,7 +142,6 @@ export function AdminDashboardSection({
   paymentMethodData,
   topCompaniesData,
   adjustmentsCount,
-  auditLogsCount,
   cashSaldo,
   rows,
   adjustments,
@@ -176,138 +174,48 @@ export function AdminDashboardSection({
         </form>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="relative overflow-hidden">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="mb-1 text-sm text-muted">Faturamento Total</p>
-              <p className="text-2xl font-bold text-foreground">{formatCurrency(repassesComputed.faturamento)}</p>
-              <p className="mt-1 flex items-center gap-1 text-xs text-muted">
-                <span className="inline-flex items-center text-emerald-600">
-                  <ArrowUpRight className="h-3 w-3" />
-                  {reportTxCount}
-                </span>
-                transacoes
-              </p>
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">
-              <DollarSign className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-blue-500/20">
-            <div className="h-full bg-blue-500" style={{ width: "75%" }} />
-          </div>
-        </Card>
-
-        <Card className="relative overflow-hidden">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="mb-1 text-sm text-muted">Receita Central</p>
-              <p className="text-2xl font-bold text-emerald-600">{formatCurrency(repassesComputed.central)}</p>
-              <p className="mt-1 flex items-center gap-1 text-xs text-muted">
-                <span className="inline-flex items-center text-emerald-600">
-                  <TrendingUp className="h-3 w-3" />
-                </span>
-                taxas retidas
-              </p>
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500/20">
-            <div className="h-full bg-emerald-500" style={{ width: "60%" }} />
-          </div>
-        </Card>
-
-        <Card className="relative overflow-hidden">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="mb-1 text-sm text-muted">Repasse Viacoes</p>
-              <p className="text-2xl font-bold text-amber-600">{formatCurrency(repassesComputed.repasse)}</p>
-              <p className="mt-1 text-xs text-muted">valor liquido</p>
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
-              <Wallet className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-amber-500/20">
-            <div className="h-full bg-amber-500" style={{ width: "85%" }} />
-          </div>
-        </Card>
-
-        <Card className="relative overflow-hidden">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="mb-1 text-sm text-muted">Turnos Ativos</p>
-              <p className="text-2xl font-bold text-foreground">{summary.abertos}</p>
-              <p className="mt-1 flex items-center gap-1 text-xs text-muted">
-                {summary.pendencias > 0 ? (
-                  <span className="inline-flex items-center text-amber-600">
-                    <AlertCircle className="mr-1 h-3 w-3" />
-                    {summary.pendencias} pendencia(s)
-                  </span>
-                ) : (
-                  <span className="text-emerald-600">sem pendencias</span>
-                )}
-              </p>
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-500/20 text-slate-400">
-              <Users className="h-5 w-5" />
-            </div>
-          </div>
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-500/20">
-            <div className="h-full bg-slate-500" style={{ width: `${Math.min(summary.abertos * 10, 100)}%` }} />
-          </div>
-        </Card>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard
+          label="Faturamento Total"
+          value={formatCurrency(repassesComputed.faturamento)}
+          icon={<DollarSign className="h-5 w-5" />}
+          delta={`${reportTxCount} transacoes`}
+          deltaType="positive"
+        />
+        <StatCard
+          label="Receita Central"
+          value={formatCurrency(repassesComputed.central)}
+          icon={<TrendingUp className="h-5 w-5" />}
+          delta="Taxas retidas"
+          deltaType="positive"
+        />
+        <StatCard
+          label="Repasse Viacoes"
+          value={formatCurrency(repassesComputed.repasse)}
+          icon={<Wallet className="h-5 w-5" />}
+          delta="Valor liquido"
+        />
+        <StatCard
+          label="Turnos Ativos"
+          value={String(summary.abertos)}
+          icon={<Users className="h-5 w-5" />}
+          delta={summary.pendencias > 0 ? `${summary.pendencias} pendencia(s)` : "Sem pendencias"}
+          deltaType={summary.pendencias > 0 ? "negative" : "positive"}
+        />
       </div>
 
-      {/* Auditoria de Taxas de Embarque */}
-      <Card>
-        <div className="mb-4 flex items-center gap-2">
-          <CreditCard className="h-4 w-4 text-indigo-400" />
-          <h3 className="text-base font-semibold text-foreground">Auditoria de Taxas de Embarque</h3>
-        </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {/* Estadual */}
-          <div className="flex items-center gap-4 rounded-lg bg-indigo-500/10 p-4 ring-1 ring-indigo-500/20">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-400">
-              <Banknote className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs text-muted">Taxa Estadual</p>
-              <p className="text-xl font-bold text-indigo-400">{formatCurrency(boardingTaxAudit.valor_estadual)}</p>
-              <p className="mt-0.5 text-xs text-muted">{boardingTaxAudit.qtd_estadual} emitida{boardingTaxAudit.qtd_estadual !== 1 ? "s" : ""}</p>
-            </div>
-          </div>
-          {/* Federal */}
-          <div className="flex items-center gap-4 rounded-lg bg-rose-500/10 p-4 ring-1 ring-rose-500/20">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400">
-              <Banknote className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs text-muted">Taxa Federal</p>
-              <p className="text-xl font-bold text-rose-400">{formatCurrency(boardingTaxAudit.valor_federal)}</p>
-              <p className="mt-0.5 text-xs text-muted">{boardingTaxAudit.qtd_federal} emitida{boardingTaxAudit.qtd_federal !== 1 ? "s" : ""}</p>
-            </div>
-          </div>
-        </div>
-      </Card>
+      {/* Taxas de Embarque */}
+      <div className="grid grid-cols-2 gap-4">
+        <StatCard label="Taxa Estadual" value={formatCurrency(boardingTaxAudit.valor_estadual)} icon={<Banknote className="h-5 w-5" />} delta={`${boardingTaxAudit.qtd_estadual} emitida${boardingTaxAudit.qtd_estadual !== 1 ? "s" : ""}`} />
+        <StatCard label="Taxa Federal" value={formatCurrency(boardingTaxAudit.valor_federal)} icon={<Banknote className="h-5 w-5" />} delta={`${boardingTaxAudit.qtd_federal} emitida${boardingTaxAudit.qtd_federal !== 1 ? "s" : ""}`} />
+      </div>
 
       {isMounted && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-foreground">Faturamento por Dia</h3>
-                <p className="text-xs text-muted">Ultimos 7 dias</p>
-              </div>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">
-                <BarChart3 className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="w-full">
-              <AreaChart width={500} height={256} data={dailyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} style={{ width: "100%", height: 256 }}>
+            <h3 className="mb-4 text-base font-semibold text-foreground">Faturamento por Dia</h3>
+            <ResponsiveContainer width="100%" height={256}>
+              <AreaChart data={dailyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3} />
@@ -315,54 +223,33 @@ export function AdminDashboardSection({
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-                <XAxis dataKey="date" tick={{ fontSize: 12, fill: CHART_COLORS.text }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 12, fill: CHART_COLORS.text }} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: CHART_COLORS.text }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: CHART_COLORS.text }} tickLine={false} axisLine={false} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
                 <Tooltip
                   formatter={(value) => [formatCurrency(Number(value)), "Faturamento"]}
-                  contentStyle={{
-                    backgroundColor: "hsl(230 20% 13%)",
-                    border: "1px solid hsl(230 15% 20%)",
-                    borderRadius: "8px",
-                    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)",
-                    color: "#f1f5f9",
-                  }}
-                  labelStyle={{ color: "#94a3b8" }}
+                  contentStyle={{ backgroundColor: "hsl(230 20% 13%)", border: "1px solid hsl(230 15% 20%)", borderRadius: "8px", color: "#f1f5f9" }}
                 />
                 <Area type="monotone" dataKey="valor" stroke={CHART_COLORS.primary} fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
               </AreaChart>
-            </div>
+            </ResponsiveContainer>
           </Card>
 
           <Card>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-foreground">Formas de Pagamento</h3>
-                <p className="text-xs text-muted">Distribuicao por metodo</p>
-              </div>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/20 text-purple-400">
-                <CreditCard className="h-4 w-4" />
-              </div>
-            </div>
-            <div className="flex w-full justify-center">
-              <PieChart width={300} height={256}>
-                <Pie data={paymentMethodData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={3} dataKey="value">
+            <h3 className="mb-4 text-base font-semibold text-foreground">Formas de Pagamento</h3>
+            <ResponsiveContainer width="100%" height={256}>
+              <PieChart>
+                <Pie data={paymentMethodData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
                   {paymentMethodData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
                 <Tooltip
                   formatter={(value) => [formatCurrency(Number(value ?? 0)), ""]}
-                  contentStyle={{
-                    backgroundColor: "hsl(230 20% 13%)",
-                    border: "1px solid hsl(230 15% 20%)",
-                    borderRadius: "8px",
-                    boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)",
-                    color: "#f1f5f9",
-                  }}
+                  contentStyle={{ backgroundColor: "hsl(230 20% 13%)", border: "1px solid hsl(230 15% 20%)", borderRadius: "8px", color: "#f1f5f9" }}
                 />
                 <Legend iconType="circle" formatter={(value) => <span style={{ color: "#f1f5f9", fontSize: "14px" }}>{value}</span>} />
               </PieChart>
-            </div>
+            </ResponsiveContainer>
           </Card>
         </div>
       )}
@@ -379,58 +266,27 @@ export function AdminDashboardSection({
               Exportar CSV
             </Button>
           </div>
-          <div className="w-full">
-            <BarChart width={600} height={288} data={topCompaniesData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }} style={{ width: "100%", height: 288 }}>
+          <ResponsiveContainer width="100%" height={288}>
+            <BarChart data={topCompaniesData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} horizontal={true} vertical={false} />
               <XAxis type="number" tick={{ fontSize: 12, fill: CHART_COLORS.text }} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
               <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 12, fill: CHART_COLORS.text }} />
               <Tooltip
                 formatter={(value, name) => [formatCurrency(Number(value ?? 0)), name === "faturamento" ? "Faturamento" : "Repasse"]}
-                contentStyle={{
-                  backgroundColor: "hsl(230 20% 13%)",
-                  border: "1px solid hsl(230 15% 20%)",
-                  borderRadius: "8px",
-                  boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)",
-                  color: "#f1f5f9",
-                }}
+                contentStyle={{ backgroundColor: "hsl(230 20% 13%)", border: "1px solid hsl(230 15% 20%)", borderRadius: "8px", color: "#f1f5f9" }}
                 labelStyle={{ color: "#94a3b8" }}
               />
               <Legend />
               <Bar dataKey="faturamento" name="Faturamento" fill={CHART_COLORS.primary} radius={[0, 4, 4, 0]} />
               <Bar dataKey="repasse" name="Repasse" fill={CHART_COLORS.secondary} radius={[0, 4, 4, 0]} />
             </BarChart>
-          </div>
+          </ResponsiveContainer>
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="flex items-center gap-4 p-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
-            <AlertCircle className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-sm text-muted">Ajustes Pendentes</p>
-            <p className="text-xl font-bold text-foreground">{adjustmentsCount}</p>
-          </div>
-        </Card>
-        <Card className="flex items-center gap-4 p-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-500/20 text-slate-400">
-            <Clock className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-sm text-muted">Logs de Auditoria</p>
-            <p className="text-xl font-bold text-foreground">{auditLogsCount}</p>
-          </div>
-        </Card>
-        <Card className="flex items-center gap-4 p-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
-            <Banknote className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-sm text-muted">Saldo Caixa</p>
-            <p className="text-xl font-bold text-foreground">{formatCurrency(cashSaldo)}</p>
-          </div>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <StatCard icon={<AlertCircle className="h-5 w-5" />} label="Ajustes Pendentes" value={String(adjustmentsCount)} />
+        <StatCard icon={<Banknote className="h-5 w-5" />} label="Saldo Caixa" value={formatCurrency(cashSaldo)} />
       </div>
 
       <Card>

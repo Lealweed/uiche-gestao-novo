@@ -261,21 +261,14 @@ export function AdminReportsSection({ auditLogs, reportTxs, dateFrom, dateTo }: 
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Badge variant="secondary">{periodLabel}</Badge>
-          <Badge variant="secondary">{selectedBoothId === "all" ? "Relatorio geral" : `Guiche: ${boothLabel}`}</Badge>
-          <Badge variant="secondary">{filteredTxs.length} lancamento(s)</Badge>
         </div>
       </Card>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Faturamento bruto" value={formatCurrency(reportSummary.totalAmount)} />
-        <StatCard label="Lancamentos" value={String(reportSummary.launches)} />
+        <StatCard label="Faturamento bruto" value={formatCurrency(reportSummary.totalAmount)} delta={`${reportSummary.launches} lancamento(s)`} />
         <StatCard label="Ticket medio" value={formatCurrency(reportSummary.averageTicket)} />
-        <StatCard label={selectedBoothId === "all" ? "Guiches no periodo" : "Digital do guiche"} value={selectedBoothId === "all" ? String(reportSummary.boothCount) : formatCurrency(reportSummary.digitalAmount)} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard label="Total em dinheiro" value={formatCurrency(reportSummary.cashAmount)} />
-        <StatCard label="Total digital" value={formatCurrency(reportSummary.digitalAmount)} />
+        <StatCard label="Dinheiro" value={formatCurrency(reportSummary.cashAmount)} />
+        <StatCard label="Digital" value={formatCurrency(reportSummary.digitalAmount)} />
       </div>
       </div>
 
