@@ -112,6 +112,14 @@ export default function OperatorRebuildPage() {
   const [section, setSection] = useState("caixa-pdv");
   const [isMounted, setIsMounted] = useState(false);
 
+  // Fix #7: Paginacao e busca no historico
+  const [historySearch, setHistorySearch] = useState("");
+  const [txPage, setTxPage] = useState(0);
+  const txPageSize = 30;
+
+  // Fix #8: Erros visuais de validacao PDV
+  const [pdvFieldErrors, setPdvFieldErrors] = useState<Record<string, boolean>>({});
+
   // Estados PDV Calculadora
   const [pdvDisplay, setPdvDisplay] = useState("0");
   const [pdvPaymentMethod, setPdvPaymentMethod] = useState<"cash"|"pix"|"credit"|"debit"|"link">("cash");
@@ -155,7 +163,7 @@ export default function OperatorRebuildPage() {
   const showChatRef = useRef(showChat);
   showChatRef.current = showChat;
 
-  const activeChatBoothId = shift?.booth_id ?? boothId ?? booths[0]?.booth_id ?? "";
+  const activeChatBoothId = shift?.booth_id || boothId || "";
   const activeChatBoothName = booths.find((item) => item.booth_id === activeChatBoothId)?.booth_name ?? "Guiche";
 
   useEffect(() => {
@@ -250,6 +258,21 @@ export default function OperatorRebuildPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Fix #2: Verificar status do operador periodicamente (60s)
+  useEffect(() => {
+    if (!userId) return;
+    const interval = setInterval(async () => {
+      const { data } = await supabase.from("profiles").select("active").eq("user_id", userId).single();
+      if (data && (data as { active?: boolean }).active === false) {
+        setOperatorActive(false);
+        await supabase.auth.signOut();
+        router.replace("/login");
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [userId, router]);
+
+  // Fix #9: Checkout de presenca com visibilitychange + retry
   useEffect(() => {
     if (!userId || operatorActive === false) return;
 
@@ -262,42 +285,61 @@ export default function OperatorRebuildPage() {
       if (attendanceCheckoutSentRef.current) return;
       attendanceCheckoutSentRef.current = true;
 
+      let sent = false;
       try {
         if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
           const blob = new Blob([payload], { type: "application/json" });
-          if (navigator.sendBeacon(endpoint, blob)) {
-            return;
-          }
+          sent = navigator.sendBeacon(endpoint, blob);
         }
       } catch {
         // fallback abaixo
       }
 
-      void fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: payload,
-        credentials: "include",
-        keepalive: true,
-      }).catch(() => undefined);
+      if (!sent) {
+        void fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          credentials: "include",
+          keepalive: true,
+        }).catch(() => {
+          // Retry uma vez apos 500ms
+          attendanceCheckoutSentRef.current = false;
+          setTimeout(() => {
+            if (attendanceCheckoutSentRef.current) return;
+            attendanceCheckoutSentRef.current = true;
+            void fetch(endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: payload,
+              credentials: "include",
+              keepalive: true,
+            }).catch(() => undefined);
+          }, 500);
+        });
+      }
     };
 
-    const handlePageExit = () => {
-      sendAttendanceCheckout();
+    const handlePageExit = () => sendAttendanceCheckout();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") sendAttendanceCheckout();
     };
 
     window.addEventListener("beforeunload", handlePageExit);
     window.addEventListener("pagehide", handlePageExit);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.removeEventListener("beforeunload", handlePageExit);
       window.removeEventListener("pagehide", handlePageExit);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [operatorActive, userId]);
 
   async function loadTxs(shiftId: string) {
-    const txRes = await supabase.from("transactions").select("id,amount,payment_method,sold_at,ticket_reference,note,company_id,boarding_tax_state,boarding_tax_federal").eq("shift_id",shiftId).eq("status","posted").order("sold_at",{ascending:false}).limit(100);
+    const txRes = await supabase.from("transactions").select("id,amount,payment_method,sold_at,ticket_reference,note,company_id,boarding_tax_state,boarding_tax_federal").eq("shift_id",shiftId).eq("status","posted").order("sold_at",{ascending:false}).limit(500);
     if (txRes.error) return;
+    setTxPage(0);
     const baseTxs = (txRes.data??[]) as Array<{id:string;amount:number;payment_method:"pix"|"credit"|"debit"|"cash";sold_at:string;ticket_reference:string|null;note:string|null;company_id:string|null;boarding_tax_state:number;boarding_tax_federal:number}>;
     const txIds = baseTxs.map(t=>t.id);
     const companyIds = Array.from(new Set(baseTxs.map(t=>t.company_id).filter(Boolean))) as string[];
@@ -625,17 +667,24 @@ export default function OperatorRebuildPage() {
 
   function pdvOpenConfirm() {
     const baseValue = pdvResolveCurrentValue();
+    const errors: Record<string, boolean> = {};
 
     if (!pdvCompanyId) {
+      errors.pdvCompany = true;
       setMessage("Selecione a empresa para concluir a venda.");
-      return;
     }
 
     if (baseValue <= 0) {
+      errors.pdvAmount = true;
       setMessage("Informe um valor valido para a venda.");
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setPdvFieldErrors(errors);
       return;
     }
 
+    setPdvFieldErrors({});
     setShowPdvConfirm(true);
   }
 
@@ -695,6 +744,35 @@ export default function OperatorRebuildPage() {
     setShowPdvConfirm(false);
     setMessage(`Venda de ${formatCurrency(totalAmount)} registrada!`);
     await loadTxs(shift.id);
+  }
+
+  // ===== FIX #4: ESTORNO DE TRANSACAO =====
+  const [cancellingTxId, setCancellingTxId] = useState<string | null>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+
+  async function cancelTransaction(txId: string) {
+    if (!shift || !userId || !cancelReason.trim()) {
+      setMessage("Informe o motivo do estorno para continuar.");
+      return;
+    }
+    setCancellingTxId(txId);
+    try {
+      const { error } = await supabase
+        .from("transactions")
+        .update({ status: "cancelled", note: `[ESTORNO] ${cancelReason.trim()}` })
+        .eq("id", txId)
+        .eq("shift_id", shift.id)
+        .eq("status", "posted");
+      if (error) return setMessage(`Erro ao estornar: ${error.message}`);
+      await logAction("CANCEL_TRANSACTION", "transactions", txId, { reason: cancelReason.trim() });
+      setShowCancelConfirm(null);
+      setCancelReason("");
+      setMessage("Transacao estornada com sucesso.");
+      await loadTxs(shift.id);
+    } finally {
+      setCancellingTxId(null);
+    }
   }
 
   // ===== FUNCOES CHAT =====
@@ -811,8 +889,10 @@ export default function OperatorRebuildPage() {
   // Realtime: escutar novos inserts na tabela operator_messages
   useEffect(() => {
     if (!userId) return;
+    // Fix #6: Channel name unico por booth para evitar leak de subscriptions
+    const channelName = `op-messages-${userId}-${activeChatBoothId || "global"}`;
     const channel = supabase
-      .channel(`op-messages-${userId}`)
+      .channel(channelName)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "operator_messages", filter: `operator_id=eq.${userId}` }, (payload) => {
         void (async () => {
           const raw = payload.new as ChatMessage;
@@ -997,18 +1077,26 @@ export default function OperatorRebuildPage() {
     );
     return Number(openingMovement?.amount ?? 0);
   }, [cashMovements]);
-  const shiftDurationLabel = useMemo(() => {
-    if (!shift?.opened_at) return "Sem turno ativo";
-    const diffMs = Math.max(0, Date.now() - new Date(shift.opened_at).getTime());
-    const totalMinutes = Math.floor(diffMs / 60000);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    if (hours <= 0) return `${Math.max(1, minutes)} min`;
-    return `${hours}h ${minutes.toString().padStart(2, "0")}min`;
-  }, [shift]);
-  const shiftNeedsAttention = useMemo(() => {
-    if (!shift?.opened_at) return false;
-    return Date.now() - new Date(shift.opened_at).getTime() >= 10 * 60 * 60 * 1000;
+  // Fix #5: Duracao do turno em tempo real com interval
+  const [shiftDurationLabel, setShiftDurationLabel] = useState("Sem turno ativo");
+  const [shiftNeedsAttention, setShiftNeedsAttention] = useState(false);
+  useEffect(() => {
+    function updateDuration() {
+      if (!shift?.opened_at) {
+        setShiftDurationLabel("Sem turno ativo");
+        setShiftNeedsAttention(false);
+        return;
+      }
+      const diffMs = Math.max(0, Date.now() - new Date(shift.opened_at).getTime());
+      const totalMinutes = Math.floor(diffMs / 60000);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      setShiftDurationLabel(hours <= 0 ? `${Math.max(1, minutes)} min` : `${hours}h ${minutes.toString().padStart(2, "0")}min`);
+      setShiftNeedsAttention(diffMs >= 10 * 60 * 60 * 1000);
+    }
+    updateDuration();
+    const interval = setInterval(updateDuration, 60_000);
+    return () => clearInterval(interval);
   }, [shift]);
   const pdvBaseAmount = useMemo(() => parseMoneyInput(pdvDisplay), [pdvDisplay]);
   const pdvTaxStateValue = useMemo(() => parseMoneyInput(pdvBoardingTaxState), [pdvBoardingTaxState]);
@@ -1020,6 +1108,20 @@ export default function OperatorRebuildPage() {
   const pendingReceiptTxs = useMemo(()=>txs.filter(t=>(t.payment_method==="credit"||t.payment_method==="debit")&&t.receipt_count===0),[txs]);
   const operatorBlocked = operatorActive===false;
 
+  // Fix #7: Filtragem e paginacao de transacoes
+  const filteredTxs = useMemo(() => {
+    if (!historySearch.trim()) return txs;
+    const q = historySearch.toLowerCase();
+    return txs.filter(tx =>
+      tx.company_name.toLowerCase().includes(q) ||
+      tx.payment_method.toLowerCase().includes(q) ||
+      String(tx.amount).includes(q) ||
+      (tx.ticket_reference ?? "").toLowerCase().includes(q) ||
+      (tx.note ?? "").toLowerCase().includes(q)
+    );
+  }, [txs, historySearch]);
+  const paginatedTxs = useMemo(() => filteredTxs.slice(txPage * txPageSize, (txPage + 1) * txPageSize), [filteredTxs, txPage, txPageSize]);
+
   useEffect(() => {
     if (!isMounted) return;
 
@@ -1030,7 +1132,8 @@ export default function OperatorRebuildPage() {
       }
 
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      if (hasNativeInputFocus(document.activeElement)) return;
+      // Fix #1: Verificar foco em inputs via activeElement E event.target
+      if (hasNativeInputFocus(document.activeElement) || hasNativeInputFocus(event.target)) return;
 
       if (/^[0-9]$/.test(event.key)) {
         event.preventDefault();
@@ -1182,7 +1285,7 @@ export default function OperatorRebuildPage() {
                     {shift && <span className="text-xs text-emerald-400 flex items-center gap-1"><span className="size-2 rounded-full bg-emerald-400 animate-pulse" /> Turno Ativo</span>}
                   </div>
                   <div className="text-right">
-                    <span className="text-5xl font-bold text-white tracking-tight">
+                    <span className={`text-5xl font-bold tracking-tight ${pdvFieldErrors.pdvAmount ? "text-rose-400 animate-pulse" : "text-white"}`}>
                       {formatCurrency(pdvTotalAmount)}
                     </span>
                     <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-xs text-slate-400">
@@ -1267,16 +1370,17 @@ export default function OperatorRebuildPage() {
                 <div className="space-y-4">
                   {/* Empresa */}
                   <div>
-                    <label className="block text-xs text-muted uppercase tracking-wider mb-2">Empresa / Viacao</label>
+                    <label className={`block text-xs uppercase tracking-wider mb-2 ${pdvFieldErrors.pdvCompany ? "text-rose-400" : "text-muted"}`}>Empresa / Viacao {pdvFieldErrors.pdvCompany && <span className="text-rose-400">*</span>}</label>
                     <Select
                       value={pdvCompanyId}
-                      onChange={e => setPdvCompanyId(e.target.value)}
+                      onChange={e => { setPdvCompanyId(e.target.value); setPdvFieldErrors(prev => ({ ...prev, pdvCompany: false })); }}
                       disabled={!shift || operatorBlocked}
-                      className="w-full"
+                      className={`w-full ${pdvFieldErrors.pdvCompany ? "border-rose-500 ring-1 ring-rose-500/30" : ""}`}
                     >
                       <option value="">Selecione a empresa</option>
                       {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({getCompanyPct(c)}%)</option>)}
                     </Select>
+                    {pdvFieldErrors.pdvCompany && <p className="mt-1 text-xs text-rose-400">Selecione uma empresa para continuar.</p>}
                   </div>
 
                   {/* Formas de Pagamento */}
@@ -1596,7 +1700,15 @@ export default function OperatorRebuildPage() {
           <Card>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-foreground">Lancamentos ({txs.length})</h3>
-              <Badge variant="secondary">{txs.length} registro{txs.length !== 1 ? "s" : ""}</Badge>
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Buscar empresa, valor..."
+                  value={historySearch}
+                  onChange={e => setHistorySearch(e.target.value)}
+                  className="w-48"
+                />
+                <Badge variant="secondary">{filteredTxs.length} registro{filteredTxs.length !== 1 ? "s" : ""}</Badge>
+              </div>
             </div>
             <DataTable
               columns={[
@@ -1605,10 +1717,31 @@ export default function OperatorRebuildPage() {
                 { key: "metodo", header: "Metodo", render: (tx) => <PaymentBadge method={tx.payment_method} /> },
                 { key: "valor", header: "Valor", render: (tx) => <span className="font-bold text-foreground">{formatCurrency(Number(tx.amount))}</span> },
                 { key: "comprovante", header: "Comprovante", render: (tx) => tx.receipt_count>0 ? <Badge variant="success">OK</Badge> : (tx.payment_method==="credit"||tx.payment_method==="debit") ? <Badge variant="warning">PENDENTE</Badge> : <span className="text-muted">-</span> },
+                { key: "acoes", header: "", render: (tx) => (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                    onClick={() => { setShowCancelConfirm(tx.id); setCancelReason(""); }}
+                    disabled={operatorBlocked || cancellingTxId === tx.id}
+                  >
+                    {cancellingTxId === tx.id ? "..." : <X size={14} />}
+                  </Button>
+                )},
               ]}
-              rows={txs}
+              rows={paginatedTxs}
               emptyMessage="Sem lancamentos neste turno."
             />
+            {filteredTxs.length > txPageSize && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+                <p className="text-xs text-muted">Exibindo {Math.min(txPageSize, paginatedTxs.length)} de {filteredTxs.length}</p>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setTxPage(p => Math.max(0, p - 1))} disabled={txPage === 0}>Anterior</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setTxPage(p => p + 1)} disabled={(txPage + 1) * txPageSize >= filteredTxs.length}>Proximo</Button>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       )}
@@ -1985,6 +2118,47 @@ export default function OperatorRebuildPage() {
             </div>
             <div className="mt-4 border-t border-slate-700 pt-4">
               <p className="text-xs text-muted">Esses valores sao gerenciados no painel do admin em `Configuracoes`.</p>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Confirmacao de Estorno */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-md">
+            <h2 className="text-lg font-bold text-foreground mb-2">Estornar Transacao</h2>
+            <p className="text-sm text-muted mb-4">
+              Esta acao ira cancelar a transacao. O valor sera removido dos totais do turno.
+            </p>
+            {(() => {
+              const tx = txs.find(t => t.id === showCancelConfirm);
+              return tx ? (
+                <div className="bg-slate-800 p-4 rounded-lg mb-4">
+                  <p className="text-sm font-semibold text-foreground">{tx.company_name}</p>
+                  <p className="text-lg font-bold text-rose-400">{formatCurrency(Number(tx.amount))}</p>
+                  <p className="text-xs text-muted">{tx.payment_method.toUpperCase()} - {isMounted ? new Date(tx.sold_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : "--"}</p>
+                </div>
+              ) : null;
+            })()}
+            <Input
+              label="Motivo do estorno"
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)}
+              placeholder="Ex.: erro de digitacao, cliente desistiu"
+              autoFocus
+            />
+            {!cancelReason.trim() && <p className="mt-1 text-xs text-rose-400">Obrigatorio informar o motivo.</p>}
+            <div className="flex gap-3 justify-end mt-6">
+              <Button type="button" variant="ghost" onClick={() => { setShowCancelConfirm(null); setCancelReason(""); }}>Cancelar</Button>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => void cancelTransaction(showCancelConfirm)}
+                disabled={!cancelReason.trim() || cancellingTxId === showCancelConfirm}
+              >
+                {cancellingTxId === showCancelConfirm ? "Estornando..." : "Confirmar Estorno"}
+              </Button>
             </div>
           </Card>
         </div>
