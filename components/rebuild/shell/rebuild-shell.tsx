@@ -22,6 +22,7 @@ import {
   Wallet,
   Clock,
   MessageSquare,
+  DollarSign,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,6 +39,7 @@ const adminMainNav: NavItem[] = [
   { href: "/rebuild/admin#dashboard", label: "Dashboard", section: "dashboard", Icon: LayoutDashboard },
   { href: "/rebuild/admin#controle-turno", label: "Controle de Turno", section: "controle-turno", Icon: Ticket },
   { href: "/rebuild/admin#financeiro", label: "Financeiro", section: "financeiro", Icon: Wallet },
+  { href: "/rebuild/admin#fechamento-caixa", label: "Fechamento de Caixa", section: "fechamento-caixa", Icon: DollarSign },
   { href: "/rebuild/admin#relatorios", label: "Relatorios", section: "relatorios", Icon: BarChart3 },
 ];
 
@@ -61,6 +63,7 @@ const adminSectionLabels: Record<string, string> = {
   dashboard: "Dashboard",
   "controle-turno": "Controle de Turno",
   financeiro: "Financeiro",
+  "fechamento-caixa": "Fechamento de Caixa",
   relatorios: "Relatorios",
   mensagens: "Mensagens",
   "folha-de-ponto": "Folha de Ponto",

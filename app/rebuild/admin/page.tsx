@@ -6,6 +6,7 @@ import { canAccessAdminArea, canAccessAdminSection, getDefaultAdminSectionForRol
 import { isSchemaToleranceError } from "@/lib/schema-tolerance";
 
 import { AdminAttendanceSection } from "@/components/rebuild/admin/admin-attendance-section";
+import { AdminCashClosingSection } from "@/components/rebuild/admin/admin-cash-closing-section";
 import { AdminCompaniesSection } from "@/components/rebuild/admin/admin-companies-section";
 import { AdminDashboardSection } from "@/components/rebuild/admin/admin-dashboard-section";
 import { AdminFinanceSection } from "@/components/rebuild/admin/admin-finance-section";
@@ -102,7 +103,7 @@ type TxForReport = { id: string; status?: string; amount: number; sold_at?: stri
 type TimePunchRow = { id: string; punch_type: string; punched_at: string; note: string|null; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type CashMovementRow = { id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type ShiftCashClosingRow = { id: string; expected_cash: number; declared_cash: number; difference: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
-type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"relatorios"|"usuarios"|"empresas"|"configuracoes"|"mensagens"|"ponto";
+type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"fechamento-caixa"|"relatorios"|"usuarios"|"empresas"|"configuracoes"|"mensagens"|"ponto";
 type OperatorMessage = {
   id: string;
   message: string;
@@ -352,6 +353,7 @@ export default function AdminRebuildPage() {
         "dashboard": "dashboard",
         "controle-turno": "operadores",
         "financeiro": "financeiro",
+        "fechamento-caixa": "fechamento-caixa",
         "relatorios": "relatorios",
         "usuarios": "usuarios",
         "empresas": "empresas",
@@ -1746,6 +1748,7 @@ export default function AdminRebuildPage() {
     dashboard: "Dashboard",
     operadores: "Controle de Turno",
     financeiro: "Financeiro",
+    "fechamento-caixa": "Fechamento de Caixa",
     relatorios: "Relatorios",
     gestao: "Gestao",
     usuarios: "Usuarios",
@@ -1873,6 +1876,15 @@ export default function AdminRebuildPage() {
             onObservacoesFinaisChange={setObservacoesFinais}
             onApplyFilters={applyDateFilters}
             onClearFilters={clearDateFilters}
+          />
+        )}
+
+        {/* FECHAMENTO DE CAIXA */}
+        {show("fechamento-caixa") && (
+          <AdminCashClosingSection
+            shiftCashClosingRows={shiftCashClosingRows}
+            shiftRows={rows}
+            isMounted={isMounted}
           />
         )}
 

@@ -4,7 +4,7 @@ export type AppRole = (typeof APP_ROLES)[number];
 
 export const ADMIN_AREA_ROLES = ["admin", "tenant_admin", "financeiro"] as const;
 export const USER_MANAGEMENT_ROLES = ["admin", "tenant_admin"] as const;
-export const FINANCEIRO_ALLOWED_SECTIONS = ["dashboard", "financeiro", "relatorios"] as const;
+export const FINANCEIRO_ALLOWED_SECTIONS = ["dashboard", "financeiro", "fechamento-caixa", "relatorios"] as const;
 
 export function normalizeRole(role: string | null | undefined): string {
   return typeof role === "string" ? role.trim().toLowerCase() : "";
