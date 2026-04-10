@@ -150,6 +150,7 @@ export function RebuildShell({ children }: { children: React.ReactNode }) {
   }
 
   async function handleLogout() {
+    if (!window.confirm("Deseja realmente sair do sistema?")) return;
     // Ponto Digital: registra clock_out antes de deslogar
     try {
       const { data: authData } = await supabase.auth.getUser();

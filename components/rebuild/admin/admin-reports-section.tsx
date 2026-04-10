@@ -1,9 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Download, Printer } from "lucide-react";
 
 import { boothOf, formatCurrency, nameOf } from "@/lib/admin/admin-helpers";
+import { exportToCSV } from "@/lib/csv-export";
 import { Badge } from "@/components/rebuild/ui/badge";
+import { Button } from "@/components/rebuild/ui/button";
 import { Card } from "@/components/rebuild/ui/card";
 import { SectionHeader } from "@/components/rebuild/ui/section-header";
 import { StatCard } from "@/components/rebuild/ui/stat-card";
@@ -149,8 +152,81 @@ export function AdminReportsSection({ auditLogs, reportTxs, dateFrom, dateTo }: 
     ? "Todos os guiches"
     : boothOptions.find((option) => option.value === selectedBoothId)?.label ?? "Guiche";
 
+  const reportGeneratedAt = new Date().toLocaleString("pt-BR");
+
+  function handlePrintReport() {
+    if (typeof window === "undefined") return;
+    const cleanup = () => {
+      document.body.classList.remove("printing-report");
+      window.removeEventListener("afterprint", cleanup);
+    };
+    document.body.classList.add("printing-report");
+    window.addEventListener("afterprint", cleanup);
+    window.print();
+    window.setTimeout(cleanup, 1000);
+  }
+
+  function handleExportCSV() {
+    const rows = filteredTxs.map((tx) => {
+      const booth = boothOf(tx.booths ?? null);
+      return {
+        data: tx.sold_at ? new Date(tx.sold_at).toLocaleString("pt-BR") : "-",
+        guiche: booth ? `${booth.code} - ${booth.name}` : "-",
+        operador: nameOf(tx.profiles ?? null) ?? "-",
+        empresa: getObjectName(tx.companies) ?? "-",
+        categoria: getObjectName(tx.transaction_categories) ?? "-",
+        pagamento: paymentLabel(tx.payment_method).label,
+        valor: Number(tx.amount || 0),
+      };
+    });
+
+    exportToCSV(
+      `relatorio-gerencial-${selectedBoothId === "all" ? "geral" : selectedBoothId}`,
+      rows,
+      [
+        { key: "data", label: "Data" },
+        { key: "guiche", label: "Guiche" },
+        { key: "operador", label: "Operador" },
+        { key: "empresa", label: "Empresa" },
+        { key: "categoria", label: "Categoria" },
+        { key: "pagamento", label: "Pagamento" },
+        { key: "valor", label: "Valor (R$)" },
+      ]
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="report-print-scope space-y-6">
+      {/* Print-only header */}
+      <Card className="hidden print:block print:border-slate-300 print:bg-white print:shadow-none">
+        <div className="flex items-start justify-between gap-4 border-b border-border pb-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted">Central Viagens</p>
+            <h2 className="mt-1 text-2xl font-semibold text-foreground">Relatorio Gerencial</h2>
+            <p className="mt-2 text-sm text-muted">Emitido em {reportGeneratedAt}</p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <div>
+            <p className="text-xs text-muted">Escopo</p>
+            <p className="font-semibold text-foreground">{boothLabel}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted">Periodo</p>
+            <p className="font-semibold text-foreground">{periodLabel}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted">Lancamentos</p>
+            <p className="font-semibold text-foreground">{filteredTxs.length}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted">Faturamento</p>
+            <p className="font-semibold text-foreground">{formatCurrency(reportSummary.totalAmount)}</p>
+          </div>
+        </div>
+      </Card>
+
+      <div className="print:hidden">
       <SectionHeader
         title="Relatorios Gerenciais"
         subtitle="Consulte o consolidado geral e detalhe os lancamentos por guiche com foco operacional e gerencial."
@@ -173,6 +249,14 @@ export function AdminReportsSection({ auditLogs, reportTxs, dateFrom, dateTo }: 
               ))}
             </select>
           </div>
+          <Button variant="secondary" onClick={handleExportCSV} disabled={filteredTxs.length === 0}>
+            <Download className="mr-2 h-4 w-4" />
+            Exportar CSV
+          </Button>
+          <Button variant="ghost" onClick={handlePrintReport} disabled={filteredTxs.length === 0}>
+            <Printer className="mr-2 h-4 w-4" />
+            Imprimir relatorio
+          </Button>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -193,8 +277,9 @@ export function AdminReportsSection({ auditLogs, reportTxs, dateFrom, dateTo }: 
         <StatCard label="Total em dinheiro" value={formatCurrency(reportSummary.cashAmount)} />
         <StatCard label="Total digital" value={formatCurrency(reportSummary.digitalAmount)} />
       </div>
+      </div>
 
-      <Card>
+      <Card className="print:border-slate-300 print:bg-white print:shadow-none">
         <SectionHeader
           title="Resumo Consolidado por Guiche"
           subtitle={selectedBoothId === "all" ? "Compare faturamento, ticket medio e mix financeiro entre os guiches." : `Resumo filtrado para ${boothLabel}.`}
@@ -214,7 +299,7 @@ export function AdminReportsSection({ auditLogs, reportTxs, dateFrom, dateTo }: 
         />
       </Card>
 
-      <Card>
+      <Card className="print:border-slate-300 print:bg-white print:shadow-none">
         <SectionHeader
           title="Lancamentos do Relatorio"
           subtitle={`${filteredTxs.length} registro(s) exibidos em ${boothLabel}.`}
@@ -249,7 +334,7 @@ export function AdminReportsSection({ auditLogs, reportTxs, dateFrom, dateTo }: 
         />
       </Card>
 
-      <Card>
+      <Card className="print:hidden">
         <SectionHeader title="Log de Auditoria" subtitle="Rastreabilidade administrativa complementar ao relatorio financeiro." className="mb-4" />
         <DataTable
           columns={[

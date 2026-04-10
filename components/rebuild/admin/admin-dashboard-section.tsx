@@ -459,7 +459,7 @@ export function AdminDashboardSection({
             { key: "status", header: "Status", render: (r) => <Badge variant={r.status === "open" ? "success" : "neutral"}>{r.status === "open" ? "ABERTO" : "FECHADO"}</Badge> },
             { key: "receita", header: "Receita", render: (r) => <span className="font-semibold">{formatCurrency(Number(r.gross_amount || 0))}</span> },
             { key: "pendencias", header: "Pendencias", render: (r) => Number(r.missing_card_receipts || 0) > 0 ? <Badge variant="warning">{r.missing_card_receipts}</Badge> : "-" },
-            { key: "acao", header: "Acao", render: (r) => r.status === "open" ? <Button variant="ghost" size="sm" onClick={() => onForceCloseShift(r.shift_id)}>Encerrar</Button> : null },
+            { key: "acao", header: "Acao", render: (r) => r.status === "open" ? <Button variant="danger" size="sm" onClick={() => { if (window.confirm(`Forcar encerramento do turno de ${r.operator_name} no guiche ${r.booth_name}?`)) onForceCloseShift(r.shift_id); }}>Forcar encerramento</Button> : null },
           ]}
           rows={rows.slice(0, 50)}
           emptyMessage="Nenhum turno encontrado."
@@ -480,10 +480,10 @@ export function AdminDashboardSection({
                 header: "Acao",
                 render: (a) => (
                   <div className="flex gap-2">
-                    <Button variant="primary" size="sm" onClick={() => onApproveAdjustment(a.id, a.transaction_id)}>
+                    <Button variant="primary" size="sm" onClick={() => { if (window.confirm("Aprovar este ajuste? A transacao sera atualizada.")) onApproveAdjustment(a.id, a.transaction_id); }}>
                       Aprovar
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => onRejectAdjustment(a.id)}>
+                    <Button variant="danger" size="sm" onClick={() => { if (window.confirm("Rejeitar este ajuste? A acao nao podera ser desfeita.")) onRejectAdjustment(a.id); }}>
                       Rejeitar
                     </Button>
                   </div>

@@ -512,11 +512,11 @@ export function AdminFinanceSection({
     if (typeof window === "undefined") return;
 
     const cleanup = () => {
-      document.body.classList.remove("printing-finance-report");
+      document.body.classList.remove("printing-finance-report", "printing-report");
       window.removeEventListener("afterprint", cleanup);
     };
 
-    document.body.classList.add("printing-finance-report");
+    document.body.classList.add("printing-finance-report", "printing-report");
     window.addEventListener("afterprint", cleanup);
     window.print();
     window.setTimeout(cleanup, 1000);
@@ -741,7 +741,7 @@ export function AdminFinanceSection({
   }
 
   return (
-    <div className="finance-report-print-scope space-y-6 print:space-y-4">
+    <div className="finance-report-print-scope report-print-scope space-y-6 print:space-y-4">
       <div className="print:hidden space-y-6">
         <SectionHeader
           title="Financeiro Operacional"

@@ -158,6 +158,7 @@ export default function OperatorRebuildPage() {
   const [chatAttachmentKey, setChatAttachmentKey] = useState(0);
   const [showChat, setShowChat] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [isSendingChat, setIsSendingChat] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const attendanceCheckoutSentRef = useRef(false);
   const showChatRef = useRef(showChat);
@@ -948,7 +949,9 @@ export default function OperatorRebuildPage() {
   }, [activeChatBoothId, activeChatBoothName, userId]);
 
   async function sendChatMessage() {
-    if (!userId || !activeChatBoothId || (!newChatMessage.trim() && !newChatAttachment)) return;
+    if (!userId || !activeChatBoothId || (!newChatMessage.trim() && !newChatAttachment) || isSendingChat) return;
+    setIsSendingChat(true);
+    try {
 
     let attachmentPayload: {
       attachment_path?: string;
@@ -993,6 +996,9 @@ export default function OperatorRebuildPage() {
     setMessage(`Mensagem enviada para o admin do guiche ${activeChatBoothName}.`);
     await loadChatMessages();
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth" }), 120);
+    } finally {
+      setIsSendingChat(false);
+    }
   }
 
   async function handleUploadReceipt(txId: string, ev: ChangeEvent<HTMLInputElement>) {
@@ -2284,7 +2290,7 @@ export default function OperatorRebuildPage() {
                     }
                   }}
                 />
-                <Button variant="primary" onClick={() => void sendChatMessage()} disabled={!newChatMessage.trim() && !newChatAttachment}>
+                <Button variant="primary" onClick={() => void sendChatMessage()} loading={isSendingChat} disabled={(!newChatMessage.trim() && !newChatAttachment) || isSendingChat}>
                   <Send size={16} />
                 </Button>
               </div>

@@ -126,22 +126,214 @@
 
 @media print {
   @page {
-    margin: 12mm;
+    margin: 10mm 12mm;
+    size: A4 portrait;
   }
 
+  /* ── Global print reset ── */
+  body.printing-report {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11px !important;
+    line-height: 1.45 !important;
+  }
+
+  body.printing-report * {
+    visibility: hidden !important;
+    color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Show only the print scope */
+  body.printing-report .report-print-scope,
+  body.printing-report .report-print-scope * {
+    visibility: visible !important;
+  }
+
+  body.printing-report .report-print-scope {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: 0;
+    background: #ffffff !important;
+    color: #1a1a1a !important;
+    overflow: visible !important;
+  }
+
+  /* Hide interactive / screen-only elements */
+  body.printing-report .report-print-scope .print\:hidden,
+  body.printing-report .report-print-scope nav,
+  body.printing-report .report-print-scope button:not(.print-keep),
+  body.printing-report .report-print-scope select,
+  body.printing-report .report-print-scope input,
+  body.printing-report .report-print-scope textarea,
+  body.printing-report .report-print-scope form {
+    display: none !important;
+  }
+
+  /* ── Cards ── */
+  body.printing-report .report-print-scope [class*="Card"],
+  body.printing-report .report-print-scope [class*="card"] {
+    background: #ffffff !important;
+    border: 1px solid #d1d5db !important;
+    box-shadow: none !important;
+    color: #1a1a1a !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* ── Tables ── */
+  body.printing-report .report-print-scope table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 10px !important;
+  }
+
+  body.printing-report .report-print-scope th {
+    background: #f3f4f6 !important;
+    color: #111827 !important;
+    border-bottom: 2px solid #6b7280 !important;
+    padding: 6px 8px !important;
+    text-align: left !important;
+    font-weight: 600 !important;
+    font-size: 10px !important;
+  }
+
+  body.printing-report .report-print-scope td {
+    border-bottom: 1px solid #e5e7eb !important;
+    padding: 5px 8px !important;
+    color: #1f2937 !important;
+    font-size: 10px !important;
+  }
+
+  body.printing-report .report-print-scope tr:nth-child(even) td {
+    background: #f9fafb !important;
+  }
+
+  /* ── Text and headings ── */
+  body.printing-report .report-print-scope h1,
+  body.printing-report .report-print-scope h2,
+  body.printing-report .report-print-scope h3,
+  body.printing-report .report-print-scope h4 {
+    color: #111827 !important;
+  }
+
+  body.printing-report .report-print-scope p,
+  body.printing-report .report-print-scope span,
+  body.printing-report .report-print-scope div {
+    color: #374151 !important;
+  }
+
+  body.printing-report .report-print-scope .font-semibold,
+  body.printing-report .report-print-scope .font-bold {
+    color: #111827 !important;
+  }
+
+  /* ── Badges ── */
+  body.printing-report .report-print-scope [class*="badge"],
+  body.printing-report .report-print-scope [class*="Badge"] {
+    color: #374151 !important;
+    background: #f3f4f6 !important;
+    border: 1px solid #d1d5db !important;
+    font-size: 9px !important;
+    padding: 1px 6px !important;
+  }
+
+  /* ── Stat cards / KPIs ── */
+  body.printing-report .report-print-scope [class*="stat"],
+  body.printing-report .report-print-scope [class*="Stat"] {
+    background: #f9fafb !important;
+    border: 1px solid #d1d5db !important;
+    break-inside: avoid;
+  }
+
+  /* ── Grid: ensure legibility ── */
+  body.printing-report .report-print-scope .grid {
+    gap: 8px !important;
+  }
+
+  /* ── Inner colored boxes (booth cards, KPI boxes, etc) ── */
+  body.printing-report .report-print-scope [class*="bg-emerald"],
+  body.printing-report .report-print-scope [class*="bg-amber"],
+  body.printing-report .report-print-scope [class*="bg-sky"],
+  body.printing-report .report-print-scope [class*="bg-indigo"],
+  body.printing-report .report-print-scope [class*="bg-rose"],
+  body.printing-report .report-print-scope [class*="bg-cyan"],
+  body.printing-report .report-print-scope [class*="bg-primary"],
+  body.printing-report .report-print-scope [class*="bg-slate"],
+  body.printing-report .report-print-scope [class*="bg-gradient"],
+  body.printing-report .report-print-scope [class*="bg-muted"],
+  body.printing-report .report-print-scope [class*="bg-background"],
+  body.printing-report .report-print-scope [class*="bg-\[hsl"] {
+    background: #f9fafb !important;
+    border-color: #d1d5db !important;
+  }
+
+  /* ── Colored text readability ── */
+  body.printing-report .report-print-scope [class*="text-emerald"],
+  body.printing-report .report-print-scope [class*="text-success"] {
+    color: #059669 !important;
+  }
+  body.printing-report .report-print-scope [class*="text-amber"],
+  body.printing-report .report-print-scope [class*="text-warning"] {
+    color: #d97706 !important;
+  }
+  body.printing-report .report-print-scope [class*="text-rose"],
+  body.printing-report .report-print-scope [class*="text-destructive"] {
+    color: #dc2626 !important;
+  }
+  body.printing-report .report-print-scope [class*="text-cyan"],
+  body.printing-report .report-print-scope [class*="text-info"] {
+    color: #0891b2 !important;
+  }
+  body.printing-report .report-print-scope [class*="text-primary"],
+  body.printing-report .report-print-scope [class*="text-blue"] {
+    color: #2563eb !important;
+  }
+  body.printing-report .report-print-scope [class*="text-indigo"] {
+    color: #4f46e5 !important;
+  }
+  body.printing-report .report-print-scope [class*="text-muted"] {
+    color: #6b7280 !important;
+  }
+  body.printing-report .report-print-scope [class*="text-foreground"] {
+    color: #111827 !important;
+  }
+
+  /* ── Page breaks ── */
+  body.printing-report .report-print-scope .print\:break-before {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  /* ── Print-specific show/hide ── */
+  body.printing-report .report-print-scope .print\:block {
+    display: block !important;
+  }
+  body.printing-report .report-print-scope .print\:flex {
+    display: flex !important;
+  }
+
+  /* ── Progress bars: ensure visible border ── */
+  body.printing-report .report-print-scope [class*="rounded-full"][class*="bg-primary"] {
+    background: #2563eb !important;
+  }
+  body.printing-report .report-print-scope [class*="rounded-full"][class*="bg-muted"] {
+    background: #e5e7eb !important;
+  }
+
+  /* Legacy compat: old class name */
   body.printing-finance-report {
     background: #ffffff !important;
   }
-
   body.printing-finance-report * {
     visibility: hidden !important;
   }
-
   body.printing-finance-report .finance-report-print-scope,
   body.printing-finance-report .finance-report-print-scope * {
     visibility: visible !important;
   }
-
   body.printing-finance-report .finance-report-print-scope {
     position: absolute;
     inset: 0;
@@ -151,7 +343,6 @@
     color: #000000 !important;
     overflow: visible !important;
   }
-
   body.printing-finance-report .finance-report-print-scope .print\:hidden {
     display: none !important;
   }

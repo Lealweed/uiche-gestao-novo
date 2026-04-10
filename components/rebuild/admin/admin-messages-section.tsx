@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useMemo } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCheck, Download, Eye, MessageSquare, Paperclip, RefreshCw, Send, Store, Users, X } from "lucide-react";
 
 import { boothOf, nameOf } from "@/lib/admin/admin-helpers";
@@ -90,6 +90,10 @@ export function AdminMessagesSection({
   onSelectConversation,
   onSendReply,
 }: AdminMessagesSectionProps) {
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [isSending, setIsSending] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const conversations = useMemo<ConversationItem[]>(() => {
     const conversationMap = new Map<string, ConversationItem>();
 
@@ -160,6 +164,30 @@ export function AdminMessagesSection({
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [operatorMessages, selectedConversation]);
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [visibleMessages.length, selectedConversation?.key]);
+
+  async function handleSendReply() {
+    if (isSending) return;
+    setIsSending(true);
+    try {
+      await onSendReply();
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  async function handleRefresh() {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <SectionHeader title="Conversas Privadas" subtitle="Inbox operacional por guiche, com historico separado e resposta direta do admin." />
@@ -169,13 +197,13 @@ export function AdminMessagesSection({
           <Badge variant={unreadCount > 0 ? "warning" : "secondary"} className="text-sm">
             {unreadCount} nao lida{unreadCount !== 1 ? "s" : ""}
           </Badge>
-          <Button variant="ghost" size="sm" onClick={() => void onRefresh()}>
-            <RefreshCw className="mr-1 h-4 w-4" />
+          <Button variant="ghost" size="sm" onClick={() => void handleRefresh()} loading={isRefreshing}>
+            <RefreshCw className={`mr-1 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
             Atualizar
           </Button>
         </div>
         {unreadCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={() => void onMarkAllRead()}>
+          <Button variant="ghost" size="sm" onClick={() => { if (window.confirm(`Marcar todas as ${unreadCount} mensagem(ns) como lidas?`)) void onMarkAllRead(); }}>
             <CheckCheck className="mr-1 h-4 w-4" />
             Marcar todas como lidas
           </Button>
@@ -308,6 +336,7 @@ export function AdminMessagesSection({
                     );
                   })
                 )}
+                <div ref={chatEndRef} />
               </div>
 
               <div className="mt-4 border-t border-border pt-4">
@@ -342,11 +371,11 @@ export function AdminMessagesSection({
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault();
-                        void onSendReply();
+                        void handleSendReply();
                       }
                     }}
                   />
-                  <Button variant="primary" onClick={() => void onSendReply()} disabled={!adminReply.trim() && !adminReplyAttachmentName}>
+                  <Button variant="primary" onClick={() => void handleSendReply()} loading={isSending} disabled={(!adminReply.trim() && !adminReplyAttachmentName) || isSending}>
                     <Send className="h-4 w-4" />
                     Enviar
                   </Button>
