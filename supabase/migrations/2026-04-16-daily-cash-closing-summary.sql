@@ -43,16 +43,7 @@ for select using (
 drop policy if exists daily_cash_closings_self_insert on public.daily_cash_closings;
 create policy daily_cash_closings_self_insert on public.daily_cash_closings
 for insert with check (
-  user_id = auth.uid() or public.is_admin(auth.uid())
-);
-
-drop policy if exists daily_cash_closings_self_update on public.daily_cash_closings;
-create policy daily_cash_closings_self_update on public.daily_cash_closings
-for update using (
-  user_id = auth.uid() or public.is_admin(auth.uid())
-)
-with check (
-  user_id = auth.uid() or public.is_admin(auth.uid())
+  user_id = auth.uid()
 );
 
 drop trigger if exists daily_cash_closings_set_updated_at on public.daily_cash_closings;

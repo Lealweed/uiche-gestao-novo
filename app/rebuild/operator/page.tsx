@@ -2135,13 +2135,13 @@ export default function OperatorRebuildPage() {
                     placeholder="0,00"
                   />
                   <Input
-                    label="Cartao"
+                    label="Cartão"
                     value={dailyClosingCard}
                     onChange={(e) => setDailyClosingCard(maskMoneyInput(e.target.value))}
                     placeholder="0,00"
                   />
                   <Input
-                    label="Dinheiro bruto"
+                    label="Dinheiro"
                     value={dailyClosingCash}
                     onChange={(e) => setDailyClosingCash(maskMoneyInput(e.target.value))}
                     placeholder="0,00"
@@ -2167,8 +2167,8 @@ export default function OperatorRebuildPage() {
                 <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className={`rounded-lg border px-3 py-2 text-sm ${dailyClosingDifference === 0 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>
                     {dailyClosingDifference === 0
-                      ? "Validacao ok: PIX + cartao + dinheiro bate com o total vendido."
-                      : `Falha de validacao: faltam ${formatCurrency(Math.abs(dailyClosingDifference))} para fechar a conta.`}
+                      ? "Validação ok: PIX + cartão + dinheiro bate com o total vendido."
+                      : `Validação bloqueada: faltam ${formatCurrency(Math.abs(dailyClosingDifference))} para fechar a conta.`}
                   </div>
                   <Button
                     type="button"
