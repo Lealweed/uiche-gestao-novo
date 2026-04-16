@@ -222,6 +222,15 @@ create table if not exists public.daily_cash_closings (
   amount_card numeric(12,2) not null default 0 check (amount_card >= 0),
   amount_cash numeric(12,2) not null default 0 check (amount_cash >= 0),
   ceia_amount numeric(12,2) not null default 0 check (ceia_amount >= 0),
+  ceia_base numeric(12,2) not null default 0 check (ceia_base >= 0),
+  ceia_pix numeric(12,2) not null default 0 check (ceia_pix >= 0),
+  ceia_debito numeric(12,2) not null default 0 check (ceia_debito >= 0),
+  ceia_credito numeric(12,2) not null default 0 check (ceia_credito >= 0),
+  ceia_link_estadual numeric(12,2) not null default 0 check (ceia_link_estadual >= 0),
+  ceia_link_interestadual numeric(12,2) not null default 0 check (ceia_link_interestadual >= 0),
+  ceia_dinheiro numeric(12,2) not null default 0 check (ceia_dinheiro >= 0),
+  ceia_total_lancado numeric(12,2) not null default 0 check (ceia_total_lancado >= 0),
+  ceia_faltante numeric(12,2) not null default 0,
   cash_net numeric(12,2) generated always as (round((amount_cash - ceia_amount)::numeric, 2)) stored,
   status text not null default 'open' check (status in ('open', 'closed')),
   notes text,
@@ -268,6 +277,15 @@ alter table if exists public.time_punches add column if not exists tenant_id uui
 alter table if exists public.cash_movements add column if not exists tenant_id uuid references public.tenants(id);
 alter table if exists public.shift_cash_closings add column if not exists tenant_id uuid references public.tenants(id);
 alter table if exists public.daily_cash_closings add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.daily_cash_closings add column if not exists ceia_base numeric(12,2) not null default 0 check (ceia_base >= 0);
+alter table if exists public.daily_cash_closings add column if not exists ceia_pix numeric(12,2) not null default 0 check (ceia_pix >= 0);
+alter table if exists public.daily_cash_closings add column if not exists ceia_debito numeric(12,2) not null default 0 check (ceia_debito >= 0);
+alter table if exists public.daily_cash_closings add column if not exists ceia_credito numeric(12,2) not null default 0 check (ceia_credito >= 0);
+alter table if exists public.daily_cash_closings add column if not exists ceia_link_estadual numeric(12,2) not null default 0 check (ceia_link_estadual >= 0);
+alter table if exists public.daily_cash_closings add column if not exists ceia_link_interestadual numeric(12,2) not null default 0 check (ceia_link_interestadual >= 0);
+alter table if exists public.daily_cash_closings add column if not exists ceia_dinheiro numeric(12,2) not null default 0 check (ceia_dinheiro >= 0);
+alter table if exists public.daily_cash_closings add column if not exists ceia_total_lancado numeric(12,2) not null default 0 check (ceia_total_lancado >= 0);
+alter table if exists public.daily_cash_closings add column if not exists ceia_faltante numeric(12,2) not null default 0;
 
 update public.profiles set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
 update public.booths set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
