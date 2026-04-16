@@ -1320,6 +1320,11 @@ export default function OperatorRebuildPage() {
     : dailyClosingCeiaFaltante > 0
       ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
       : "border-rose-500/30 bg-rose-500/10 text-rose-300";
+  const dailyClosingCeiaStatusMessage = dailyClosingCeiaFaltante === 0
+    ? "CEIA conferida em tempo real."
+    : dailyClosingCeiaFaltante > 0
+      ? `Faltando ${formatCurrency(dailyClosingCeiaFaltante)} para fechar a CEIA.`
+      : `CEIA excedida em ${formatCurrency(Math.abs(dailyClosingCeiaFaltante))}.`;
   const dailyClosingDetailTotal = useMemo(() => Number((dailyClosingFormPix + dailyClosingFormCard + dailyClosingFormCash).toFixed(2)), [dailyClosingFormPix, dailyClosingFormCard, dailyClosingFormCash]);
   const dailyClosingDifference = useMemo(() => Number((dailyClosingFormTotal - dailyClosingDetailTotal).toFixed(2)), [dailyClosingFormTotal, dailyClosingDetailTotal]);
   const dailyClosingNetPreview = useMemo(() => Number((dailyClosingFormCash - dailyClosingFormCeiaDinheiro).toFixed(2)), [dailyClosingFormCash, dailyClosingFormCeiaDinheiro]);
@@ -2270,13 +2275,10 @@ export default function OperatorRebuildPage() {
                     </div>
                   </div>
 
-                  {dailyClosingCeiaFaltante !== 0 && (
-                    <p className="mt-3 text-sm font-semibold">
-                      {dailyClosingCeiaFaltante > 0
-                        ? `Atencao forte: faltam ${formatCurrency(dailyClosingCeiaFaltante)} para conferir a CEIA.`
-                        : `Atencao forte: a CEIA excedeu em ${formatCurrency(Math.abs(dailyClosingCeiaFaltante))}.`}
-                    </p>
-                  )}
+                  <div className="mt-3 rounded-lg border border-current/20 bg-black/10 p-3 text-sm font-semibold">
+                    <p className="text-[10px] uppercase tracking-wide opacity-80">Status em tempo real</p>
+                    <p className="mt-1">{dailyClosingCeiaStatusMessage}</p>
+                  </div>
                 </div>
 
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
