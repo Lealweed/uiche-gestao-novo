@@ -2169,9 +2169,10 @@ export default function OperatorRebuildPage() {
 
       {/* Modal Fechamento */}
       {showCloseModal && shift && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <Card className="w-full max-w-3xl">
-            <div className="mb-4 flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-start md:justify-between">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-sm">
+          <div className="flex min-h-full items-start justify-center p-2 sm:p-4">
+            <Card className="my-2 w-full max-w-5xl overflow-hidden sm:my-6">
+            <div className="mb-4 flex flex-col gap-3 border-b border-border bg-[hsl(var(--card))] px-1 pb-4 pt-1 md:flex-row md:items-start md:justify-between">
               <div>
                 <h2 className="text-lg font-bold text-foreground">Fechamento de Caixa do Turno</h2>
                 <p className="text-sm text-muted">
@@ -2181,7 +2182,7 @@ export default function OperatorRebuildPage() {
               <Badge variant={closeDifferenceStatus.variant}>{closeDifferenceStatus.label}</Badge>
             </div>
 
-            <div className="space-y-5">
+            <div className="max-h-[calc(100vh-10rem)] space-y-5 overflow-y-auto pr-1 sm:max-h-[calc(100vh-11rem)]">
               {shiftNeedsAttention && (
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-200">
                   Atenção: este turno já está aberto há <strong>{shiftDurationLabel}</strong>. Revise a conferência com ainda mais cuidado.
@@ -2394,6 +2395,7 @@ export default function OperatorRebuildPage() {
                     {dailyClosingSummary.cashNet < 0 && <Badge variant="danger">Fechamento negativo</Badge>}
                   </div>
                   <DataTable
+                    className="max-h-72"
                     columns={[
                       { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
                       { key: "total", header: "Total", render: (row) => formatCurrency(Number(row.total_sold || 0)) },
@@ -2557,11 +2559,11 @@ export default function OperatorRebuildPage() {
               </div>
             </div>
 
-            <div className="mt-6 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
+            <div className="mt-6 flex flex-col gap-3 border-t border-border bg-[hsl(var(--card))] pt-4 md:flex-row md:items-center md:justify-between">
               <p className="text-xs text-muted">
                 O sistema salva o resumo por empresa, calcula o dinheiro liquido automaticamente e depois encerra o turno com rastreabilidade.
               </p>
-              <div className="flex gap-3 justify-end">
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="ghost" onClick={() => setShowCloseModal(false)}>Continuar operando</Button>
                 <Button
                   type="button"
@@ -2574,6 +2576,7 @@ export default function OperatorRebuildPage() {
               </div>
             </div>
           </Card>
+          </div>
         </div>
       )}
 
