@@ -1,5 +1,19 @@
 -- Fechamento diário por resumo: total por empresa + meios de pagamento + CEIA
 
+create extension if not exists pgcrypto;
+
+create table if not exists public.tenants (
+  id uuid primary key default gen_random_uuid(),
+  slug text not null unique,
+  name text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+insert into public.tenants (slug, name)
+select 'default', 'Tenant Padrão'
+where not exists (select 1 from public.tenants where slug = 'default');
+
 create table if not exists public.daily_cash_closings (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid references public.tenants(id),
@@ -46,6 +60,14 @@ for insert with check (
   user_id = auth.uid()
 );
 
-drop trigger if exists daily_cash_closings_set_updated_at on public.daily_cash_closings;
-create trigger daily_cash_closings_set_updated_at before update on public.daily_cash_closings
-for each row execute function public.tg_set_updated_at();
+do $$
+begin
+  if exists (
+    select 1
+    from pg_proc
+    where proname = 'tg_set_updated_at'
+  ) then
+    execute 'drop trigger if exists daily_cash_closings_set_updated_at on public.daily_cash_closings';
+    execute 'create trigger daily_cash_closings_set_updated_at before update on public.daily_cash_closings for each row execute function public.tg_set_updated_at()';
+  end if;
+end $$;
