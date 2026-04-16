@@ -267,6 +267,9 @@ alter table if exists public.companies add column if not exists tenant_id uuid r
 alter table if exists public.companies add column if not exists payout_days integer not null default 0;
 alter table if exists public.clients add column if not exists tenant_id uuid references public.tenants(id);
 alter table if exists public.shifts add column if not exists tenant_id uuid references public.tenants(id);
+alter table if exists public.shifts add column if not exists opened_by_ip text;
+alter table if exists public.shifts add column if not exists closed_by_ip text;
+alter table if exists public.shifts add column if not exists notes text;
 alter table if exists public.transactions add column if not exists tenant_id uuid references public.tenants(id);
 alter table if exists public.transactions add column if not exists boarding_tax_state numeric(12,2) not null default 0;
 alter table if exists public.transactions add column if not exists boarding_tax_federal numeric(12,2) not null default 0;
