@@ -61,6 +61,16 @@ type OperatorSummarySectionProps = {
   totals: Totals;
   cashTotals: CashTotals;
   totalGeral: number;
+  dailySummary: {
+    totalSold: number;
+    pix: number;
+    card: number;
+    cash: number;
+    ceia: number;
+    cashNet: number;
+    expectedCash: number;
+    count: number;
+  };
   txs: TxRow[];
   lastCloseResult: LastCloseResult | null;
   unreadChatCount: number;
@@ -87,6 +97,7 @@ export function OperatorSummarySection({
   totals,
   cashTotals,
   totalGeral,
+  dailySummary,
   txs,
   lastCloseResult,
   unreadChatCount,
@@ -188,7 +199,7 @@ export function OperatorSummarySection({
               </>
             ) : (
               <Button variant="danger" onClick={() => void onOpenCloseShiftModal()} disabled={operatorBlocked}>
-                Fechar Caixa PDV
+                Fechamento Diario
               </Button>
             )}
           </div>
@@ -220,30 +231,61 @@ export function OperatorSummarySection({
       <Card>
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <h3 className="font-semibold text-foreground">Fechamento de Caixa</h3>
-            <p className="text-sm text-muted">Resumo operacional para conferir o caixa do turno e acompanhar o ultimo encerramento.</p>
+            <h3 className="font-semibold text-foreground">Fechamento Diario por Resumo</h3>
+            <p className="text-sm text-muted">Consolide as empresas do dia sem precisar lancar bilhete por bilhete.</p>
           </div>
           <Badge variant={lastCloseBadge.variant}>{lastCloseBadge.label}</Badge>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className="rounded-lg border border-border p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Total vendido</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(dailySummary.totalSold)}</p>
+          </div>
+          <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">PIX</p>
+            <p className="text-lg font-bold text-info">{formatCurrency(dailySummary.pix)}</p>
+          </div>
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Cartao</p>
+            <p className="text-lg font-bold text-primary">{formatCurrency(dailySummary.card)}</p>
+          </div>
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Dinheiro bruto</p>
+            <p className="text-lg font-bold text-success">{formatCurrency(dailySummary.cash)}</p>
+          </div>
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">CEIA</p>
+            <p className="text-lg font-bold text-amber-300">{formatCurrency(dailySummary.ceia)}</p>
+          </div>
+          <div className={`rounded-lg border p-3 ${dailySummary.cashNet < 0 ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/20 bg-emerald-500/5"}`}>
+            <p className="text-[10px] uppercase tracking-widest text-muted">Dinheiro liquido</p>
+            <p className={`text-lg font-bold ${dailySummary.cashNet < 0 ? "text-rose-400" : "text-success"}`}>{formatCurrency(dailySummary.cashNet)}</p>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-lg border border-border p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Registros salvos</p>
+            <p className="text-lg font-bold text-foreground">{dailySummary.count}</p>
+          </div>
           <div className="rounded-lg border border-border p-3">
             <p className="text-[10px] uppercase tracking-widest text-muted">Caixa esperado</p>
-            <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.saldo)}</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(dailySummary.expectedCash)}</p>
           </div>
           <div className="rounded-lg border border-border p-3">
             <p className="text-[10px] uppercase tracking-widest text-muted">Suprimento</p>
             <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.suprimento)}</p>
           </div>
           <div className="rounded-lg border border-border p-3">
-            <p className="text-[10px] uppercase tracking-widest text-muted">Sangria</p>
-            <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.sangria)}</p>
-          </div>
-          <div className="rounded-lg border border-border p-3">
-            <p className="text-[10px] uppercase tracking-widest text-muted">Ajuste</p>
-            <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.ajuste)}</p>
+            <p className="text-[10px] uppercase tracking-widest text-muted">Sangria / Ajuste</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(cashTotals.ajuste - cashTotals.sangria)}</p>
           </div>
         </div>
+
+        {dailySummary.cashNet < 0 && (
+          <p className="mt-3 text-sm text-rose-300">Alerta: o saldo liquido em dinheiro ficou negativo neste fechamento.</p>
+        )}
 
         {lastCloseResult && (
           <div className="mt-4 rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">

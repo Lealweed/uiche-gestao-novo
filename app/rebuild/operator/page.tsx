@@ -35,6 +35,23 @@ type LastCloseResult = {
   closedAt: string;
 };
 
+type DailyCashClosingRow = {
+  id: string;
+  office_id: string;
+  user_id: string;
+  date: string;
+  company: string;
+  total_sold: number;
+  amount_pix: number;
+  amount_card: number;
+  amount_cash: number;
+  ceia_amount: number;
+  cash_net: number;
+  status: "open" | "closed";
+  notes: string | null;
+  created_at: string;
+};
+
 const DEFAULT_BOARDING_TAXES: TaxaEmbarque[] = [
   { id: "fallback-goiania", name: "Goiania", amount: 8.5, tax_type: "estadual", active: true },
   { id: "fallback-belem", name: "Belem", amount: 12, tax_type: "estadual", active: true },
@@ -47,7 +64,24 @@ function formatCurrency(value: number): string {
 }
 
 function parseMoneyInput(value: string): number {
-  return Number(value.replace(",", ".")) || 0;
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+
+  const normalized = trimmed
+    .replace(/[R$\s]/g, "")
+    .replace(/\.(?=\d{3}(?:\D|$))/g, "")
+    .replace(",", ".");
+
+  return Number(normalized) || 0;
+}
+
+function maskMoneyInput(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  return (Number(digits) / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function hasNativeInputFocus(element: EventTarget | null) {
@@ -105,6 +139,19 @@ export default function OperatorRebuildPage() {
     comprovantes: false,
   });
   const [lastCloseResult, setLastCloseResult] = useState<LastCloseResult | null>(null);
+  const [dailyClosingDate, setDailyClosingDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dailyClosingCompany, setDailyClosingCompany] = useState("");
+  const [dailyClosingTotalSold, setDailyClosingTotalSold] = useState("");
+  const [dailyClosingPix, setDailyClosingPix] = useState("");
+  const [dailyClosingCard, setDailyClosingCard] = useState("");
+  const [dailyClosingCash, setDailyClosingCash] = useState("");
+  const [dailyClosingCeia, setDailyClosingCeia] = useState("");
+  const [dailyClosingNotes, setDailyClosingNotes] = useState("");
+  const [dailyClosings, setDailyClosings] = useState<DailyCashClosingRow[]>([]);
+  const [isSavingDailyClosing, setIsSavingDailyClosing] = useState(false);
+  const [dailyClosingFilterDate, setDailyClosingFilterDate] = useState("");
+  const [dailyClosingFilterCompany, setDailyClosingFilterCompany] = useState("");
+  const [selectedDailyClosingId, setSelectedDailyClosingId] = useState<string | null>(null);
   
   const [showCashModal, setShowCashModal] = useState(false);
   const [cashModalType, setCashModalType] = useState<"suprimento"|"sangria">("suprimento");
@@ -239,6 +286,7 @@ export default function OperatorRebuildPage() {
         await loadCashMovements(sData.id);
       }
       await loadPunches(uid);
+      await loadDailyClosings(uid);
       if (!sData && bData?.[0]) setBoothId((bData[0] as {booth_id:string}).booth_id);
 
       // Ponto Digital: clock_in automatico na entrada
@@ -367,6 +415,25 @@ export default function OperatorRebuildPage() {
     setCashMovements((res.data as CashMovement[]|null)??[]);
   }
 
+  async function loadDailyClosings(uid: string) {
+    const res = await supabase
+      .from("daily_cash_closings")
+      .select("id,office_id,user_id,date,company,total_sold,amount_pix,amount_card,amount_cash,ceia_amount,cash_net,status,notes,created_at")
+      .eq("user_id", uid)
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(300);
+
+    if (res.error) {
+      if (!isSchemaToleranceError(res.error)) {
+        console.warn("Falha ao carregar fechamentos diarios:", res.error.message);
+      }
+      return;
+    }
+
+    setDailyClosings((res.data as DailyCashClosingRow[] | null) ?? []);
+  }
+
   async function syncAttendanceAfterPunch(type: Punch["punch_type"], uid: string) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -418,6 +485,93 @@ export default function OperatorRebuildPage() {
 
     if (error && !isSchemaToleranceError(error)) {
       console.warn("Falha ao registrar auditoria operador:", error.message);
+    }
+  }
+
+  async function saveDailyClosing() {
+    if (!userId) return;
+
+    const officeId = shift?.booth_id ?? boothId;
+    if (!officeId) {
+      setMessage("Selecione um guiche ou abra o turno antes de salvar o fechamento.");
+      return;
+    }
+
+    if (!dailyClosingDate) {
+      setMessage("Informe a data do fechamento.");
+      return;
+    }
+
+    if (!dailyClosingCompany.trim()) {
+      setMessage("Selecione a empresa para salvar o fechamento.");
+      return;
+    }
+
+    const totalSold = Number(parseMoneyInput(dailyClosingTotalSold).toFixed(2));
+    const amountPix = Number(parseMoneyInput(dailyClosingPix).toFixed(2));
+    const amountCard = Number(parseMoneyInput(dailyClosingCard).toFixed(2));
+    const amountCash = Number(parseMoneyInput(dailyClosingCash).toFixed(2));
+    const ceiaAmount = Number(parseMoneyInput(dailyClosingCeia).toFixed(2));
+    const detailTotal = Number((amountPix + amountCard + amountCash).toFixed(2));
+    const cashNet = Number((amountCash - ceiaAmount).toFixed(2));
+
+    if ([totalSold, amountPix, amountCard, amountCash, ceiaAmount].some((value) => value < 0)) {
+      setMessage("Os valores do fechamento precisam ser maiores ou iguais a zero.");
+      return;
+    }
+
+    if (Math.abs(detailTotal - totalSold) > 0.009) {
+      setMessage("Pix + cartao + dinheiro deve ser exatamente igual ao total vendido.");
+      return;
+    }
+
+    setIsSavingDailyClosing(true);
+    try {
+      const { error } = await supabase.from("daily_cash_closings").upsert(
+        {
+          office_id: officeId,
+          user_id: userId,
+          date: dailyClosingDate,
+          company: dailyClosingCompany.trim(),
+          total_sold: totalSold,
+          amount_pix: amountPix,
+          amount_card: amountCard,
+          amount_cash: amountCash,
+          ceia_amount: ceiaAmount,
+          status: "open",
+          notes: dailyClosingNotes.trim() || null,
+        },
+        { onConflict: "office_id,user_id,date,company" },
+      );
+
+      if (error) {
+        setMessage(`Erro ao salvar fechamento: ${error.message}`);
+        return;
+      }
+
+      await logAction("SAVE_DAILY_CASH_CLOSING", "daily_cash_closings", undefined, {
+        office_id: officeId,
+        date: dailyClosingDate,
+        company: dailyClosingCompany.trim(),
+        total_sold: totalSold,
+        amount_pix: amountPix,
+        amount_card: amountCard,
+        amount_cash: amountCash,
+        ceia_amount: ceiaAmount,
+        cash_net: cashNet,
+      });
+
+      setDailyClosingCompany("");
+      setDailyClosingTotalSold("");
+      setDailyClosingPix("");
+      setDailyClosingCard("");
+      setDailyClosingCash("");
+      setDailyClosingCeia("");
+      setDailyClosingNotes("");
+      await loadDailyClosings(userId);
+      setMessage(cashNet < 0 ? `Fechamento salvo com alerta: saldo de dinheiro negativo em ${formatCurrency(cashNet)}.` : "Fechamento diario salvo com sucesso.");
+    } finally {
+      setIsSavingDailyClosing(false);
     }
   }
 
@@ -492,19 +646,28 @@ export default function OperatorRebuildPage() {
   async function openCloseShiftModal() {
     if (!shift||!userId) return;
     const pending = pendingReceiptTxs.length;
-    if (pending>0) return setMessage(`${pending} lancamento(s) sem comprovante. Envie os comprovantes antes de fechar o caixa.`);
-    setExpectedCashVal(Number(cashTotals.saldo.toFixed(2)));
+    setDailyClosingDate(new Date().toISOString().slice(0, 10));
+    setExpectedCashVal(dailyClosingExpectedCash);
     setCloseDeclared("");
     setCloseObs("");
     setCloseChecklist({ vendas: false, movimentos: false, caixa: false, comprovantes: false });
     setShowCloseModal(true);
+
+    if (pending > 0) {
+      setMessage(`${pending} lancamento(s) ainda estao sem comprovante. O fechamento por resumo pode continuar, mas revise as pendencias.`);
+    }
   }
 
   async function confirmCloseShift() {
     if (!shift||!userId) return;
     setIsClosing(true);
     try {
-      const declaredCash = Number(closeDeclared.replace(",","."));
+      if (currentDailyClosingRows.length === 0) {
+        setMessage("Salve ao menos um fechamento por empresa antes de fechar o turno.");
+        return;
+      }
+
+      const declaredCash = parseMoneyInput(closeDeclared);
       if (Number.isNaN(declaredCash) || declaredCash < 0) { setMessage("Informe um valor contado valido."); return; }
       if (!Object.values(closeChecklist).every(Boolean)) {
         setMessage("Confirme todo o checklist antes de concluir o fechamento do turno.");
@@ -522,8 +685,9 @@ export default function OperatorRebuildPage() {
       const normalizedDeclared = Number(declaredCash.toFixed(2));
       const closingSummary = [
         obs || null,
-        `Checklist ok: vendas, movimentos, caixa fisico e comprovantes conferidos.`,
-        `Resumo -> dinheiro ${totals.cash.toFixed(2)}, suprimento ${cashTotals.suprimento.toFixed(2)}, sangria ${cashTotals.sangria.toFixed(2)}, ajuste ${cashTotals.ajuste.toFixed(2)}.`,
+        "Checklist ok: vendas, movimentos, caixa fisico e comprovantes conferidos.",
+        `Resumo diario -> total ${dailyClosingSummary.totalSold.toFixed(2)}, pix ${dailyClosingSummary.pix.toFixed(2)}, cartao ${dailyClosingSummary.card.toFixed(2)}, dinheiro ${dailyClosingSummary.cash.toFixed(2)}, ceia ${dailyClosingSummary.ceia.toFixed(2)}, liquido ${dailyClosingSummary.cashNet.toFixed(2)}.`,
+        `Movimentos -> suprimento ${cashTotals.suprimento.toFixed(2)}, sangria ${cashTotals.sangria.toFixed(2)}, ajuste ${cashTotals.ajuste.toFixed(2)}.`,
       ].filter(Boolean).join(" | ");
 
       const { error: saveClosingError } = await supabase.from("shift_cash_closings").upsert({
@@ -536,10 +700,24 @@ export default function OperatorRebuildPage() {
         note:closingSummary || null,
       });
       if (saveClosingError) { setMessage(`Erro ao registrar fechamento: ${saveClosingError.message}`); return; }
+
       const { error } = await supabase.rpc("close_shift",{p_shift_id:shift.id,p_ip:null,p_notes:closingSummary || null});
       if (error) { setMessage(`Erro: ${error.message}`); return; }
-      await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCashVal,declared_cash:declaredCash,difference,checklist_confirmed:true,shift_duration_label:shiftDurationLabel});
+
+      const { error: closeDailyRowsError } = await supabase
+        .from("daily_cash_closings")
+        .update({ status: "closed" })
+        .eq("user_id", userId)
+        .eq("office_id", shift.booth_id)
+        .eq("date", dailyClosingDate);
+
+      if (closeDailyRowsError && !isSchemaToleranceError(closeDailyRowsError)) {
+        console.warn("Falha ao atualizar status dos fechamentos diarios:", closeDailyRowsError.message);
+      }
+
+      await logAction("CLOSE_SHIFT","shifts",shift.id,{expected_cash:expectedCashVal,declared_cash:declaredCash,difference,checklist_confirmed:true,shift_duration_label:shiftDurationLabel,summary_date:dailyClosingDate,summary_rows:currentDailyClosingRows.length});
       setLastCloseResult({ expectedCash: normalizedExpected, declaredCash: normalizedDeclared, difference, note: closingSummary || null, closedAt: new Date().toISOString() });
+      await loadDailyClosings(userId);
       setShift(null); setTxs([]); setCashMovements([]); setShowCloseModal(false); setSection("resumo"); setMessage(`Fechamento concluido. Resultado: ${difference === 0 ? "caixa conferido" : difference > 0 ? `sobra de ${formatCurrency(difference)}` : `falta de ${formatCurrency(Math.abs(difference))}`}.`);
     } finally {
       setIsClosing(false);
@@ -1059,6 +1237,49 @@ export default function OperatorRebuildPage() {
     const j=cashMovements.filter(m=>m.movement_type==="ajuste").reduce((a,m)=>a+Number(m.amount||0),0);
     return {suprimento:s,sangria:g,ajuste:j,saldo:totals.cash+s-g+j};
   },[cashMovements, totals.cash]);
+  const activeOfficeId = shift?.booth_id ?? boothId;
+  const dailyClosingFormTotal = useMemo(() => parseMoneyInput(dailyClosingTotalSold), [dailyClosingTotalSold]);
+  const dailyClosingFormPix = useMemo(() => parseMoneyInput(dailyClosingPix), [dailyClosingPix]);
+  const dailyClosingFormCard = useMemo(() => parseMoneyInput(dailyClosingCard), [dailyClosingCard]);
+  const dailyClosingFormCash = useMemo(() => parseMoneyInput(dailyClosingCash), [dailyClosingCash]);
+  const dailyClosingFormCeia = useMemo(() => parseMoneyInput(dailyClosingCeia), [dailyClosingCeia]);
+  const dailyClosingDetailTotal = useMemo(() => Number((dailyClosingFormPix + dailyClosingFormCard + dailyClosingFormCash).toFixed(2)), [dailyClosingFormPix, dailyClosingFormCard, dailyClosingFormCash]);
+  const dailyClosingDifference = useMemo(() => Number((dailyClosingFormTotal - dailyClosingDetailTotal).toFixed(2)), [dailyClosingFormTotal, dailyClosingDetailTotal]);
+  const dailyClosingNetPreview = useMemo(() => Number((dailyClosingFormCash - dailyClosingFormCeia).toFixed(2)), [dailyClosingFormCash, dailyClosingFormCeia]);
+  const currentDailyClosingRows = useMemo(
+    () => dailyClosings.filter((row) => row.date === dailyClosingDate && (!activeOfficeId || row.office_id === activeOfficeId)),
+    [activeOfficeId, dailyClosings, dailyClosingDate],
+  );
+  const dailyClosingSummary = useMemo(
+    () => currentDailyClosingRows.reduce(
+      (acc, row) => ({
+        totalSold: acc.totalSold + Number(row.total_sold || 0),
+        pix: acc.pix + Number(row.amount_pix || 0),
+        card: acc.card + Number(row.amount_card || 0),
+        cash: acc.cash + Number(row.amount_cash || 0),
+        ceia: acc.ceia + Number(row.ceia_amount || 0),
+        cashNet: acc.cashNet + Number(row.cash_net || 0),
+      }),
+      { totalSold: 0, pix: 0, card: 0, cash: 0, ceia: 0, cashNet: 0 },
+    ),
+    [currentDailyClosingRows],
+  );
+  const dailyClosingExpectedCash = useMemo(
+    () => Number((dailyClosingSummary.cashNet + cashTotals.suprimento - cashTotals.sangria + cashTotals.ajuste).toFixed(2)),
+    [dailyClosingSummary, cashTotals],
+  );
+  const filteredDailyClosingRows = useMemo(() => {
+    const companyQuery = dailyClosingFilterCompany.trim().toLowerCase();
+    return dailyClosings.filter((row) => {
+      const matchesDate = !dailyClosingFilterDate || row.date === dailyClosingFilterDate;
+      const matchesCompany = !companyQuery || row.company.toLowerCase().includes(companyQuery);
+      return matchesDate && matchesCompany;
+    });
+  }, [dailyClosings, dailyClosingFilterCompany, dailyClosingFilterDate]);
+  const selectedDailyClosing = useMemo(
+    () => filteredDailyClosingRows.find((row) => row.id === selectedDailyClosingId) ?? null,
+    [filteredDailyClosingRows, selectedDailyClosingId],
+  );
   const closeDeclaredValue = useMemo(() => parseMoneyInput(closeDeclared), [closeDeclared]);
   const closeDifferencePreview = useMemo(() => Number((closeDeclaredValue - expectedCashVal).toFixed(2)), [closeDeclaredValue, expectedCashVal]);
   const closeDifferenceStatus = closeDeclared.trim() === ""
@@ -1127,6 +1348,12 @@ export default function OperatorRebuildPage() {
     );
   }, [txs, historySearch]);
   const paginatedTxs = useMemo(() => filteredTxs.slice(txPage * txPageSize, (txPage + 1) * txPageSize), [filteredTxs, txPage, txPageSize]);
+
+  useEffect(() => {
+    if (showCloseModal) {
+      setExpectedCashVal(dailyClosingExpectedCash);
+    }
+  }, [dailyClosingExpectedCash, showCloseModal]);
 
   useEffect(() => {
     if (!isMounted) return;
@@ -1208,6 +1435,16 @@ export default function OperatorRebuildPage() {
           totals={totals}
           cashTotals={cashTotals}
           totalGeral={totalGeral}
+          dailySummary={{
+            totalSold: dailyClosingSummary.totalSold,
+            pix: dailyClosingSummary.pix,
+            card: dailyClosingSummary.card,
+            cash: dailyClosingSummary.cash,
+            ceia: dailyClosingSummary.ceia,
+            cashNet: dailyClosingSummary.cashNet,
+            expectedCash: dailyClosingExpectedCash,
+            count: currentDailyClosingRows.length,
+          }}
           txs={txs}
           lastCloseResult={lastCloseResult}
           unreadChatCount={unreadChatCount}
@@ -1643,6 +1880,68 @@ export default function OperatorRebuildPage() {
             </Card>
           </div>
 
+          <Card>
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 className="font-semibold text-foreground">Historico dos Fechamentos por Resumo</h3>
+                <p className="text-sm text-muted">Consulte os fechamentos salvos por data e empresa.</p>
+              </div>
+              <Badge variant="secondary">{filteredDailyClosingRows.length} registro{filteredDailyClosingRows.length !== 1 ? "s" : ""}</Badge>
+            </div>
+
+            <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <Input
+                label="Filtrar por data"
+                type="date"
+                value={dailyClosingFilterDate}
+                onChange={(e) => setDailyClosingFilterDate(e.target.value)}
+              />
+              <Input
+                label="Filtrar por empresa"
+                value={dailyClosingFilterCompany}
+                onChange={(e) => setDailyClosingFilterCompany(e.target.value)}
+                placeholder="Ex.: MP"
+              />
+            </div>
+
+            <DataTable
+              columns={[
+                { key: "data", header: "Data", render: (row) => isMounted ? new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR") : row.date },
+                { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
+                { key: "total", header: "Total vendido", render: (row) => formatCurrency(Number(row.total_sold || 0)) },
+                { key: "pix", header: "PIX", render: (row) => formatCurrency(Number(row.amount_pix || 0)) },
+                { key: "cartao", header: "Cartao", render: (row) => formatCurrency(Number(row.amount_card || 0)) },
+                { key: "liquido", header: "Liquido", render: (row) => <span className={`font-semibold ${Number(row.cash_net || 0) < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(Number(row.cash_net || 0))}</span> },
+                { key: "status", header: "Status", render: (row) => <Badge variant={row.status === "closed" ? "success" : "warning"}>{row.status === "closed" ? "Fechado" : "Aberto"}</Badge> },
+                { key: "acoes", header: "", render: (row) => <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedDailyClosingId(row.id)}>Ver detalhes</Button> },
+              ]}
+              rows={filteredDailyClosingRows}
+              keyExtractor={(row) => row.id}
+              emptyMessage="Nenhum fechamento diario salvo ainda."
+            />
+
+            {selectedDailyClosing && (
+              <div className="mt-4 rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Detalhes do fechamento</p>
+                    <p className="text-xs text-muted">{selectedDailyClosing.company} em {isMounted ? new Date(`${selectedDailyClosing.date}T12:00:00`).toLocaleDateString("pt-BR") : selectedDailyClosing.date}</p>
+                  </div>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedDailyClosingId(null)}>Fechar</Button>
+                </div>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Total</p><p className="font-semibold text-foreground">{formatCurrency(Number(selectedDailyClosing.total_sold || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">PIX</p><p className="font-semibold text-cyan-400">{formatCurrency(Number(selectedDailyClosing.amount_pix || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Cartao</p><p className="font-semibold text-purple-400">{formatCurrency(Number(selectedDailyClosing.amount_card || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro</p><p className="font-semibold text-emerald-400">{formatCurrency(Number(selectedDailyClosing.amount_cash || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">CEIA</p><p className="font-semibold text-amber-300">{formatCurrency(Number(selectedDailyClosing.ceia_amount || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Liquido</p><p className={`font-semibold ${Number(selectedDailyClosing.cash_net || 0) < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(Number(selectedDailyClosing.cash_net || 0))}</p></div>
+                </div>
+                {selectedDailyClosing.notes && <p className="mt-3 text-sm text-muted">Obs: {selectedDailyClosing.notes}</p>}
+              </div>
+            )}
+          </Card>
+
           {/* Tabela de Lancamentos */}
           <Card>
             <div className="flex items-center justify-between mb-4">
@@ -1786,6 +2085,155 @@ export default function OperatorRebuildPage() {
                 </div>
               )}
 
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Fechamento diario por resumo</p>
+                    <p className="text-xs text-muted">Lance apenas o total vendido por empresa e o detalhamento em PIX, cartao, dinheiro e CEIA.</p>
+                  </div>
+                  <Badge variant={dailyClosingDifference === 0 ? "success" : "warning"}>
+                    {dailyClosingDifference === 0 ? "Resumo conferido" : "Resumo inconsistente"}
+                  </Badge>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <Input
+                    label="Data"
+                    type="date"
+                    value={dailyClosingDate}
+                    onChange={(e) => setDailyClosingDate(e.target.value)}
+                  />
+                  <Select
+                    label="Empresa"
+                    value={dailyClosingCompany}
+                    onChange={(e) => setDailyClosingCompany(e.target.value)}
+                  >
+                    <option value="">Selecione a empresa</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.name}>{company.name}</option>
+                    ))}
+                  </Select>
+                  <Input
+                    label="Total vendido"
+                    value={dailyClosingTotalSold}
+                    onChange={(e) => setDailyClosingTotalSold(maskMoneyInput(e.target.value))}
+                    placeholder="0,00"
+                  />
+                  <Input
+                    label="CEIA"
+                    value={dailyClosingCeia}
+                    onChange={(e) => setDailyClosingCeia(maskMoneyInput(e.target.value))}
+                    placeholder="0,00"
+                  />
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <Input
+                    label="PIX"
+                    value={dailyClosingPix}
+                    onChange={(e) => setDailyClosingPix(maskMoneyInput(e.target.value))}
+                    placeholder="0,00"
+                  />
+                  <Input
+                    label="Cartao"
+                    value={dailyClosingCard}
+                    onChange={(e) => setDailyClosingCard(maskMoneyInput(e.target.value))}
+                    placeholder="0,00"
+                  />
+                  <Input
+                    label="Dinheiro bruto"
+                    value={dailyClosingCash}
+                    onChange={(e) => setDailyClosingCash(maskMoneyInput(e.target.value))}
+                    placeholder="0,00"
+                  />
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <Input
+                    label="Observacoes"
+                    value={dailyClosingNotes}
+                    onChange={(e) => setDailyClosingNotes(e.target.value)}
+                    placeholder="Opcional"
+                  />
+                  <div className={`rounded-lg border p-3 ${dailyClosingNetPreview < 0 ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/20 bg-emerald-500/5"}`}>
+                    <p className="text-xs uppercase tracking-wide text-muted">Saldo em dinheiro do fechamento</p>
+                    <p className={`mt-1 text-2xl font-bold ${dailyClosingNetPreview < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(dailyClosingNetPreview)}</p>
+                    <p className="text-xs text-muted">
+                      {dailyClosingNetPreview < 0 ? "Fechamento negativo. O salvamento continua liberado com alerta." : "Dinheiro liquido calculado automaticamente: dinheiro bruto - CEIA."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className={`rounded-lg border px-3 py-2 text-sm ${dailyClosingDifference === 0 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>
+                    {dailyClosingDifference === 0
+                      ? "Validacao ok: PIX + cartao + dinheiro bate com o total vendido."
+                      : `Falha de validacao: faltam ${formatCurrency(Math.abs(dailyClosingDifference))} para fechar a conta.`}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="success"
+                    onClick={saveDailyClosing}
+                    disabled={isSavingDailyClosing || !dailyClosingCompany || !dailyClosingTotalSold || dailyClosingDifference !== 0}
+                  >
+                    {isSavingDailyClosing ? "Salvando fechamento..." : "Salvar fechamento"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3">
+                  <p className="text-[10px] uppercase tracking-wide text-muted">Total vendido</p>
+                  <p className="mt-1 font-bold text-foreground">{formatCurrency(dailyClosingSummary.totalSold)}</p>
+                </div>
+                <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
+                  <p className="text-[10px] uppercase tracking-wide text-muted">PIX</p>
+                  <p className="mt-1 font-bold text-cyan-400">{formatCurrency(dailyClosingSummary.pix)}</p>
+                </div>
+                <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
+                  <p className="text-[10px] uppercase tracking-wide text-muted">Cartao</p>
+                  <p className="mt-1 font-bold text-purple-400">{formatCurrency(dailyClosingSummary.card)}</p>
+                </div>
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                  <p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro bruto</p>
+                  <p className="mt-1 font-bold text-emerald-400">{formatCurrency(dailyClosingSummary.cash)}</p>
+                </div>
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                  <p className="text-[10px] uppercase tracking-wide text-muted">CEIA</p>
+                  <p className="mt-1 font-bold text-amber-300">{formatCurrency(dailyClosingSummary.ceia)}</p>
+                </div>
+                <div className={`rounded-lg border p-3 ${dailyClosingSummary.cashNet < 0 ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/20 bg-emerald-500/5"}`}>
+                  <p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro liquido</p>
+                  <p className={`mt-1 font-bold ${dailyClosingSummary.cashNet < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(dailyClosingSummary.cashNet)}</p>
+                </div>
+              </div>
+
+              {currentDailyClosingRows.length > 0 && (
+                <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Resumo salvo para a data</p>
+                      <p className="text-xs text-muted">{currentDailyClosingRows.length} empresa(s) registradas neste fechamento.</p>
+                    </div>
+                    {dailyClosingSummary.cashNet < 0 && <Badge variant="danger">Fechamento negativo</Badge>}
+                  </div>
+                  <DataTable
+                    columns={[
+                      { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
+                      { key: "total", header: "Total", render: (row) => formatCurrency(Number(row.total_sold || 0)) },
+                      { key: "pix", header: "PIX", render: (row) => formatCurrency(Number(row.amount_pix || 0)) },
+                      { key: "cartao", header: "Cartao", render: (row) => formatCurrency(Number(row.amount_card || 0)) },
+                      { key: "dinheiro", header: "Dinheiro", render: (row) => formatCurrency(Number(row.amount_cash || 0)) },
+                      { key: "ceia", header: "CEIA", render: (row) => formatCurrency(Number(row.ceia_amount || 0)) },
+                      { key: "liquido", header: "Liquido", render: (row) => <span className={`font-semibold ${Number(row.cash_net || 0) < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(Number(row.cash_net || 0))}</span> },
+                    ]}
+                    rows={currentDailyClosingRows}
+                    keyExtractor={(row) => row.id}
+                    emptyMessage="Nenhum fechamento salvo para esta data."
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className="rounded-lg border border-success/20 bg-success/10 p-4">
                   <p className="text-xs uppercase tracking-wide text-muted">Total esperado em caixa</p>
@@ -1917,12 +2365,9 @@ export default function OperatorRebuildPage() {
                 <Input
                   label="Valor contado manual (gaveta)"
                   value={closeDeclared}
-                  onChange={e => setCloseDeclared(e.target.value)}
+                  onChange={e => setCloseDeclared(maskMoneyInput(e.target.value))}
                   autoFocus
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder={expectedCashVal ? expectedCashVal.toFixed(2) : "0,00"}
+                  placeholder={expectedCashVal ? expectedCashVal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0,00"}
                   hint="Conte manualmente o valor fisico antes de concluir o fechamento."
                 />
                 <Input
@@ -1937,7 +2382,7 @@ export default function OperatorRebuildPage() {
 
             <div className="mt-6 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
               <p className="text-xs text-muted">
-                Ao confirmar, o sistema registra o fechamento em `shift_cash_closings`, exige a conferência do checklist e encerra o turno com mais segurança.
+                O sistema salva o resumo por empresa, calcula o dinheiro liquido automaticamente e depois encerra o turno com rastreabilidade.
               </p>
               <div className="flex gap-3 justify-end">
                 <Button type="button" variant="ghost" onClick={() => setShowCloseModal(false)}>Continuar operando</Button>
@@ -1945,9 +2390,9 @@ export default function OperatorRebuildPage() {
                   type="button"
                   variant="danger"
                   onClick={confirmCloseShift}
-                  disabled={isClosing || !closeDeclared.trim() || !closeChecklistComplete || (closeDeclared.trim() !== "" && closeDifferencePreview !== 0 && !closeObs.trim())}
+                  disabled={isClosing || currentDailyClosingRows.length === 0 || !closeDeclared.trim() || !closeChecklistComplete || (closeDeclared.trim() !== "" && closeDifferencePreview !== 0 && !closeObs.trim())}
                 >
-                  {isClosing ? "Concluindo fechamento..." : "Concluir fechamento e encerrar turno"}
+                  {isClosing ? "Fechando turno..." : "Fechar turno"}
                 </Button>
               </div>
             </div>
