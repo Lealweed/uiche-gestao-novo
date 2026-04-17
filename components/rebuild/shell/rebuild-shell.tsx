@@ -52,7 +52,7 @@ const adminSystemNav: NavItem[] = [
 ];
 
 const operatorNav: NavItem[] = [
-  { href: "/rebuild/operator#ceia", label: "Fechamento CEIA", section: "ceia", Icon: Wallet },
+  { href: "/rebuild/operator#ceia", label: "Central Viagens", section: "ceia", Icon: Wallet },
   { href: "/rebuild/operator#ponto", label: "Ponto Digital", section: "ponto", Icon: Clock },
   { href: "/rebuild/operator#configuracoes", label: "Configuracoes", section: "configuracoes", Icon: Settings },
 ];
@@ -71,7 +71,7 @@ const adminSectionLabels: Record<string, string> = {
 };
 
 const operatorSectionLabels: Record<string, string> = {
-  ceia: "Fechamento CEIA",
+  ceia: "Central Viagens",
   ponto: "Ponto Digital",
   configuracoes: "Configuracoes",
 };

@@ -157,11 +157,11 @@ export function AdminFinanceSection({
       observacao: row.notes ?? "",
     }));
 
-    exportToCSV("relatorio-ceia", rows, [
+    exportToCSV("relatorio-central-viagens", rows, [
       { key: "data", label: "Data" },
       { key: "empresa", label: "Empresa" },
       { key: "operador", label: "Operador" },
-      { key: "base_ceia", label: "Base CEIA" },
+      { key: "base_ceia", label: "Total informado" },
       { key: "total_lancado", label: "Total lancado" },
       { key: "faltante", label: "Faltante" },
       { key: "status", label: "Status" },
@@ -180,8 +180,8 @@ export function AdminFinanceSection({
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Financeiro CEIA"
-        subtitle="Painel consolidado de fechamentos por resumo CEIA."
+        title="Financeiro Central Viagens"
+        subtitle="Painel consolidado de fechamentos."
       />
 
       {/* Filtros */}
@@ -236,7 +236,7 @@ export function AdminFinanceSection({
       {/* Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="CEIA base total"
+          label="Total informado"
           value={formatCurrency(summary.base)}
           icon={<Wallet className="h-5 w-5" />}
           delta={`${filteredRows.length} fechamento(s)`}
@@ -268,7 +268,7 @@ export function AdminFinanceSection({
       {/* Tabela */}
       <Card>
         <SectionHeader
-          title="Fechamentos CEIA"
+          title="Fechamentos"
           subtitle="Detalhamento por data, empresa e operador."
           className="mb-4"
         />
@@ -291,7 +291,7 @@ export function AdminFinanceSection({
           ]}
           rows={filteredRows}
           keyExtractor={(row) => row.id}
-          emptyMessage="Nenhum fechamento CEIA encontrado."
+          emptyMessage="Nenhum fechamento encontrado."
         />
       </Card>
     </div>
