@@ -27,10 +27,10 @@ ALTER TABLE public.daily_cash_closings
 -- 3. Converter cash_net de GENERATED ALWAYS para coluna regular
 --    A fórmula antiga (amount_cash - ceia_amount) não faz sentido no novo modelo.
 --    O app agora grava cash_net diretamente.
+--    Precisa dropar a view dependente antes e recriá-la depois.
 -- ====================================================================
 DO $$
 BEGIN
-  -- Verifica se cash_net é generated; se for, recria como regular
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public'
@@ -38,7 +38,48 @@ BEGIN
       AND column_name = 'cash_net'
       AND is_generated = 'ALWAYS'
   ) THEN
+    -- Dropar view dependente
+    DROP VIEW IF EXISTS public.vw_ceia_closing_report;
+
+    -- Recriar coluna como regular
     ALTER TABLE public.daily_cash_closings DROP COLUMN cash_net;
     ALTER TABLE public.daily_cash_closings ADD COLUMN cash_net numeric(12,2) NOT NULL DEFAULT 0;
+
+    -- Recriar view com colunas atualizadas
+    CREATE OR REPLACE VIEW public.vw_ceia_closing_report AS
+    SELECT
+      d.id,
+      d.office_id,
+      d.user_id,
+      d.date,
+      d.company,
+      d.total_sold,
+      d.amount_pix,
+      d.amount_card,
+      d.amount_cash,
+      d.ceia_base,
+      d.ceia_pix,
+      d.ceia_debito,
+      d.ceia_credito,
+      d.ceia_link_estadual,
+      d.ceia_link_interestadual,
+      d.ceia_dinheiro,
+      d.ceia_total_lancado,
+      d.ceia_faltante,
+      d.qtd_taxa_estadual,
+      d.qtd_taxa_interestadual,
+      d.link_pagamento,
+      d.cash_net,
+      d.status,
+      d.notes,
+      d.created_at,
+      p.full_name AS operator_name,
+      b.name     AS booth_name,
+      b.code     AS booth_code
+    FROM public.daily_cash_closings d
+    LEFT JOIN public.profiles p ON p.user_id = d.user_id
+    LEFT JOIN public.booths   b ON b.id      = d.office_id;
+
+    GRANT SELECT ON public.vw_ceia_closing_report TO authenticated;
   END IF;
 END $$;
