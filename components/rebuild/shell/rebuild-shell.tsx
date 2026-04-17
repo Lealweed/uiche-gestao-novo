@@ -52,9 +52,7 @@ const adminSystemNav: NavItem[] = [
 ];
 
 const operatorNav: NavItem[] = [
-  { href: "/rebuild/operator#resumo", label: "Resumo do Turno", section: "resumo", Icon: LayoutDashboard },
-  { href: "/rebuild/operator#caixa-pdv", label: "Caixa PDV", section: "caixa-pdv", Icon: Ticket },
-  { href: "/rebuild/operator#historico", label: "Historico", section: "historico", Icon: ClipboardList },
+  { href: "/rebuild/operator#ceia", label: "Fechamento CEIA", section: "ceia", Icon: Wallet },
   { href: "/rebuild/operator#ponto", label: "Ponto Digital", section: "ponto", Icon: Clock },
   { href: "/rebuild/operator#configuracoes", label: "Configuracoes", section: "configuracoes", Icon: Settings },
 ];
@@ -73,9 +71,7 @@ const adminSectionLabels: Record<string, string> = {
 };
 
 const operatorSectionLabels: Record<string, string> = {
-  resumo: "Resumo do Turno",
-  "caixa-pdv": "Caixa PDV",
-  historico: "Historico",
+  ceia: "Fechamento CEIA",
   ponto: "Ponto Digital",
   configuracoes: "Configuracoes",
 };

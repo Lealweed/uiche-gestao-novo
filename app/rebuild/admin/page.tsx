@@ -1914,21 +1914,9 @@ export default function AdminRebuildPage() {
           <AdminFinanceSection
             dateFrom={dateFrom}
             dateTo={dateTo}
-            cashMovementTotals={cashMovementTotals}
-            cashClosingTotals={cashClosingTotals}
-            financeByBooth={financeByBooth}
-            reportTxs={reportTxs}
-            cashMovementRows={cashMovementRows}
-            shiftCashClosingRows={shiftCashClosingRows}
             dailyCashClosingRows={dailyCashClosingRows}
-            responsavelConferencia={responsavelConferencia}
-            dataAssinatura={dataAssinatura}
-            observacoesFinais={observacoesFinais}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
-            onResponsavelConferenciaChange={setResponsavelConferencia}
-            onDataAssinaturaChange={setDataAssinatura}
-            onObservacoesFinaisChange={setObservacoesFinais}
             onApplyFilters={applyDateFilters}
             onClearFilters={clearDateFilters}
           />
