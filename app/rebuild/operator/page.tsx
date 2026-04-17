@@ -2012,8 +2012,9 @@ export default function OperatorRebuildPage() {
                 { key: "cartao", header: "Cartao", render: (row) => formatCurrency(Number(row.amount_card || 0)) },
                 { key: "ceia", header: "Base CEIA", render: (row) => formatCurrency(Number(row.ceia_base ?? row.ceia_amount ?? 0)) },
                 { key: "faltante", header: "Faltante CEIA", render: (row) => <span className={`font-semibold ${Number(row.ceia_faltante ?? 0) === 0 ? "text-emerald-400" : Number(row.ceia_faltante ?? 0) > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(Number(row.ceia_faltante ?? 0))}</span> },
+                { key: "conferencia", header: "Conferencia", render: (row) => <Badge variant={Number(row.ceia_faltante ?? 0) === 0 ? "success" : Number(row.ceia_faltante ?? 0) > 0 ? "warning" : "danger"}>{Number(row.ceia_faltante ?? 0) === 0 ? "Conferido" : Number(row.ceia_faltante ?? 0) > 0 ? "Faltando" : "Excedido"}</Badge> },
                 { key: "liquido", header: "Liquido", render: (row) => <span className={`font-semibold ${Number(row.cash_net || 0) < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(Number(row.cash_net || 0))}</span> },
-                { key: "status", header: "Status", render: (row) => <Badge variant={row.status === "closed" ? "success" : "warning"}>{row.status === "closed" ? "Fechado" : "Aberto"}</Badge> },
+                { key: "status", header: "Turno", render: (row) => <Badge variant={row.status === "closed" ? "success" : "warning"}>{row.status === "closed" ? "Fechado" : "Aberto"}</Badge> },
                 { key: "acoes", header: "", render: (row) => <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedDailyClosingId(row.id)}>Ver detalhes</Button> },
               ]}
               rows={filteredDailyClosingRows}
@@ -2039,6 +2040,20 @@ export default function OperatorRebuildPage() {
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Lancado CEIA</p><p className="font-semibold text-foreground">{formatCurrency(Number(selectedDailyClosing.ceia_total_lancado ?? 0))}</p></div>
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Faltante</p><p className={`font-semibold ${Number(selectedDailyClosing.ceia_faltante ?? 0) === 0 ? "text-emerald-400" : Number(selectedDailyClosing.ceia_faltante ?? 0) > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(Number(selectedDailyClosing.ceia_faltante ?? 0))}</p></div>
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Liquido</p><p className={`font-semibold ${Number(selectedDailyClosing.cash_net || 0) < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(Number(selectedDailyClosing.cash_net || 0))}</p></div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">CEIA PIX</p><p className="font-semibold text-cyan-400">{formatCurrency(Number(selectedDailyClosing.ceia_pix || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">CEIA Debito</p><p className="font-semibold text-blue-400">{formatCurrency(Number(selectedDailyClosing.ceia_debito || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">CEIA Credito</p><p className="font-semibold text-violet-400">{formatCurrency(Number(selectedDailyClosing.ceia_credito || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Link Estadual</p><p className="font-semibold text-amber-300">{formatCurrency(Number(selectedDailyClosing.ceia_link_estadual || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Link Interestadual</p><p className="font-semibold text-amber-200">{formatCurrency(Number(selectedDailyClosing.ceia_link_interestadual || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">CEIA Dinheiro</p><p className="font-semibold text-emerald-400">{formatCurrency(Number(selectedDailyClosing.ceia_dinheiro || 0))}</p></div>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <Badge variant={Number(selectedDailyClosing.ceia_faltante ?? 0) === 0 ? "success" : Number(selectedDailyClosing.ceia_faltante ?? 0) > 0 ? "warning" : "danger"}>
+                    {Number(selectedDailyClosing.ceia_faltante ?? 0) === 0 ? "Conferido" : Number(selectedDailyClosing.ceia_faltante ?? 0) > 0 ? "Faltando" : "Excedido"}
+                  </Badge>
+                  <Badge variant={selectedDailyClosing.status === "closed" ? "success" : "warning"}>{selectedDailyClosing.status === "closed" ? "Turno fechado" : "Turno aberto"}</Badge>
                 </div>
                 {selectedDailyClosing.notes && <p className="mt-3 text-sm text-muted">Obs: {selectedDailyClosing.notes}</p>}
               </div>
@@ -2280,6 +2295,17 @@ export default function OperatorRebuildPage() {
                     <p className="text-[10px] uppercase tracking-wide opacity-80">Status em tempo real</p>
                     <p className="mt-1">{dailyClosingCeiaStatusMessage}</p>
                   </div>
+
+                  {dailyClosingCeiaFaltante !== 0 && (
+                    <div className="mt-3 rounded-lg border border-current/30 bg-black/20 p-3 text-sm font-semibold">
+                      <p className="text-[10px] uppercase tracking-wide opacity-80">Alerta forte</p>
+                      <p className="mt-1">
+                        {dailyClosingCeiaFaltante > 0
+                          ? `Ainda faltam ${formatCurrency(dailyClosingCeiaFaltante)} para a CEIA fechar.`
+                          : `O lancamento excedeu a CEIA em ${formatCurrency(Math.abs(dailyClosingCeiaFaltante))}.`}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">

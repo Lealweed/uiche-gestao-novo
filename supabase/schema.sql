@@ -741,6 +741,20 @@ drop policy if exists daily_cash_closings_self_insert on public.daily_cash_closi
 create policy daily_cash_closings_self_insert on public.daily_cash_closings
 for insert with check (user_id = auth.uid());
 
+drop policy if exists daily_cash_closings_self_update on public.daily_cash_closings;
+create policy daily_cash_closings_self_update on public.daily_cash_closings
+for update using (user_id = auth.uid() and status = 'open')
+with check (user_id = auth.uid());
+
+drop policy if exists daily_cash_closings_admin_update on public.daily_cash_closings;
+create policy daily_cash_closings_admin_update on public.daily_cash_closings
+for update using (public.can_read_admin_data(auth.uid()))
+with check (public.can_read_admin_data(auth.uid()));
+
+drop policy if exists daily_cash_closings_admin_delete on public.daily_cash_closings;
+create policy daily_cash_closings_admin_delete on public.daily_cash_closings
+for delete using (public.can_read_admin_data(auth.uid()));
+
 -- Grants for RPCs
 grant execute on function public.open_shift(uuid, text) to authenticated;
 grant execute on function public.close_shift(uuid, text, text) to authenticated;

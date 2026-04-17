@@ -50,6 +50,33 @@ type ShiftCashClosingRow = {
   booths: { code: string; name: string } | { code: string; name: string }[] | null;
 };
 
+type DailyCashClosingRow = {
+  id: string;
+  office_id?: string | null;
+  user_id?: string | null;
+  date: string;
+  company: string;
+  total_sold: number;
+  amount_pix: number;
+  amount_card: number;
+  amount_cash: number;
+  ceia_base: number;
+  ceia_pix: number;
+  ceia_debito: number;
+  ceia_credito: number;
+  ceia_link_estadual: number;
+  ceia_link_interestadual: number;
+  ceia_dinheiro: number;
+  ceia_total_lancado: number;
+  ceia_faltante: number;
+  cash_net: number;
+  status: "open" | "closed";
+  notes: string | null;
+  created_at: string;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+  booths: { code: string; name: string } | { code: string; name: string }[] | null;
+};
+
 type FinanceByBoothRow = {
   boothId: string;
   boothLabel: string;
@@ -114,6 +141,7 @@ type AdminFinanceSectionProps = {
   reportTxs: ReportTxRow[];
   cashMovementRows: CashMovementRow[];
   shiftCashClosingRows: ShiftCashClosingRow[];
+  dailyCashClosingRows: DailyCashClosingRow[];
   responsavelConferencia: string;
   dataAssinatura: string;
   observacoesFinais: string;
@@ -160,6 +188,33 @@ function getDifferenceStatus(diff: number) {
   };
 }
 
+function getCeiaDifferenceStatus(diff: number) {
+  if (Math.abs(diff) < 0.01) {
+    return {
+      key: "conferido" as const,
+      label: "Conferido",
+      variant: "success" as const,
+      textClass: "text-emerald-600",
+    };
+  }
+
+  if (diff > 0) {
+    return {
+      key: "faltando" as const,
+      label: "Faltando",
+      variant: "warning" as const,
+      textClass: "text-amber-600",
+    };
+  }
+
+  return {
+    key: "excedido" as const,
+    label: "Excedido",
+    variant: "danger" as const,
+    textClass: "text-red-600",
+  };
+}
+
 export function AdminFinanceSection({
   dateFrom,
   dateTo,
@@ -169,6 +224,7 @@ export function AdminFinanceSection({
   reportTxs,
   cashMovementRows,
   shiftCashClosingRows,
+  dailyCashClosingRows,
   responsavelConferencia,
   dataAssinatura,
   observacoesFinais,
@@ -181,6 +237,9 @@ export function AdminFinanceSection({
   onClearFilters,
 }: AdminFinanceSectionProps) {
   const [selectedBoothId, setSelectedBoothId] = useState("all");
+  const [selectedCompany, setSelectedCompany] = useState("all");
+  const [selectedOperator, setSelectedOperator] = useState("all");
+  const [conferenceFilter, setConferenceFilter] = useState<"all" | "conferido" | "faltando" | "excedido">("all");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -408,6 +467,79 @@ export function AdminFinanceSection({
     [selectedBoothId, shiftCashClosingRows]
   );
 
+  const dailyClosingCompanyOptions = useMemo(
+    () => Array.from(new Set(dailyCashClosingRows.map((row) => row.company).filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [dailyCashClosingRows]
+  );
+
+  const dailyClosingOperatorOptions = useMemo(
+    () => Array.from(new Set(dailyCashClosingRows.map((row) => nameOf(row.profiles ?? null)).filter((value): value is string => Boolean(value && value !== "-")))).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [dailyCashClosingRows]
+  );
+
+  const filteredDailyCashClosingRows = useMemo(
+    () => dailyCashClosingRows.filter((row) => {
+      const boothMatch = selectedBoothId === "all" || (row.office_id ?? "sem-guiche") === selectedBoothId;
+      const companyMatch = selectedCompany === "all" || row.company === selectedCompany;
+      const operatorName = nameOf(row.profiles ?? null) ?? "-";
+      const operatorMatch = selectedOperator === "all" || operatorName === selectedOperator;
+      const conferenceMatch = conferenceFilter === "all" || getCeiaDifferenceStatus(Number(row.ceia_faltante || 0)).key === conferenceFilter;
+
+      return boothMatch && companyMatch && operatorMatch && conferenceMatch;
+    }),
+    [conferenceFilter, dailyCashClosingRows, selectedBoothId, selectedCompany, selectedOperator]
+  );
+
+  const ceiaSummary = useMemo(
+    () => filteredDailyCashClosingRows.reduce(
+      (acc, row) => {
+        const ceiaBase = Number(row.ceia_base || 0);
+        const ceiaLancado = Number(row.ceia_total_lancado || 0);
+        const ceiaFaltante = Number(row.ceia_faltante || 0);
+
+        acc.base += ceiaBase;
+        acc.lancado += ceiaLancado;
+        acc.diferenca += ceiaFaltante;
+        acc.cashNet += Number(row.cash_net || 0);
+        if (Math.abs(ceiaFaltante) < 0.01) acc.conferidos += 1;
+        else acc.comDiferenca += 1;
+        return acc;
+      },
+      { base: 0, lancado: 0, diferenca: 0, cashNet: 0, conferidos: 0, comDiferenca: 0 }
+    ),
+    [filteredDailyCashClosingRows]
+  );
+
+  const topCompaniesByCeia = useMemo(() => {
+    const grouped = new Map<string, { company: string; base: number; lancado: number; diferenca: number; count: number }>();
+
+    for (const row of filteredDailyCashClosingRows) {
+      const current = grouped.get(row.company) ?? { company: row.company, base: 0, lancado: 0, diferenca: 0, count: 0 };
+      current.base += Number(row.ceia_base || 0);
+      current.lancado += Number(row.ceia_total_lancado || 0);
+      current.diferenca += Number(row.ceia_faltante || 0);
+      current.count += 1;
+      grouped.set(row.company, current);
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => b.base - a.base).slice(0, 5);
+  }, [filteredDailyCashClosingRows]);
+
+  const topOperatorsByDivergence = useMemo(() => {
+    const grouped = new Map<string, { operator: string; divergence: number; records: number; net: number }>();
+
+    for (const row of filteredDailyCashClosingRows) {
+      const operator = nameOf(row.profiles ?? null) ?? "-";
+      const current = grouped.get(operator) ?? { operator, divergence: 0, records: 0, net: 0 };
+      current.divergence += Math.abs(Number(row.ceia_faltante || 0));
+      current.records += 1;
+      current.net += Number(row.ceia_faltante || 0);
+      grouped.set(operator, current);
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => b.divergence - a.divergence).slice(0, 5);
+  }, [filteredDailyCashClosingRows]);
+
   const consolidatedFinanceRows = useMemo<ConsolidatedFinanceRow[]>(() => {
     const txRows = filteredReportTxs.map((tx) => {
       const booth = boothOf(tx.booths ?? null);
@@ -505,6 +637,9 @@ export function AdminFinanceSection({
 
   function handleViewAll() {
     setSelectedBoothId("all");
+    setSelectedCompany("all");
+    setSelectedOperator("all");
+    setConferenceFilter("all");
   }
 
   function handlePrintReport() {
@@ -556,6 +691,11 @@ export function AdminFinanceSection({
         data_assinatura: signatureDateLabel,
         observacoes_finais: observacoesFinais,
         observacao: periodLabel,
+        ceia_base_total: ceiaSummary.base,
+        ceia_total_lancado: ceiaSummary.lancado,
+        ceia_diferenca_acumulada: ceiaSummary.diferenca,
+        ceia_conferidos: ceiaSummary.conferidos,
+        ceia_com_diferenca: ceiaSummary.comDiferenca,
       },
       ...rankedFinanceByBooth.map((row) => ({
         tipo_registro: "resumo_guiche",
@@ -698,16 +838,59 @@ export function AdminFinanceSection({
         observacoes_finais: observacoesFinais,
         observacao: row.note ?? "",
       })),
+      ...filteredDailyCashClosingRows.map((row) => ({
+        tipo_registro: "fechamento_ceia",
+        guiche: (() => {
+          const booth = boothOf(row.booths);
+          return booth ? `${booth.code} - ${booth.name}` : "-";
+        })(),
+        data: new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR"),
+        operador: nameOf(row.profiles ?? null) ?? "-",
+        empresa: row.company,
+        vendas: "",
+        faturamento_bruto: Number(row.total_sold || 0),
+        pix: Number(row.ceia_pix || 0),
+        credito: Number(row.ceia_credito || 0),
+        debito: Number(row.ceia_debito || 0),
+        dinheiro: Number(row.ceia_dinheiro || 0),
+        suprimento: "",
+        sangria: "",
+        ajuste: "",
+        taxa_estadual_qtd: "",
+        taxa_estadual_valor: Number(row.ceia_link_estadual || 0),
+        taxa_federal_qtd: "",
+        taxa_federal_valor: Number(row.ceia_link_interestadual || 0),
+        taxas_totais: Number(row.ceia_link_estadual || 0) + Number(row.ceia_link_interestadual || 0),
+        ticket_medio: "",
+        participacao_percentual: "",
+        caixa_estimado: Number(row.cash_net || 0),
+        esperado: Number(row.ceia_base || 0),
+        declarado: Number(row.ceia_total_lancado || 0),
+        diferenca: Number(row.ceia_faltante || 0),
+        conferencia: getCeiaDifferenceStatus(Number(row.ceia_faltante || 0)).label,
+        total_movimentos: "",
+        total_fechamentos: 1,
+        responsavel_conferencia: responsavelConferencia,
+        data_assinatura: signatureDateLabel,
+        observacoes_finais: observacoesFinais,
+        observacao: row.notes ?? "",
+        ceia_base_total: Number(row.ceia_base || 0),
+        ceia_total_lancado: Number(row.ceia_total_lancado || 0),
+        ceia_diferenca_acumulada: Number(row.ceia_faltante || 0),
+        ceia_conferidos: Math.abs(Number(row.ceia_faltante || 0)) < 0.01 ? 1 : 0,
+        ceia_com_diferenca: Math.abs(Number(row.ceia_faltante || 0)) < 0.01 ? 0 : 1,
+      })),
     ];
 
     exportToCSV(
-      selectedBoothId === "all" ? "relatorio-financeiro-geral" : `relatorio-${selectedBoothId}`,
+      selectedBoothId === "all" ? "relatorio-financeiro-ceia-geral" : `relatorio-ceia-${selectedBoothId}`,
       rows,
       [
         { key: "tipo_registro", label: "Tipo de registro" },
         { key: "guiche", label: "Guiche" },
         { key: "data", label: "Data" },
         { key: "operador", label: "Operador" },
+        { key: "empresa", label: "Empresa" },
         { key: "vendas", label: "Qtd. vendas" },
         { key: "faturamento_bruto", label: "Faturamento bruto" },
         { key: "pix", label: "PIX" },
@@ -735,6 +918,11 @@ export function AdminFinanceSection({
         { key: "data_assinatura", label: "Data da assinatura" },
         { key: "observacoes_finais", label: "Observacoes finais" },
         { key: "observacao", label: "Observacao" },
+        { key: "ceia_base_total", label: "CEIA base" },
+        { key: "ceia_total_lancado", label: "CEIA lancado" },
+        { key: "ceia_diferenca_acumulada", label: "CEIA diferenca" },
+        { key: "ceia_conferidos", label: "CEIA conferidos" },
+        { key: "ceia_com_diferenca", label: "CEIA com diferenca" },
       ]
     );
   }
@@ -768,6 +956,52 @@ export function AdminFinanceSection({
             </select>
           </div>
 
+          <div className="min-w-[220px]">
+            <label className="mb-1 block text-sm text-foreground">Empresa</label>
+            <select
+              value={selectedCompany}
+              onChange={(e) => setSelectedCompany(e.target.value)}
+              className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+            >
+              <option value="all">Todas as empresas</option>
+              {dailyClosingCompanyOptions.map((company) => (
+                <option key={company} value={company}>
+                  {company}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="min-w-[220px]">
+            <label className="mb-1 block text-sm text-foreground">Operador</label>
+            <select
+              value={selectedOperator}
+              onChange={(e) => setSelectedOperator(e.target.value)}
+              className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+            >
+              <option value="all">Todos os operadores</option>
+              {dailyClosingOperatorOptions.map((operator) => (
+                <option key={operator} value={operator}>
+                  {operator}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="min-w-[220px]">
+            <label className="mb-1 block text-sm text-foreground">Status da conferencia</label>
+            <select
+              value={conferenceFilter}
+              onChange={(e) => setConferenceFilter(e.target.value as "all" | "conferido" | "faltando" | "excedido")}
+              className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground"
+            >
+              <option value="all">Todos os status</option>
+              <option value="conferido">Conferido</option>
+              <option value="faltando">Faltando</option>
+              <option value="excedido">Excedido</option>
+            </select>
+          </div>
+
           <Button type="submit">Aplicar filtros</Button>
           <Button variant="ghost" type="button" onClick={handleViewAll}>
             <Eye className="mr-2 h-4 w-4" />
@@ -780,7 +1014,7 @@ export function AdminFinanceSection({
             disabled={!visibleFinanceByBooth.length && !filteredCashMovementRows.length && !filteredShiftCashClosingRows.length}
           >
             <Download className="mr-2 h-4 w-4" />
-            Baixar relatorio detalhado
+            Exportar CSV
           </Button>
           <Button
             variant="ghost"
@@ -830,6 +1064,122 @@ export function AdminFinanceSection({
           deltaType="neutral"
         />
       </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="CEIA base"
+          value={formatCurrency(ceiaSummary.base)}
+          icon={<Wallet className="h-5 w-5" />}
+          delta={`${filteredDailyCashClosingRows.length} fechamento(s)`}
+          deltaType="neutral"
+        />
+        <StatCard
+          label="Total lancado"
+          value={formatCurrency(ceiaSummary.lancado)}
+          icon={<TrendingUp className="h-5 w-5" />}
+          delta={ceiaSummary.lancado >= ceiaSummary.base ? "Lancamento completo ou acima" : "Ainda existem diferencas"}
+          deltaType={ceiaSummary.lancado >= ceiaSummary.base ? "positive" : "neutral"}
+        />
+        <StatCard
+          label="Diferenca acumulada"
+          value={formatCurrency(ceiaSummary.diferenca)}
+          icon={<Wallet className="h-5 w-5" />}
+          delta={Math.abs(ceiaSummary.diferenca) < 0.01 ? "Periodo conferido" : ceiaSummary.diferenca > 0 ? "Saldo faltando no periodo" : "Periodo com excedente"}
+          deltaType={Math.abs(ceiaSummary.diferenca) < 0.01 ? "positive" : ceiaSummary.diferenca > 0 ? "neutral" : "negative"}
+        />
+        <StatCard
+          label="Conferencia CEIA"
+          value={`${ceiaSummary.conferidos} x ${ceiaSummary.comDiferenca}`}
+          icon={<Eye className="h-5 w-5" />}
+          delta="Conferidos x com diferenca"
+          deltaType={ceiaSummary.comDiferenca === 0 ? "positive" : "neutral"}
+        />
+      </div>
+
+      <Card>
+        <SectionHeader
+          title="Gestao consolidada CEIA"
+          subtitle="Acompanhe o volume por empresa, divergencia por operador e o historico filtrado do fechamento por resumo."
+          className="mb-4"
+        />
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-border/70 bg-[hsl(var(--card-elevated))] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-foreground">Top empresas por volume</h3>
+              <Badge variant="secondary">{topCompaniesByCeia.length}</Badge>
+            </div>
+            <div className="space-y-2">
+              {topCompaniesByCeia.length === 0 ? (
+                <p className="text-sm text-muted">Nenhum fechamento encontrado com os filtros atuais.</p>
+              ) : topCompaniesByCeia.map((row, index) => (
+                <div key={`${row.company}-${index}`} className="flex items-center justify-between rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                  <div>
+                    <p className="font-semibold text-foreground">{index + 1}. {row.company}</p>
+                    <p className="text-xs text-muted">{row.count} fechamento(s)</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-foreground">{formatCurrency(row.base)}</p>
+                    <p className={`text-xs ${Math.abs(row.diferenca) < 0.01 ? "text-emerald-600" : row.diferenca > 0 ? "text-amber-600" : "text-red-600"}`}>Dif. {formatCurrency(row.diferenca)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-[hsl(var(--card-elevated))] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-foreground">Top operadores por divergencia</h3>
+              <Badge variant="secondary">{topOperatorsByDivergence.length}</Badge>
+            </div>
+            <div className="space-y-2">
+              {topOperatorsByDivergence.length === 0 ? (
+                <p className="text-sm text-muted">Sem divergencias registradas no periodo filtrado.</p>
+              ) : topOperatorsByDivergence.map((row, index) => (
+                <div key={`${row.operator}-${index}`} className="flex items-center justify-between rounded-lg border border-border bg-background/60 px-3 py-2 text-sm">
+                  <div>
+                    <p className="font-semibold text-foreground">{index + 1}. {row.operator}</p>
+                    <p className="text-xs text-muted">{row.records} fechamento(s)</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-semibold text-foreground">{formatCurrency(row.divergence)}</p>
+                    <p className={`text-xs ${Math.abs(row.net) < 0.01 ? "text-emerald-600" : row.net > 0 ? "text-amber-600" : "text-red-600"}`}>Liq. {formatCurrency(row.net)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <DataTable
+            columns={[
+              { key: "data", header: "Data", render: (row) => new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR") },
+              { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
+              { key: "operador", header: "Operador", render: (row) => nameOf(row.profiles ?? null) ?? "-" },
+              { key: "guiche", header: "Guiche", render: (row) => {
+                const booth = boothOf(row.booths ?? null);
+                return booth ? `${booth.code} - ${booth.name}` : "Sem guiche";
+              } },
+              { key: "base", header: "CEIA base", render: (row) => formatCurrency(Number(row.ceia_base || 0)) },
+              { key: "lancado", header: "Lancado", render: (row) => formatCurrency(Number(row.ceia_total_lancado || 0)) },
+              { key: "diferenca", header: "Faltante / excedente", render: (row) => {
+                const status = getCeiaDifferenceStatus(Number(row.ceia_faltante || 0));
+                return <span className={`font-semibold ${status.textClass}`}>{formatCurrency(Number(row.ceia_faltante || 0))}</span>;
+              } },
+              { key: "status_ceia", header: "Conferencia", render: (row) => {
+                const status = getCeiaDifferenceStatus(Number(row.ceia_faltante || 0));
+                return <Badge variant={status.variant}>{status.label}</Badge>;
+              } },
+              { key: "cash_net", header: "Cash net", render: (row) => <span className={`font-semibold ${Number(row.cash_net || 0) < 0 ? "text-red-600" : "text-emerald-600"}`}>{formatCurrency(Number(row.cash_net || 0))}</span> },
+              { key: "turno", header: "Turno", render: (row) => <Badge variant={row.status === "closed" ? "success" : "warning"}>{row.status === "closed" ? "Fechado" : "Aberto"}</Badge> },
+            ]}
+            rows={filteredDailyCashClosingRows}
+            keyExtractor={(row) => row.id}
+            emptyMessage="Nenhum fechamento CEIA encontrado para os filtros aplicados."
+          />
+        </div>
+      </Card>
 
       <Card>
         <SectionHeader

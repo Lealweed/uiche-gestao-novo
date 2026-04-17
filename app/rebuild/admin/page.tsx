@@ -103,6 +103,33 @@ type TxForReport = { id: string; status?: string; amount: number; sold_at?: stri
 type TimePunchRow = { id: string; punch_type: string; punched_at: string; note: string|null; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type CashMovementRow = { id: string; movement_type: "suprimento"|"sangria"|"ajuste"; amount: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type ShiftCashClosingRow = { id: string; expected_cash: number; declared_cash: number; difference: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
+type DailyCashClosingRow = {
+  id: string;
+  office_id?: string;
+  user_id?: string;
+  date: string;
+  company: string;
+  total_sold: number;
+  amount_pix: number;
+  amount_card: number;
+  amount_cash: number;
+  ceia_amount?: number;
+  ceia_base: number;
+  ceia_pix: number;
+  ceia_debito: number;
+  ceia_credito: number;
+  ceia_link_estadual: number;
+  ceia_link_interestadual: number;
+  ceia_dinheiro: number;
+  ceia_total_lancado: number;
+  ceia_faltante: number;
+  cash_net: number;
+  status: "open" | "closed";
+  notes: string | null;
+  created_at: string;
+  profiles: { full_name: string }|{ full_name: string }[]|null;
+  booths: { code: string; name: string }|{ code: string; name: string }[]|null;
+};
 type MenuSection = "dashboard"|"operadores"|"gestao"|"financeiro"|"fechamento-caixa"|"relatorios"|"usuarios"|"empresas"|"configuracoes"|"mensagens"|"ponto";
 type OperatorMessage = {
   id: string;
@@ -172,6 +199,7 @@ export default function AdminRebuildPage() {
   const [timePunchRows, setTimePunchRows]   = useState<TimePunchRow[]>([]);
   const [cashMovementRows, setCashMovementRows] = useState<CashMovementRow[]>([]);
   const [shiftCashClosingRows, setShiftCashClosingRows] = useState<ShiftCashClosingRow[]>([]);
+  const [dailyCashClosingRows, setDailyCashClosingRows] = useState<DailyCashClosingRow[]>([]);
   const [reportTxs, setReportTxs] = useState<TxForReport[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [loading, setLoading]     = useState(true);
@@ -456,12 +484,19 @@ export default function AdminRebuildPage() {
         .select("id,expected_cash,declared_cash,difference,note,created_at,user_id,booth_id")
         .order("created_at", { ascending: false })
         .limit(5000);
+      let dailyCloseQ = supabase
+        .from("daily_cash_closings")
+        .select("id,office_id,user_id,date,company,total_sold,amount_pix,amount_card,amount_cash,ceia_amount,ceia_base,ceia_pix,ceia_debito,ceia_credito,ceia_link_estadual,ceia_link_interestadual,ceia_dinheiro,ceia_total_lancado,ceia_faltante,cash_net,status,notes,created_at")
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(5000);
 
       if (sI) {
         shiftQ = shiftQ.gte("opened_at", sI);
         txQ = txQ.gte("sold_at", sI);
         cashQ = cashQ.gte("created_at", sI);
         closeQ = closeQ.gte("created_at", sI);
+        dailyCloseQ = dailyCloseQ.gte("date", f);
       }
 
       if (eI) {
@@ -469,6 +504,7 @@ export default function AdminRebuildPage() {
         txQ = txQ.lte("sold_at", eI);
         cashQ = cashQ.lte("created_at", eI);
         closeQ = closeQ.lte("created_at", eI);
+        dailyCloseQ = dailyCloseQ.lte("date", t);
       }
 
       const today = new Date();
@@ -476,7 +512,7 @@ export default function AdminRebuildPage() {
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const [shiftRes,compRes,boothRes,profileRes,catRes,subRes,boardingTaxRes,linkRes,auditRes,punchRes,cashRes,closeRes,txRes,adjRes,attendanceRes] = await Promise.all([
+      const [shiftRes,compRes,boothRes,profileRes,catRes,subRes,boardingTaxRes,linkRes,auditRes,punchRes,cashRes,closeRes,dailyCloseRes,txRes,adjRes,attendanceRes] = await Promise.all([
         shiftQ,
         supabase.from("companies").select("*").order("name"),
         supabase.from("booths").select("id,code,name,active").order("name"),
@@ -489,6 +525,7 @@ export default function AdminRebuildPage() {
         supabase.from("time_punches").select("id,punch_type,punched_at,note,user_id,booth_id").order("punched_at",{ascending:false}).limit(200),
         cashQ,
         closeQ,
+        dailyCloseQ,
         txQ,
         supabase.from("adjustment_requests").select("id,transaction_id,reason,status,created_at,requested_by").eq("status","pending").order("created_at",{ascending:false}).limit(40),
         supabase.from("user_attendance").select("id,user_id,clock_in,clock_out").gte("clock_in", today.toISOString()).lt("clock_in", tomorrow.toISOString()).order("clock_in", { ascending: true }),
@@ -516,6 +553,11 @@ export default function AdminRebuildPage() {
       const hydratedPunch   = ((punchRes.data ?? []) as unknown as TimePunchRow[]).map(p => ({ ...p, profiles: p.user_id ? { full_name: profileMap.get(p.user_id) ?? "-" } : null, booths: p.booth_id ? boothMap.get(p.booth_id) ?? null : null }));
       const hydratedCash    = ((cashRes.data ?? []) as unknown as CashMovementRow[]).map(c => ({ ...c, profiles: c.user_id ? { full_name: profileMap.get(c.user_id) ?? "-" } : null, booths: c.booth_id ? boothMap.get(c.booth_id) ?? null : null }));
       const hydratedClosings= ((closeRes.data ?? []) as unknown as ShiftCashClosingRow[]).map(c => ({ ...c, profiles: c.user_id ? { full_name: profileMap.get(c.user_id) ?? "-" } : null, booths: c.booth_id ? boothMap.get(c.booth_id) ?? null : null }));
+      const hydratedDailyClosings = ((dailyCloseRes.data ?? []) as unknown as Omit<DailyCashClosingRow, "profiles" | "booths">[]).map((row) => ({
+        ...row,
+        profiles: row.user_id ? { full_name: profileMap.get(row.user_id) ?? "-" } : null,
+        booths: row.office_id ? boothMap.get(row.office_id) ?? null : null,
+      }));
       const hydratedTxs     = ((txRes.data ?? []) as unknown as TxForReport[]).map(tx => ({ ...tx, profiles: tx.operator_id ? { full_name: profileMap.get(tx.operator_id) ?? "-" } : null, booths: tx.booth_id ? boothMap.get(tx.booth_id) ?? null : null, companies: tx.company_id ? { name: companyMap.get(tx.company_id) ?? "-" } : null, transaction_categories: tx.category_id ? { name: catMap.get(tx.category_id) ?? "-" } : null, transaction_subcategories: tx.subcategory_id ? { name: subMap.get(tx.subcategory_id) ?? "-" } : null }));
       const hydratedAttendance = ((attendanceRes.data ?? []) as { id: string; user_id: string; clock_in: string; clock_out: string | null }[]).map((row) => ({
         ...row,
@@ -531,6 +573,7 @@ export default function AdminRebuildPage() {
       setTimePunchRows(hydratedPunch as unknown as TimePunchRow[]);
       setCashMovementRows(hydratedCash as unknown as CashMovementRow[]);
       setShiftCashClosingRows(hydratedClosings as unknown as ShiftCashClosingRow[]);
+      setDailyCashClosingRows(hydratedDailyClosings as unknown as DailyCashClosingRow[]);
       setReportTxs(hydratedTxs as unknown as TxForReport[]);
       setAdjustments(hydratedAdj as unknown as Adjustment[]);
       setAttendanceRows(hydratedAttendance);
@@ -1877,6 +1920,7 @@ export default function AdminRebuildPage() {
             reportTxs={reportTxs}
             cashMovementRows={cashMovementRows}
             shiftCashClosingRows={shiftCashClosingRows}
+            dailyCashClosingRows={dailyCashClosingRows}
             responsavelConferencia={responsavelConferencia}
             dataAssinatura={dataAssinatura}
             observacoesFinais={observacoesFinais}
