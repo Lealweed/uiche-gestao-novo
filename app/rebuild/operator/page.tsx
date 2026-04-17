@@ -45,6 +45,7 @@ type DailyCashClosingRow = {
   ceia_faltante: number;
   qtd_taxa_estadual: number;
   qtd_taxa_interestadual: number;
+  link_pagamento: number;
   cash_net: number;
   status: "open" | "closed";
   notes: string | null;
@@ -104,17 +105,14 @@ export default function OperatorRebuildPage() {
   /* --- Fechamento Central Viagens --- */
   const [dailyClosingDate, setDailyClosingDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [dailyClosingCompany, setDailyClosingCompany] = useState("");
-  const [dailyClosingTotalSold, setDailyClosingTotalSold] = useState("");
-  const [dailyClosingPix, setDailyClosingPix] = useState("");
-  const [dailyClosingCard, setDailyClosingCard] = useState("");
-  const [dailyClosingCash, setDailyClosingCash] = useState("");
   const [dailyClosingCeiaBase, setDailyClosingCeiaBase] = useState("");
   const [dailyClosingCeiaPix, setDailyClosingCeiaPix] = useState("");
   const [dailyClosingCeiaDebito, setDailyClosingCeiaDebito] = useState("");
   const [dailyClosingCeiaCredito, setDailyClosingCeiaCredito] = useState("");
+  const [dailyClosingCeiaDinheiro, setDailyClosingCeiaDinheiro] = useState("");
+  const [dailyClosingLinkPagamento, setDailyClosingLinkPagamento] = useState("");
   const [dailyClosingCeiaLinkEstadual, setDailyClosingCeiaLinkEstadual] = useState("");
   const [dailyClosingCeiaLinkInterestadual, setDailyClosingCeiaLinkInterestadual] = useState("");
-  const [dailyClosingCeiaDinheiro, setDailyClosingCeiaDinheiro] = useState("");
   const [dailyClosingQtdTaxaEstadual, setDailyClosingQtdTaxaEstadual] = useState("0");
   const [dailyClosingQtdTaxaInterestadual, setDailyClosingQtdTaxaInterestadual] = useState("0");
   const [dailyClosingNotes, setDailyClosingNotes] = useState("");
@@ -339,7 +337,7 @@ export default function OperatorRebuildPage() {
   async function loadDailyClosings(uid: string) {
     const res = await supabase
       .from("daily_cash_closings")
-      .select("id,office_id,user_id,date,company,total_sold,amount_pix,amount_card,amount_cash,ceia_amount,ceia_base,ceia_pix,ceia_debito,ceia_credito,ceia_link_estadual,ceia_link_interestadual,ceia_dinheiro,ceia_total_lancado,ceia_faltante,qtd_taxa_estadual,qtd_taxa_interestadual,cash_net,status,notes,created_at")
+      .select("id,office_id,user_id,date,company,total_sold,amount_pix,amount_card,amount_cash,ceia_amount,ceia_base,ceia_pix,ceia_debito,ceia_credito,ceia_link_estadual,ceia_link_interestadual,ceia_dinheiro,ceia_total_lancado,ceia_faltante,qtd_taxa_estadual,qtd_taxa_interestadual,link_pagamento,cash_net,status,notes,created_at")
       .eq("user_id", uid)
       .order("date", { ascending: false })
       .order("created_at", { ascending: false })
@@ -381,29 +379,22 @@ export default function OperatorRebuildPage() {
     if (!dailyClosingDate) { setMessage("Informe a data do fechamento."); return; }
     if (!dailyClosingCompany.trim()) { setMessage("Selecione a empresa para salvar o fechamento."); return; }
 
-    const totalSold = Number(parseMoneyInput(dailyClosingTotalSold).toFixed(2));
-    const amountPix = Number(parseMoneyInput(dailyClosingPix).toFixed(2));
-    const amountCard = Number(parseMoneyInput(dailyClosingCard).toFixed(2));
-    const amountCash = Number(parseMoneyInput(dailyClosingCash).toFixed(2));
     const ceiaBase = Number(parseMoneyInput(dailyClosingCeiaBase).toFixed(2));
     const ceiaPix = Number(parseMoneyInput(dailyClosingCeiaPix).toFixed(2));
     const ceiaDebito = Number(parseMoneyInput(dailyClosingCeiaDebito).toFixed(2));
     const ceiaCredito = Number(parseMoneyInput(dailyClosingCeiaCredito).toFixed(2));
+    const ceiaDinheiro = Number(parseMoneyInput(dailyClosingCeiaDinheiro).toFixed(2));
+    const linkPagamento = Number(parseMoneyInput(dailyClosingLinkPagamento).toFixed(2));
     const ceiaLinkEstadual = Number(parseMoneyInput(dailyClosingCeiaLinkEstadual).toFixed(2));
     const ceiaLinkInterestadual = Number(parseMoneyInput(dailyClosingCeiaLinkInterestadual).toFixed(2));
-    const ceiaDinheiro = Number(parseMoneyInput(dailyClosingCeiaDinheiro).toFixed(2));
     const qtdTaxaEstadual = Math.max(0, Math.floor(Number(dailyClosingQtdTaxaEstadual) || 0));
     const qtdTaxaInterestadual = Math.max(0, Math.floor(Number(dailyClosingQtdTaxaInterestadual) || 0));
-    const ceiaTotalLancado = Number((ceiaPix + ceiaDebito + ceiaCredito + ceiaLinkEstadual + ceiaLinkInterestadual + ceiaDinheiro).toFixed(2));
+    const ceiaTotalLancado = Number((ceiaPix + ceiaDebito + ceiaCredito + ceiaDinheiro + linkPagamento + ceiaLinkEstadual + ceiaLinkInterestadual).toFixed(2));
     const ceiaFaltante = Number((ceiaBase - ceiaTotalLancado).toFixed(2));
-    const detailTotal = Number((amountPix + amountCard + amountCash).toFixed(2));
-    const cashNet = Number((amountCash - ceiaDinheiro).toFixed(2));
+    const cashNet = ceiaDinheiro;
 
-    if ([totalSold, amountPix, amountCard, amountCash, ceiaBase, ceiaPix, ceiaDebito, ceiaCredito, ceiaLinkEstadual, ceiaLinkInterestadual, ceiaDinheiro].some((v) => v < 0)) {
+    if ([ceiaBase, ceiaPix, ceiaDebito, ceiaCredito, ceiaDinheiro, linkPagamento, ceiaLinkEstadual, ceiaLinkInterestadual].some((v) => v < 0)) {
       setMessage("Os valores do fechamento precisam ser maiores ou iguais a zero."); return;
-    }
-    if (Math.abs(detailTotal - totalSold) > 0.009) {
-      setMessage("Pix + cartao + dinheiro deve ser exatamente igual ao total vendido."); return;
     }
 
     setIsSavingDailyClosing(true);
@@ -411,11 +402,12 @@ export default function OperatorRebuildPage() {
       const { error } = await supabase.from("daily_cash_closings").upsert(
         {
           office_id: officeId, user_id: userId, date: dailyClosingDate, company: dailyClosingCompany.trim(),
-          total_sold: totalSold, amount_pix: amountPix, amount_card: amountCard, amount_cash: amountCash,
+          total_sold: ceiaBase, amount_pix: ceiaPix, amount_card: ceiaDebito + ceiaCredito, amount_cash: ceiaDinheiro,
           ceia_amount: ceiaDinheiro, ceia_base: ceiaBase, ceia_pix: ceiaPix, ceia_debito: ceiaDebito,
           ceia_credito: ceiaCredito, ceia_link_estadual: ceiaLinkEstadual, ceia_link_interestadual: ceiaLinkInterestadual,
           ceia_dinheiro: ceiaDinheiro, ceia_total_lancado: ceiaTotalLancado, ceia_faltante: ceiaFaltante,
           qtd_taxa_estadual: qtdTaxaEstadual, qtd_taxa_interestadual: qtdTaxaInterestadual,
+          link_pagamento: linkPagamento, cash_net: cashNet,
           status: "open", notes: dailyClosingNotes.trim() || null,
         },
         { onConflict: "office_id,user_id,date,company" },
@@ -424,12 +416,13 @@ export default function OperatorRebuildPage() {
 
       await logAction("SAVE_DAILY_CASH_CLOSING", "daily_cash_closings", undefined, {
         office_id: officeId, date: dailyClosingDate, company: dailyClosingCompany.trim(),
-        total_sold: totalSold, ceia_base: ceiaBase, ceia_total_lancado: ceiaTotalLancado, ceia_faltante: ceiaFaltante, cash_net: cashNet,
+        ceia_base: ceiaBase, ceia_total_lancado: ceiaTotalLancado, ceia_faltante: ceiaFaltante, cash_net: cashNet,
       });
 
-      setDailyClosingCompany(""); setDailyClosingTotalSold(""); setDailyClosingPix(""); setDailyClosingCard(""); setDailyClosingCash("");
-      setDailyClosingCeiaBase(""); setDailyClosingCeiaPix(""); setDailyClosingCeiaDebito(""); setDailyClosingCeiaCredito("");
-      setDailyClosingCeiaLinkEstadual(""); setDailyClosingCeiaLinkInterestadual(""); setDailyClosingCeiaDinheiro("");
+      setDailyClosingCompany(""); setDailyClosingCeiaBase("");
+      setDailyClosingCeiaPix(""); setDailyClosingCeiaDebito(""); setDailyClosingCeiaCredito("");
+      setDailyClosingCeiaDinheiro(""); setDailyClosingLinkPagamento("");
+      setDailyClosingCeiaLinkEstadual(""); setDailyClosingCeiaLinkInterestadual("");
       setDailyClosingQtdTaxaEstadual("0"); setDailyClosingQtdTaxaInterestadual("0"); setDailyClosingNotes("");
       await loadDailyClosings(userId);
 
@@ -514,7 +507,7 @@ export default function OperatorRebuildPage() {
       const closingSummary = [
         obs || null,
         "Checklist ok: fechamentos, movimentos, caixa fisico e conferencia confirmados.",
-        `Resumo diario -> total ${dailyClosingSummary.totalSold.toFixed(2)}, pix ${dailyClosingSummary.pix.toFixed(2)}, cartao ${dailyClosingSummary.card.toFixed(2)}, dinheiro ${dailyClosingSummary.cash.toFixed(2)}, ceia ${dailyClosingSummary.ceia.toFixed(2)}, liquido ${dailyClosingSummary.cashNet.toFixed(2)}.`,
+        `Resumo diario -> informado ${dailyClosingSummary.totalInformado.toFixed(2)}, lancado ${dailyClosingSummary.totalLancado.toFixed(2)}, faltante ${dailyClosingSummary.faltante.toFixed(2)}, dinheiro liquido ${dailyClosingSummary.cashNet.toFixed(2)}.`,
         `Movimentos -> suprimento ${cashTotals.suprimento.toFixed(2)}, sangria ${cashTotals.sangria.toFixed(2)}, ajuste ${cashTotals.ajuste.toFixed(2)}.`,
       ].filter(Boolean).join(" | ");
 
@@ -709,13 +702,14 @@ export default function OperatorRebuildPage() {
   const dailyClosingFormCeiaPix = useMemo(() => parseMoneyInput(dailyClosingCeiaPix), [dailyClosingCeiaPix]);
   const dailyClosingFormCeiaDebito = useMemo(() => parseMoneyInput(dailyClosingCeiaDebito), [dailyClosingCeiaDebito]);
   const dailyClosingFormCeiaCredito = useMemo(() => parseMoneyInput(dailyClosingCeiaCredito), [dailyClosingCeiaCredito]);
+  const dailyClosingFormCeiaDinheiro = useMemo(() => parseMoneyInput(dailyClosingCeiaDinheiro), [dailyClosingCeiaDinheiro]);
+  const dailyClosingFormLinkPagamento = useMemo(() => parseMoneyInput(dailyClosingLinkPagamento), [dailyClosingLinkPagamento]);
   const dailyClosingFormCeiaLinkEstadual = useMemo(() => parseMoneyInput(dailyClosingCeiaLinkEstadual), [dailyClosingCeiaLinkEstadual]);
   const dailyClosingFormCeiaLinkInterestadual = useMemo(() => parseMoneyInput(dailyClosingCeiaLinkInterestadual), [dailyClosingCeiaLinkInterestadual]);
-  const dailyClosingFormCeiaDinheiro = useMemo(() => parseMoneyInput(dailyClosingCeiaDinheiro), [dailyClosingCeiaDinheiro]);
 
   const dailyClosingCeiaTotalLancado = useMemo(
-    () => Number((dailyClosingFormCeiaPix + dailyClosingFormCeiaDebito + dailyClosingFormCeiaCredito + dailyClosingFormCeiaLinkEstadual + dailyClosingFormCeiaLinkInterestadual + dailyClosingFormCeiaDinheiro).toFixed(2)),
-    [dailyClosingFormCeiaPix, dailyClosingFormCeiaDebito, dailyClosingFormCeiaCredito, dailyClosingFormCeiaLinkEstadual, dailyClosingFormCeiaLinkInterestadual, dailyClosingFormCeiaDinheiro],
+    () => Number((dailyClosingFormCeiaPix + dailyClosingFormCeiaDebito + dailyClosingFormCeiaCredito + dailyClosingFormCeiaDinheiro + dailyClosingFormLinkPagamento + dailyClosingFormCeiaLinkEstadual + dailyClosingFormCeiaLinkInterestadual).toFixed(2)),
+    [dailyClosingFormCeiaPix, dailyClosingFormCeiaDebito, dailyClosingFormCeiaCredito, dailyClosingFormCeiaDinheiro, dailyClosingFormLinkPagamento, dailyClosingFormCeiaLinkEstadual, dailyClosingFormCeiaLinkInterestadual],
   );
   const dailyClosingCeiaFaltante = useMemo(
     () => Number((dailyClosingFormCeiaBase - dailyClosingCeiaTotalLancado).toFixed(2)),
@@ -737,14 +731,6 @@ export default function OperatorRebuildPage() {
       ? `Faltando ${formatCurrency(dailyClosingCeiaFaltante)} para fechar.`
       : `Lancamento excedido em ${formatCurrency(Math.abs(dailyClosingCeiaFaltante))}.`;
 
-  const dailyClosingFormTotal = useMemo(() => parseMoneyInput(dailyClosingTotalSold), [dailyClosingTotalSold]);
-  const dailyClosingFormPix = useMemo(() => parseMoneyInput(dailyClosingPix), [dailyClosingPix]);
-  const dailyClosingFormCard = useMemo(() => parseMoneyInput(dailyClosingCard), [dailyClosingCard]);
-  const dailyClosingFormCash = useMemo(() => parseMoneyInput(dailyClosingCash), [dailyClosingCash]);
-  const dailyClosingDetailTotal = useMemo(() => Number((dailyClosingFormPix + dailyClosingFormCard + dailyClosingFormCash).toFixed(2)), [dailyClosingFormPix, dailyClosingFormCard, dailyClosingFormCash]);
-  const dailyClosingDifference = useMemo(() => Number((dailyClosingFormTotal - dailyClosingDetailTotal).toFixed(2)), [dailyClosingFormTotal, dailyClosingDetailTotal]);
-  const dailyClosingNetPreview = useMemo(() => Number((dailyClosingFormCash - dailyClosingFormCeiaDinheiro).toFixed(2)), [dailyClosingFormCash, dailyClosingFormCeiaDinheiro]);
-
   const currentDailyClosingRows = useMemo(
     () => dailyClosings.filter((row) => row.date === dailyClosingDate && (!activeOfficeId || row.office_id === activeOfficeId)),
     [activeOfficeId, dailyClosings, dailyClosingDate],
@@ -753,20 +739,16 @@ export default function OperatorRebuildPage() {
     () => currentDailyClosingRows.reduce(
       (acc, row) => {
         const rowCeiaBase = Number(row.ceia_base ?? row.ceia_amount ?? 0);
-        const rowCeiaLancado = Number(row.ceia_total_lancado ?? (Number(row.ceia_pix ?? 0) + Number(row.ceia_debito ?? 0) + Number(row.ceia_credito ?? 0) + Number(row.ceia_link_estadual ?? 0) + Number(row.ceia_link_interestadual ?? 0) + Number(row.ceia_dinheiro ?? row.ceia_amount ?? 0)));
+        const rowCeiaLancado = Number(row.ceia_total_lancado ?? (Number(row.ceia_pix ?? 0) + Number(row.ceia_debito ?? 0) + Number(row.ceia_credito ?? 0) + Number(row.ceia_dinheiro ?? 0) + Number(row.link_pagamento ?? 0) + Number(row.ceia_link_estadual ?? 0) + Number(row.ceia_link_interestadual ?? 0)));
         const rowCeiaFaltante = Number(row.ceia_faltante ?? (rowCeiaBase - rowCeiaLancado));
         return {
-          totalSold: acc.totalSold + Number(row.total_sold || 0),
-          pix: acc.pix + Number(row.amount_pix || 0),
-          card: acc.card + Number(row.amount_card || 0),
-          cash: acc.cash + Number(row.amount_cash || 0),
-          ceia: acc.ceia + rowCeiaBase,
-          ceiaTotalLancado: acc.ceiaTotalLancado + rowCeiaLancado,
-          ceiaFaltante: acc.ceiaFaltante + rowCeiaFaltante,
+          totalInformado: acc.totalInformado + rowCeiaBase,
+          totalLancado: acc.totalLancado + rowCeiaLancado,
+          faltante: acc.faltante + rowCeiaFaltante,
           cashNet: acc.cashNet + Number(row.cash_net || 0),
         };
       },
-      { totalSold: 0, pix: 0, card: 0, cash: 0, ceia: 0, ceiaTotalLancado: 0, ceiaFaltante: 0, cashNet: 0 },
+      { totalInformado: 0, totalLancado: 0, faltante: 0, cashNet: 0 },
     ),
     [currentDailyClosingRows],
   );
@@ -885,36 +867,33 @@ export default function OperatorRebuildPage() {
                 <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h2 className="text-lg font-semibold text-foreground">Lancamento de fechamento</h2>
-                    <p className="text-sm text-muted">Preencha o total vendido, o total informado e distribua pelos meios de pagamento.</p>
+                    <p className="text-sm text-muted">Preencha o total informado e distribua pelos meios de pagamento.</p>
                   </div>
-                  <Badge variant={dailyClosingDifference === 0 && dailyClosingFormTotal > 0 ? "success" : "warning"}>
-                    {dailyClosingDifference === 0 && dailyClosingFormTotal > 0 ? "Validacao ok" : "Preencha os campos"}
+                  <Badge variant={dailyClosingCeiaFaltante === 0 && dailyClosingFormCeiaBase > 0 ? "success" : "warning"}>
+                    {dailyClosingCeiaFaltante === 0 && dailyClosingFormCeiaBase > 0 ? "Validacao ok" : "Preencha os campos"}
                   </Badge>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                   <Input label="Data" type="date" value={dailyClosingDate} onChange={(e) => setDailyClosingDate(e.target.value)} />
                   <Select label="Empresa" value={dailyClosingCompany} onChange={(e) => setDailyClosingCompany(e.target.value)}>
                     <option value="">Selecione a empresa</option>
                     {companies.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </Select>
-                  <Input label="Total vendido" value={dailyClosingTotalSold} onChange={(e) => setDailyClosingTotalSold(maskMoneyInput(e.target.value))} placeholder="0,00" />
                   <Input label="Total informado" value={dailyClosingCeiaBase} onChange={(e) => setDailyClosingCeiaBase(maskMoneyInput(e.target.value))} placeholder="0,00" />
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <Input label="PIX" value={dailyClosingPix} onChange={(e) => setDailyClosingPix(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Cartao" value={dailyClosingCard} onChange={(e) => setDailyClosingCard(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Dinheiro" value={dailyClosingCash} onChange={(e) => setDailyClosingCash(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <Input label="PIX" value={dailyClosingCeiaPix} onChange={(e) => setDailyClosingCeiaPix(maskMoneyInput(e.target.value))} placeholder="0,00" />
                   <Input label="Debito" value={dailyClosingCeiaDebito} onChange={(e) => setDailyClosingCeiaDebito(maskMoneyInput(e.target.value))} placeholder="0,00" />
                   <Input label="Credito" value={dailyClosingCeiaCredito} onChange={(e) => setDailyClosingCeiaCredito(maskMoneyInput(e.target.value))} placeholder="0,00" />
+                  <Input label="Dinheiro" value={dailyClosingCeiaDinheiro} onChange={(e) => setDailyClosingCeiaDinheiro(maskMoneyInput(e.target.value))} placeholder="0,00" />
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <Input label="Link de pagamento" value={dailyClosingLinkPagamento} onChange={(e) => setDailyClosingLinkPagamento(maskMoneyInput(e.target.value))} placeholder="0,00" />
                   <Input label="Taxa estadual" value={dailyClosingCeiaLinkEstadual} onChange={(e) => setDailyClosingCeiaLinkEstadual(maskMoneyInput(e.target.value))} placeholder="0,00" />
                   <Input label="Taxa interestadual" value={dailyClosingCeiaLinkInterestadual} onChange={(e) => setDailyClosingCeiaLinkInterestadual(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Dinheiro" value={dailyClosingCeiaDinheiro} onChange={(e) => setDailyClosingCeiaDinheiro(maskMoneyInput(e.target.value))} placeholder="0,00" />
                 </div>
 
                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -922,20 +901,15 @@ export default function OperatorRebuildPage() {
                   <Input label="Qtd taxa interestadual" type="number" min="0" step="1" value={dailyClosingQtdTaxaInterestadual} onChange={(e) => setDailyClosingQtdTaxaInterestadual(e.target.value)} placeholder="0" />
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className="mt-3">
                   <Input label="Observacoes" value={dailyClosingNotes} onChange={(e) => setDailyClosingNotes(e.target.value)} placeholder="Opcional" />
-                  <div className={`rounded-lg border p-3 ${dailyClosingNetPreview < 0 ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/20 bg-emerald-500/5"}`}>
-                    <p className="text-xs uppercase tracking-wide text-muted">Saldo em dinheiro</p>
-                    <p className={`mt-1 text-2xl font-bold ${dailyClosingNetPreview < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(dailyClosingNetPreview)}</p>
-                    <p className="text-xs text-muted">Dinheiro - distribuicao dinheiro</p>
-                  </div>
                 </div>
 
                 <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className={`rounded-lg border px-3 py-2 text-sm ${dailyClosingDifference === 0 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>
-                    {dailyClosingDifference === 0 ? "PIX + cartao + dinheiro bate com o total vendido." : `Faltam ${formatCurrency(Math.abs(dailyClosingDifference))} para fechar.`}
+                  <div className={`rounded-lg border px-3 py-2 text-sm ${dailyClosingCeiaFaltante === 0 && dailyClosingFormCeiaBase > 0 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>
+                    {dailyClosingCeiaFaltante === 0 && dailyClosingFormCeiaBase > 0 ? "Meios de pagamento batem com o total informado." : dailyClosingFormCeiaBase === 0 ? "Informe o total." : `Faltam ${formatCurrency(Math.abs(dailyClosingCeiaFaltante))} para fechar.`}
                   </div>
-                  <Button variant="success" onClick={saveDailyClosing} disabled={isSavingDailyClosing || !dailyClosingCompany || !dailyClosingTotalSold || dailyClosingDifference !== 0}>
+                  <Button variant="success" onClick={saveDailyClosing} disabled={isSavingDailyClosing || !dailyClosingCompany || dailyClosingFormCeiaBase === 0}>
                     {isSavingDailyClosing ? "Salvando..." : "Salvar fechamento"}
                   </Button>
                 </div>
@@ -979,11 +953,11 @@ export default function OperatorRebuildPage() {
               {/* Resumo do dia */}
               {currentDailyClosingRows.length > 0 && (
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <Card className="text-center p-4"><p className="text-xs text-muted uppercase mb-1">Total vendido</p><p className="text-xl font-bold text-foreground">{formatCurrency(dailyClosingSummary.totalSold)}</p></Card>
-                  <Card className="text-center p-4"><p className="text-xs text-muted uppercase mb-1">Total informado</p><p className="text-xl font-bold text-amber-300">{formatCurrency(dailyClosingSummary.ceia)}</p></Card>
-                  <Card className={`text-center p-4 ${dailyClosingSummary.ceiaFaltante === 0 ? "border-emerald-500/30" : dailyClosingSummary.ceiaFaltante > 0 ? "border-amber-500/30" : "border-rose-500/30"}`}>
+                  <Card className="text-center p-4"><p className="text-xs text-muted uppercase mb-1">Total informado</p><p className="text-xl font-bold text-amber-300">{formatCurrency(dailyClosingSummary.totalInformado)}</p></Card>
+                  <Card className="text-center p-4"><p className="text-xs text-muted uppercase mb-1">Total lancado</p><p className="text-xl font-bold text-foreground">{formatCurrency(dailyClosingSummary.totalLancado)}</p></Card>
+                  <Card className={`text-center p-4 ${dailyClosingSummary.faltante === 0 ? "border-emerald-500/30" : dailyClosingSummary.faltante > 0 ? "border-amber-500/30" : "border-rose-500/30"}`}>
                     <p className="text-xs text-muted uppercase mb-1">Faltante</p>
-                    <p className={`text-xl font-bold ${dailyClosingSummary.ceiaFaltante === 0 ? "text-emerald-400" : dailyClosingSummary.ceiaFaltante > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(dailyClosingSummary.ceiaFaltante)}</p>
+                    <p className={`text-xl font-bold ${dailyClosingSummary.faltante === 0 ? "text-emerald-400" : dailyClosingSummary.faltante > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(dailyClosingSummary.faltante)}</p>
                   </Card>
                   <Card className="text-center p-4"><p className="text-xs text-muted uppercase mb-1">Caixa esperado</p><p className="text-xl font-bold text-foreground">{formatCurrency(dailyClosingExpectedCash)}</p></Card>
                 </div>
@@ -1036,23 +1010,21 @@ export default function OperatorRebuildPage() {
                   </div>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedDailyClosingId(null)}>Fechar</Button>
                 </div>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Total</p><p className="font-semibold text-foreground">{formatCurrency(Number(selectedDailyClosing.total_sold || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">PIX</p><p className="font-semibold text-cyan-400">{formatCurrency(Number(selectedDailyClosing.amount_pix || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Cartao</p><p className="font-semibold text-purple-400">{formatCurrency(Number(selectedDailyClosing.amount_card || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro</p><p className="font-semibold text-emerald-400">{formatCurrency(Number(selectedDailyClosing.amount_cash || 0))}</p></div>
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Total informado</p><p className="font-semibold text-amber-300">{formatCurrency(Number(selectedDailyClosing.ceia_base ?? 0))}</p></div>
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Lancado</p><p className="font-semibold text-foreground">{formatCurrency(Number(selectedDailyClosing.ceia_total_lancado ?? 0))}</p></div>
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Faltante</p><p className={`font-semibold ${Number(selectedDailyClosing.ceia_faltante ?? 0) === 0 ? "text-emerald-400" : Number(selectedDailyClosing.ceia_faltante ?? 0) > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(Number(selectedDailyClosing.ceia_faltante ?? 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Liquido</p><p className={`font-semibold ${Number(selectedDailyClosing.cash_net || 0) < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(Number(selectedDailyClosing.cash_net || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro liquido</p><p className={`font-semibold ${Number(selectedDailyClosing.cash_net || 0) < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(Number(selectedDailyClosing.cash_net || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Qtd taxas</p><p className="font-semibold text-foreground">{Number(selectedDailyClosing.qtd_taxa_estadual ?? 0)} est / {Number(selectedDailyClosing.qtd_taxa_interestadual ?? 0)} inter</p></div>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">PIX</p><p className="font-semibold text-cyan-400">{formatCurrency(Number(selectedDailyClosing.ceia_pix || 0))}</p></div>
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Debito</p><p className="font-semibold text-blue-400">{formatCurrency(Number(selectedDailyClosing.ceia_debito || 0))}</p></div>
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Credito</p><p className="font-semibold text-violet-400">{formatCurrency(Number(selectedDailyClosing.ceia_credito || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro</p><p className="font-semibold text-emerald-400">{formatCurrency(Number(selectedDailyClosing.ceia_dinheiro || 0))}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Link pagamento</p><p className="font-semibold text-sky-400">{formatCurrency(Number(selectedDailyClosing.link_pagamento || 0))}</p></div>
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Taxa estadual</p><p className="font-semibold text-amber-300">{formatCurrency(Number(selectedDailyClosing.ceia_link_estadual || 0))}</p></div>
                   <div><p className="text-[10px] uppercase tracking-wide text-muted">Taxa interestadual</p><p className="font-semibold text-amber-200">{formatCurrency(Number(selectedDailyClosing.ceia_link_interestadual || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro</p><p className="font-semibold text-emerald-400">{formatCurrency(Number(selectedDailyClosing.ceia_dinheiro || 0))}</p></div>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   <Badge variant={Number(selectedDailyClosing.ceia_faltante ?? 0) === 0 ? "success" : Number(selectedDailyClosing.ceia_faltante ?? 0) > 0 ? "warning" : "danger"}>
@@ -1122,15 +1094,13 @@ export default function OperatorRebuildPage() {
                   </div>
                 )}
 
-                {/* Resumo CEIA */}
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
-                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Total vendido</p><p className="mt-1 font-bold text-foreground">{formatCurrency(dailyClosingSummary.totalSold)}</p></div>
-                  <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3"><p className="text-[10px] uppercase tracking-wide text-muted">PIX</p><p className="mt-1 font-bold text-cyan-400">{formatCurrency(dailyClosingSummary.pix)}</p></div>
-                  <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Cartao</p><p className="mt-1 font-bold text-purple-400">{formatCurrency(dailyClosingSummary.card)}</p></div>
-                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro</p><p className="mt-1 font-bold text-emerald-400">{formatCurrency(dailyClosingSummary.cash)}</p></div>
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Total informado</p><p className="mt-1 font-bold text-amber-300">{formatCurrency(dailyClosingSummary.ceia)}</p></div>
-                  <div className={`rounded-lg border p-3 ${dailyClosingSummary.ceiaFaltante === 0 ? "border-emerald-500/20 bg-emerald-500/5" : dailyClosingSummary.ceiaFaltante > 0 ? "border-amber-500/20 bg-amber-500/5" : "border-rose-500/30 bg-rose-500/10"}`}><p className="text-[10px] uppercase tracking-wide text-muted">Faltante</p><p className={`mt-1 font-bold ${dailyClosingSummary.ceiaFaltante === 0 ? "text-emerald-400" : dailyClosingSummary.ceiaFaltante > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(dailyClosingSummary.ceiaFaltante)}</p></div>
+                {/* Resumo */}
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Total informado</p><p className="mt-1 font-bold text-amber-300">{formatCurrency(dailyClosingSummary.totalInformado)}</p></div>
+                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Total lancado</p><p className="mt-1 font-bold text-foreground">{formatCurrency(dailyClosingSummary.totalLancado)}</p></div>
+                  <div className={`rounded-lg border p-3 ${dailyClosingSummary.faltante === 0 ? "border-emerald-500/20 bg-emerald-500/5" : dailyClosingSummary.faltante > 0 ? "border-amber-500/20 bg-amber-500/5" : "border-rose-500/30 bg-rose-500/10"}`}><p className="text-[10px] uppercase tracking-wide text-muted">Faltante</p><p className={`mt-1 font-bold ${dailyClosingSummary.faltante === 0 ? "text-emerald-400" : dailyClosingSummary.faltante > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(dailyClosingSummary.faltante)}</p></div>
                   <div className={`rounded-lg border p-3 ${dailyClosingSummary.cashNet < 0 ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/20 bg-emerald-500/5"}`}><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro liquido</p><p className={`mt-1 font-bold ${dailyClosingSummary.cashNet < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(dailyClosingSummary.cashNet)}</p></div>
+                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Empresas</p><p className="mt-1 font-bold text-foreground">{currentDailyClosingRows.length}</p></div>
                 </div>
 
                 {currentDailyClosingRows.length > 0 && (
@@ -1140,10 +1110,10 @@ export default function OperatorRebuildPage() {
                       className="max-h-56"
                       columns={[
                         { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
-                        { key: "total", header: "Total", render: (row) => formatCurrency(Number(row.total_sold || 0)) },
-                        { key: "ceia", header: "Total informado", render: (row) => formatCurrency(Number(row.ceia_base ?? 0)) },
+                        { key: "informado", header: "Informado", render: (row) => formatCurrency(Number(row.ceia_base ?? 0)) },
+                        { key: "lancado", header: "Lancado", render: (row) => formatCurrency(Number(row.ceia_total_lancado ?? 0)) },
                         { key: "faltante", header: "Faltante", render: (row) => { const v = Number(row.ceia_faltante ?? 0); return <span className={`font-semibold ${v === 0 ? "text-emerald-400" : v > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(v)}</span>; }},
-                        { key: "liquido", header: "Liquido", render: (row) => { const v = Number(row.cash_net || 0); return <span className={`font-semibold ${v < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(v)}</span>; }},
+                        { key: "liquido", header: "Dinheiro", render: (row) => { const v = Number(row.cash_net || 0); return <span className={`font-semibold ${v < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(v)}</span>; }},
                       ]}
                       rows={currentDailyClosingRows}
                       keyExtractor={(row) => row.id}
