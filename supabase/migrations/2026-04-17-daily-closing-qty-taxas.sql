@@ -83,3 +83,22 @@ BEGIN
     GRANT SELECT ON public.vw_ceia_closing_report TO authenticated;
   END IF;
 END $$;
+
+-- ====================================================================
+-- 4. RLS: permitir operador fazer UPDATE no proprio shift_cash_closings
+--    Necessário para o upsert funcionar em retentativas de fechamento.
+-- ====================================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'shift_cash_closings'
+      AND policyname = 'shift_cash_closings_self_update'
+  ) THEN
+    CREATE POLICY shift_cash_closings_self_update
+      ON public.shift_cash_closings
+      FOR UPDATE
+      USING (user_id = auth.uid())
+      WITH CHECK (user_id = auth.uid());
+  END IF;
+END $$;

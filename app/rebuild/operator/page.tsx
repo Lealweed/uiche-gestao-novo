@@ -514,7 +514,7 @@ export default function OperatorRebuildPage() {
       const { error: saveClosingError } = await supabase.from("shift_cash_closings").upsert({
         shift_id: shift.id, booth_id: shift.booth_id, user_id: userId,
         expected_cash: normalizedExpected, declared_cash: normalizedDeclared, difference, note: closingSummary || null,
-      });
+      }, { onConflict: "shift_id" });
       if (saveClosingError) { setMessage(`Erro ao registrar fechamento: ${saveClosingError.message}`); return; }
 
       const { error } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: closingSummary || null });
