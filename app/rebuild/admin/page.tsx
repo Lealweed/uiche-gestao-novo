@@ -853,18 +853,16 @@ export default function AdminRebuildPage() {
     let central = 0;
     let repasse = 0;
     const comps = new Map<string, { id: string, name: string, amount: number, central: number, repasse: number, payoutDays: number }>();
-    const pctMap = new Map(companies.map(c => [c.id, getCompanyPct(c)]));
-    const payoutDaysMap = new Map(
-      companies.map((c) => [
-        c.id,
-        typeof c.payout_days === "number" && Number.isFinite(c.payout_days) ? Math.max(0, Math.trunc(c.payout_days)) : 0,
-      ])
-    );
 
-    for (const tx of reportTxs) {
-      const v = Number(tx.amount || 0);
-      const cId = tx.company_id;
-      const pct = cId ? (pctMap.get(cId) ?? 0) : 0;
+    // Mapear companies por nome para encontrar comissão
+    const companyByName = new Map(companies.map(c => [c.name.toLowerCase().trim(), c]));
+
+    for (const row of dailyCashClosingRows) {
+      const v = Number(row.ceia_total_lancado || 0);
+      const companyName = (row.company || "").trim();
+      const companyNameKey = companyName.toLowerCase();
+      const matchedCompany = companyByName.get(companyNameKey);
+      const pct = matchedCompany ? getCompanyPct(matchedCompany) : 0;
       const taxa = v * (pct / 100);
       const liq = v - taxa;
 
@@ -872,12 +870,12 @@ export default function AdminRebuildPage() {
       central += taxa;
       repasse += liq;
 
-      if (cId) {
-        if (!comps.has(cId)) {
-          const cName = tx.companies && !Array.isArray(tx.companies) ? tx.companies.name : "Desconhecida";
-          comps.set(cId, { id: cId, name: cName, amount: 0, central: 0, repasse: 0, payoutDays: payoutDaysMap.get(cId) ?? 0 });
+      if (companyName) {
+        if (!comps.has(companyNameKey)) {
+          const payoutDays = matchedCompany && typeof matchedCompany.payout_days === "number" && Number.isFinite(matchedCompany.payout_days) ? Math.max(0, Math.trunc(matchedCompany.payout_days)) : 0;
+          comps.set(companyNameKey, { id: matchedCompany?.id ?? companyNameKey, name: companyName, amount: 0, central: 0, repasse: 0, payoutDays });
         }
-        const st = comps.get(cId)!;
+        const st = comps.get(companyNameKey)!;
         st.amount += v;
         st.central += taxa;
         st.repasse += liq;
@@ -890,21 +888,23 @@ export default function AdminRebuildPage() {
       repasse,
       viacoes: Array.from(comps.values()).sort((a,b) => b.amount - a.amount),
     };
-  }, [reportTxs, companies]);
+  }, [dailyCashClosingRows, companies]);
 
   const boardingTaxAudit = useMemo(() => {
     let qtd_estadual = 0;
     let valor_estadual = 0;
     let qtd_federal = 0;
     let valor_federal = 0;
-    for (const tx of reportTxs) {
-      const es = Number(tx.boarding_tax_state ?? 0);
-      const fed = Number(tx.boarding_tax_federal ?? 0);
-      if (es > 0) { qtd_estadual += 1; valor_estadual += es; }
-      if (fed > 0) { qtd_federal += 1; valor_federal += fed; }
+    for (const row of dailyCashClosingRows) {
+      const es = Number(row.ceia_link_estadual ?? 0);
+      const fed = Number(row.ceia_link_interestadual ?? 0);
+      const qe = Number(row.qtd_taxa_estadual ?? 0);
+      const qf = Number(row.qtd_taxa_interestadual ?? 0);
+      if (es > 0 || qe > 0) { qtd_estadual += qe || (es > 0 ? 1 : 0); valor_estadual += es; }
+      if (fed > 0 || qf > 0) { qtd_federal += qf || (fed > 0 ? 1 : 0); valor_federal += fed; }
     }
     return { qtd_estadual, valor_estadual, qtd_federal, valor_federal };
-  }, [reportTxs]);
+  }, [dailyCashClosingRows]);
 
   const summary = useMemo(() => ({
     totalDia:       rows.reduce((a,r) => a + Number(r.gross_amount||0), 0),
@@ -914,34 +914,35 @@ export default function AdminRebuildPage() {
   }), [rows]);
 
   const paymentMethodData = useMemo(() => {
-    const methods: Record<string, number> = { pix: 0, credito: 0, debito: 0, dinheiro: 0 };
-    for (const tx of reportTxs) {
-      const method = (tx.payment_method || "").toLowerCase();
-      if (method.includes("pix")) methods.pix += Number(tx.amount || 0);
-      else if (method.includes("credit")) methods.credito += Number(tx.amount || 0);
-      else if (method.includes("debit")) methods.debito += Number(tx.amount || 0);
-      else methods.dinheiro += Number(tx.amount || 0);
+    const methods: Record<string, number> = { pix: 0, credito: 0, debito: 0, dinheiro: 0, link: 0 };
+    for (const row of dailyCashClosingRows) {
+      methods.pix += Number(row.ceia_pix || 0);
+      methods.credito += Number(row.ceia_credito || 0);
+      methods.debito += Number(row.ceia_debito || 0);
+      methods.dinheiro += Number(row.ceia_dinheiro || 0);
+      methods.link += Number(row.link_pagamento || 0);
     }
     return [
       { name: "PIX", value: methods.pix, color: ADMIN_CHART_COLORS.primary },
       { name: "Credito", value: methods.credito, color: ADMIN_CHART_COLORS.purple },
       { name: "Debito", value: methods.debito, color: ADMIN_CHART_COLORS.cyan },
       { name: "Dinheiro", value: methods.dinheiro, color: ADMIN_CHART_COLORS.success },
+      { name: "Link", value: methods.link, color: "#f59e0b" },
     ].filter(d => d.value > 0);
-  }, [reportTxs]);
+  }, [dailyCashClosingRows]);
 
   const dailyRevenueData = useMemo(() => {
     const dailyMap = new Map<string, number>();
-    for (const tx of reportTxs) {
-      if (!tx.sold_at) continue;
-      const date = new Date(tx.sold_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-      dailyMap.set(date, (dailyMap.get(date) || 0) + Number(tx.amount || 0));
+    for (const row of dailyCashClosingRows) {
+      if (!row.date) continue;
+      const date = new Date(row.date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+      dailyMap.set(date, (dailyMap.get(date) || 0) + Number(row.ceia_total_lancado || 0));
     }
     return Array.from(dailyMap.entries())
       .map(([date, valor]) => ({ date, valor }))
-      .slice(-7)
-      .reverse();
-  }, [reportTxs]);
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-7);
+  }, [dailyCashClosingRows]);
 
   const topCompaniesData = useMemo(() => {
     return repassesComputed.viacoes.slice(0, 5).map((v, i) => ({
@@ -956,9 +957,7 @@ export default function AdminRebuildPage() {
     const s = cashMovementRows.filter((movement) => movement.movement_type === "suprimento").reduce((acc, movement) => acc + Number(movement.amount || 0), 0);
     const g = cashMovementRows.filter((movement) => movement.movement_type === "sangria").reduce((acc, movement) => acc + Number(movement.amount || 0), 0);
     const j = cashMovementRows.filter((movement) => movement.movement_type === "ajuste").reduce((acc, movement) => acc + Number(movement.amount || 0), 0);
-    const cashSales = reportTxs
-      .filter((tx) => (tx.payment_method ?? "").toLowerCase() === "cash")
-      .reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+    const cashSales = dailyCashClosingRows.reduce((acc, row) => acc + Number(row.cash_net || 0), 0);
 
     return {
       suprimento: s,
@@ -967,7 +966,7 @@ export default function AdminRebuildPage() {
       cashSales,
       saldo: cashSales + s - g + j,
     };
-  }, [cashMovementRows, reportTxs]);
+  }, [cashMovementRows, dailyCashClosingRows]);
 
   const cashClosingTotals = useMemo(() => ({
     expected:   shiftCashClosingRows.reduce((a,r)=>a+Number(r.expected_cash||0),0),
@@ -1869,7 +1868,7 @@ export default function AdminRebuildPage() {
             onClearFilters={clearDateFilters}
             repassesComputed={repassesComputed}
             boardingTaxAudit={boardingTaxAudit}
-            reportTxCount={reportTxs.length}
+            reportTxCount={dailyCashClosingRows.length}
             summary={summary}
             dailyRevenueData={dailyRevenueData}
             paymentMethodData={paymentMethodData}

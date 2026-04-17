@@ -179,7 +179,7 @@ export function AdminDashboardSection({
           label="Faturamento Total"
           value={formatCurrency(repassesComputed.faturamento)}
           icon={<DollarSign className="h-5 w-5" />}
-          delta={`${reportTxCount} transacoes`}
+          delta={`${reportTxCount} lancamento(s)`}
           deltaType="positive"
         />
         <StatCard
