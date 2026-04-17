@@ -116,7 +116,7 @@ BEGIN
       CREATE POLICY admin_read_all_closings
         ON public.daily_cash_closings
         FOR SELECT
-        USING (public.is_admin())
+        USING (public.is_admin(auth.uid()))
     $policy$;
   END IF;
 END $$;
