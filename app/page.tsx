@@ -9,7 +9,7 @@ const highlights = [
   },
   {
     title: "Conciliacao segura",
-    description: "Fluxo completo de comprovantes, caixa PDV e fechamento diario com rastreabilidade.",
+    description: "Fluxo completo de comprovantes, fechamento Central Viagens e conferencia diaria com rastreabilidade.",
     icon: ShieldCheck,
   },
   {

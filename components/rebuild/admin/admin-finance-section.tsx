@@ -33,6 +33,9 @@ type DailyCashClosingRow = {
   ceia_dinheiro: number;
   ceia_total_lancado: number;
   ceia_faltante: number;
+  qtd_taxa_estadual: number;
+  qtd_taxa_interestadual: number;
+  link_pagamento: number;
   cash_net: number;
   status: "open" | "closed";
   notes: string | null;
@@ -149,11 +152,13 @@ export function AdminFinanceSection({
       pix: Number(row.ceia_pix || 0),
       debito: Number(row.ceia_debito || 0),
       credito: Number(row.ceia_credito || 0),
+      dinheiro: Number(row.ceia_dinheiro || 0),
+      link_pagamento: Number(row.link_pagamento || 0),
       link_estadual: Number(row.ceia_link_estadual || 0),
       link_interestadual: Number(row.ceia_link_interestadual || 0),
-      dinheiro: Number(row.ceia_dinheiro || 0),
-      cash_net: Number(row.cash_net || 0),
-      total_vendido: Number(row.total_sold || 0),
+      qtd_taxa_estadual: Number(row.qtd_taxa_estadual || 0),
+      qtd_taxa_interestadual: Number(row.qtd_taxa_interestadual || 0),
+      dinheiro_liquido: Number(row.cash_net || 0),
       observacao: row.notes ?? "",
     }));
 
@@ -168,11 +173,13 @@ export function AdminFinanceSection({
       { key: "pix", label: "PIX" },
       { key: "debito", label: "Debito" },
       { key: "credito", label: "Credito" },
-      { key: "link_estadual", label: "Link estadual" },
-      { key: "link_interestadual", label: "Link interestadual" },
       { key: "dinheiro", label: "Dinheiro" },
-      { key: "cash_net", label: "Cash net" },
-      { key: "total_vendido", label: "Total vendido" },
+      { key: "link_pagamento", label: "Link de pagamento" },
+      { key: "link_estadual", label: "Taxa estadual" },
+      { key: "link_interestadual", label: "Taxa interestadual" },
+      { key: "qtd_taxa_estadual", label: "Qtd taxa estadual" },
+      { key: "qtd_taxa_interestadual", label: "Qtd taxa interestadual" },
+      { key: "dinheiro_liquido", label: "Dinheiro liquido" },
       { key: "observacao", label: "Observacao" },
     ]);
   }

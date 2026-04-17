@@ -62,14 +62,12 @@ type OperatorSummarySectionProps = {
   cashTotals: CashTotals;
   totalGeral: number;
   dailySummary: {
-    totalSold: number;
-    pix: number;
-    card: number;
-    cash: number;
-    ceia: number;
+    totalInformado: number;
+    totalLancado: number;
+    faltante: number;
     cashNet: number;
-    expectedCash: number;
     count: number;
+    expectedCash: number;
   };
   txs: TxRow[];
   lastCloseResult: LastCloseResult | null;
@@ -238,25 +236,17 @@ export function OperatorSummarySection({
         </div>
 
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <div className="rounded-lg border border-border p-3">
-            <p className="text-[10px] uppercase tracking-widest text-muted">Total vendido</p>
-            <p className="text-lg font-bold text-foreground">{formatCurrency(dailySummary.totalSold)}</p>
-          </div>
-          <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3">
-            <p className="text-[10px] uppercase tracking-widest text-muted">PIX</p>
-            <p className="text-lg font-bold text-info">{formatCurrency(dailySummary.pix)}</p>
-          </div>
-          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
-            <p className="text-[10px] uppercase tracking-widest text-muted">Cartao</p>
-            <p className="text-lg font-bold text-primary">{formatCurrency(dailySummary.card)}</p>
-          </div>
-          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-            <p className="text-[10px] uppercase tracking-widest text-muted">Dinheiro bruto</p>
-            <p className="text-lg font-bold text-success">{formatCurrency(dailySummary.cash)}</p>
-          </div>
           <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-            <p className="text-[10px] uppercase tracking-widest text-muted">CEIA</p>
-            <p className="text-lg font-bold text-amber-300">{formatCurrency(dailySummary.ceia)}</p>
+            <p className="text-[10px] uppercase tracking-widest text-muted">Total informado</p>
+            <p className="text-lg font-bold text-amber-300">{formatCurrency(dailySummary.totalInformado)}</p>
+          </div>
+          <div className="rounded-lg border border-border p-3">
+            <p className="text-[10px] uppercase tracking-widest text-muted">Total lancado</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(dailySummary.totalLancado)}</p>
+          </div>
+          <div className={`rounded-lg border p-3 ${dailySummary.faltante === 0 ? "border-emerald-500/20 bg-emerald-500/5" : dailySummary.faltante > 0 ? "border-amber-500/20 bg-amber-500/5" : "border-rose-500/30 bg-rose-500/10"}`}>
+            <p className="text-[10px] uppercase tracking-widest text-muted">Faltante</p>
+            <p className={`text-lg font-bold ${dailySummary.faltante === 0 ? "text-emerald-400" : dailySummary.faltante > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(dailySummary.faltante)}</p>
           </div>
           <div className={`rounded-lg border p-3 ${dailySummary.cashNet < 0 ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/20 bg-emerald-500/5"}`}>
             <p className="text-[10px] uppercase tracking-widest text-muted">Dinheiro liquido</p>

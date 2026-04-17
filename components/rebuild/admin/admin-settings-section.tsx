@@ -465,7 +465,7 @@ export function AdminSettingsSection({
       <SectionCard title="Taxas de Embarque">
         <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <p className="text-sm text-muted">
-            Defina os valores oficiais usados pelo operador no PDV como fonte unica de verdade.
+            Defina os valores oficiais usados pelo operador no fechamento como fonte unica de verdade.
           </p>
           <Badge variant="secondary">{sortedBoardingTaxes.length} cadastrada(s)</Badge>
         </div>

@@ -123,6 +123,9 @@ type DailyCashClosingRow = {
   ceia_dinheiro: number;
   ceia_total_lancado: number;
   ceia_faltante: number;
+  qtd_taxa_estadual: number;
+  qtd_taxa_interestadual: number;
+  link_pagamento: number;
   cash_net: number;
   status: "open" | "closed";
   notes: string | null;
@@ -486,7 +489,7 @@ export default function AdminRebuildPage() {
         .limit(5000);
       let dailyCloseQ = supabase
         .from("daily_cash_closings")
-        .select("id,office_id,user_id,date,company,total_sold,amount_pix,amount_card,amount_cash,ceia_amount,ceia_base,ceia_pix,ceia_debito,ceia_credito,ceia_link_estadual,ceia_link_interestadual,ceia_dinheiro,ceia_total_lancado,ceia_faltante,cash_net,status,notes,created_at")
+        .select("id,office_id,user_id,date,company,total_sold,amount_pix,amount_card,amount_cash,ceia_amount,ceia_base,ceia_pix,ceia_debito,ceia_credito,ceia_link_estadual,ceia_link_interestadual,ceia_dinheiro,ceia_total_lancado,ceia_faltante,qtd_taxa_estadual,qtd_taxa_interestadual,link_pagamento,cash_net,status,notes,created_at")
         .order("date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(5000);

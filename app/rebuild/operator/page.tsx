@@ -402,8 +402,8 @@ export default function OperatorRebuildPage() {
       const { error } = await supabase.from("daily_cash_closings").upsert(
         {
           office_id: officeId, user_id: userId, date: dailyClosingDate, company: dailyClosingCompany.trim(),
-          total_sold: ceiaBase, amount_pix: ceiaPix, amount_card: ceiaDebito + ceiaCredito, amount_cash: ceiaDinheiro,
-          ceia_amount: ceiaDinheiro, ceia_base: ceiaBase, ceia_pix: ceiaPix, ceia_debito: ceiaDebito,
+          total_sold: ceiaTotalLancado, amount_pix: ceiaPix, amount_card: ceiaDebito + ceiaCredito, amount_cash: ceiaDinheiro,
+          ceia_amount: 0, ceia_base: ceiaBase, ceia_pix: ceiaPix, ceia_debito: ceiaDebito,
           ceia_credito: ceiaCredito, ceia_link_estadual: ceiaLinkEstadual, ceia_link_interestadual: ceiaLinkInterestadual,
           ceia_dinheiro: ceiaDinheiro, ceia_total_lancado: ceiaTotalLancado, ceia_faltante: ceiaFaltante,
           qtd_taxa_estadual: qtdTaxaEstadual, qtd_taxa_interestadual: qtdTaxaInterestadual,
@@ -801,8 +801,164 @@ export default function OperatorRebuildPage() {
     <RebuildShell>
       <Toast message={message} onClose={() => setMessage(null)} type="info" />
 
+      {/* ===== FECHAMENTO DE TURNO (tela cheia) ===== */}
+      {showCloseModal && shift && (
+        <div className="space-y-5">
+          {/* Header */}
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between border-b border-border pb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground">Fechamento de Turno</h1>
+              <p className="text-sm text-muted">Confira o resumo e encerre o turno.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Badge variant={closeDifferenceStatus.variant}>{closeDifferenceStatus.label}</Badge>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setShowCloseModal(false)}>Continuar operando</Button>
+            </div>
+          </div>
+
+          {/* Alerta turno longo */}
+          {shiftNeedsAttention && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              Atencao: turno aberto ha <strong className="font-bold">{shiftDurationLabel}</strong>. Revise com cuidado.
+            </div>
+          )}
+
+          {/* KPIs – linha 1: 5 cards compactos */}
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+              <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Total Informado</p>
+              <p className="text-xl font-bold text-amber-300">{formatCurrency(dailyClosingSummary.totalInformado)}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-[hsl(var(--card-elevated))] p-3">
+              <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Total Lancado</p>
+              <p className="text-xl font-bold text-foreground">{formatCurrency(dailyClosingSummary.totalLancado)}</p>
+            </div>
+            <div className={`rounded-xl border p-3 ${dailyClosingSummary.faltante === 0 ? "border-emerald-500/20 bg-emerald-500/5" : dailyClosingSummary.faltante > 0 ? "border-amber-500/20 bg-amber-500/5" : "border-rose-500/30 bg-rose-500/10"}`}>
+              <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Faltante</p>
+              <p className={`text-xl font-bold ${dailyClosingSummary.faltante === 0 ? "text-emerald-400" : dailyClosingSummary.faltante > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(dailyClosingSummary.faltante)}</p>
+            </div>
+            <div className={`rounded-xl border p-3 ${dailyClosingSummary.cashNet < 0 ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/20 bg-emerald-500/5"}`}>
+              <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Dinheiro Liquido</p>
+              <p className={`text-xl font-bold ${dailyClosingSummary.cashNet < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(dailyClosingSummary.cashNet)}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-[hsl(var(--card-elevated))] p-3">
+              <p className="text-[10px] uppercase tracking-widest text-muted mb-1">Empresas</p>
+              <p className="text-xl font-bold text-foreground">{currentDailyClosingRows.length}</p>
+            </div>
+          </div>
+
+          {/* KPIs – linha 2: esperado / contado / diferença */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-success/30 bg-success/10 p-5">
+              <p className="text-xs uppercase tracking-widest text-muted mb-1">Total Esperado em Caixa</p>
+              <p className="text-3xl font-bold text-success">{formatCurrency(expectedCashVal)}</p>
+              <p className="text-xs text-muted mt-1">Dinheiro liquido + suprimentos - sangrias</p>
+            </div>
+            <div className="rounded-xl border border-border bg-[hsl(var(--card-elevated))] p-5">
+              <p className="text-xs uppercase tracking-widest text-muted mb-1">Valor Contado</p>
+              <p className="text-3xl font-bold text-foreground">{closeDeclared.trim() ? formatCurrency(closeDeclaredValue) : "R$ 0,00"}</p>
+            </div>
+            <div className={`rounded-xl border p-5 ${closeDifferenceToneClass}`}>
+              <p className="text-xs uppercase tracking-widest mb-1">Diferenca</p>
+              <p className="text-3xl font-bold">{closeDeclared.trim() ? formatCurrency(closeDifferencePreview) : "R$ 0,00"}</p>
+              <p className="text-xs opacity-75 mt-1">
+                {closeDeclared.trim() ? (closeDifferencePreview === 0 ? "Caixa conferido" : closeDifferencePreview > 0 ? "Declarado acima" : "Declarado abaixo") : "Aguardando contagem"}
+              </p>
+            </div>
+          </div>
+
+          {/* KPIs – linha 3: suprimento / sangria / ajuste */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+              <p className="text-xs text-muted mb-1">Suprimento</p>
+              <p className="text-2xl font-bold text-emerald-400">{formatCurrency(cashTotals.suprimento)}</p>
+            </div>
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <p className="text-xs text-muted mb-1">Sangria</p>
+              <p className="text-2xl font-bold text-amber-400">{formatCurrency(cashTotals.sangria)}</p>
+            </div>
+            <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
+              <p className="text-xs text-muted mb-1">Ajuste</p>
+              <p className="text-2xl font-bold text-sky-400">{formatCurrency(cashTotals.ajuste)}</p>
+            </div>
+          </div>
+
+          {/* KPIs – linha 4: tempo turno / caixa inicial */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-border bg-[hsl(var(--card-elevated))] p-4">
+              <p className="text-xs uppercase tracking-widest text-muted mb-1">Tempo do Turno</p>
+              <p className={`text-2xl font-bold ${shiftNeedsAttention ? "text-amber-300" : "text-foreground"}`}>{shiftDurationLabel}</p>
+            </div>
+            <div className="rounded-xl border border-border bg-[hsl(var(--card-elevated))] p-4">
+              <p className="text-xs uppercase tracking-widest text-muted mb-1">Caixa Inicial</p>
+              <p className="text-2xl font-bold text-foreground">{formatCurrency(openingCashRegistered)}</p>
+            </div>
+          </div>
+
+          {/* Tabela de empresas */}
+          {currentDailyClosingRows.length > 0 && (
+            <div className="rounded-xl border border-border bg-[hsl(var(--card-elevated))] p-4">
+              <p className="text-sm font-semibold text-foreground mb-3">{currentDailyClosingRows.length} empresa(s) registrada(s)</p>
+              <DataTable
+                columns={[
+                  { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
+                  { key: "informado", header: "Informado", render: (row) => formatCurrency(Number(row.ceia_base ?? 0)) },
+                  { key: "lancado", header: "Lancado", render: (row) => formatCurrency(Number(row.ceia_total_lancado ?? 0)) },
+                  { key: "faltante", header: "Faltante", render: (row) => { const v = Number(row.ceia_faltante ?? 0); return <span className={`font-semibold ${v === 0 ? "text-emerald-400" : v > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(v)}</span>; }},
+                  { key: "liquido", header: "Dinheiro", render: (row) => { const v = Number(row.cash_net || 0); return <span className={`font-semibold ${v < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(v)}</span>; }},
+                ]}
+                rows={currentDailyClosingRows}
+                keyExtractor={(row) => row.id}
+              />
+            </div>
+          )}
+
+          {/* Checklist */}
+          <div className="rounded-xl border border-border bg-[hsl(var(--card-elevated))] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">Checklist de fechamento</p>
+              <Badge variant={closeChecklistComplete ? "success" : "warning"}>{closeChecklistComplete ? "Completo" : "Pendente"}</Badge>
+            </div>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {[
+                { key: "vendas", label: "Conferi os fechamentos por empresa" },
+                { key: "movimentos", label: "Revisei sangrias, suprimentos e ajustes" },
+                { key: "caixa", label: "Contei o caixa fisico da gaveta" },
+                { key: "comprovantes", label: "Confirmei a conferencia geral" },
+              ].map((item) => (
+                <label key={item.key} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5 text-sm text-foreground cursor-pointer hover:bg-white/5 transition-colors">
+                  <input type="checkbox" className="mt-0.5 rounded" checked={closeChecklist[item.key as keyof typeof closeChecklist]} onChange={() => setCloseChecklist((prev) => ({ ...prev, [item.key]: !prev[item.key as keyof typeof prev] }))} />
+                  <span>{item.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Inputs e ações finais */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Input label="Valor contado (gaveta)" value={closeDeclared} onChange={(e) => setCloseDeclared(maskMoneyInput(e.target.value))} placeholder="0,00" hint="Conte o valor fisico antes de fechar." />
+            <Input label="Observacoes" value={closeObs} onChange={(e) => setCloseObs(e.target.value)} placeholder="Divergencias ou repasses" hint={closeDeclared.trim() && closeDifferencePreview !== 0 ? "Obrigatorio quando houver diferenca." : ""} />
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs text-muted">O sistema calcula o dinheiro liquido e encerra o turno com rastreabilidade.</p>
+            <div className="flex gap-2 sm:justify-end">
+              <Button type="button" variant="ghost" onClick={() => setShowCloseModal(false)}>Continuar operando</Button>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={confirmCloseShift}
+                disabled={isClosing || currentDailyClosingRows.length === 0 || !closeDeclared.trim() || !closeChecklistComplete || (closeDeclared.trim() !== "" && closeDifferencePreview !== 0 && !closeObs.trim())}
+              >
+                {isClosing ? "Fechando..." : "Fechar turno"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== CENTRAL VIAGENS (tela principal) ===== */}
-      {show("ceia") && (
+      {!showCloseModal && show("ceia") && (
         <div className="space-y-6">
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -1040,12 +1196,12 @@ export default function OperatorRebuildPage() {
       )}
 
       {/* ===== PONTO DIGITAL ===== */}
-      {show("ponto") && (
+      {!showCloseModal && show("ponto") && (
         <OperatorPunchSection punches={punches} operatorBlocked={operatorBlocked} isMounted={isMounted} onRegisterPunch={registerPunch} />
       )}
 
       {/* ===== CONFIGURACOES ===== */}
-      {show("configuracoes") && (
+      {!showCloseModal && show("configuracoes") && (
         <div className="space-y-6">
           <div><h1 className="text-2xl font-bold text-foreground">Configuracoes</h1><p className="text-sm text-muted">Preferencias do operador</p></div>
           <Card><p className="text-muted">Em breve: configuracoes do operador.</p></Card>
@@ -1071,110 +1227,6 @@ export default function OperatorRebuildPage() {
               </Button>
             </div>
           </Card>
-        </div>
-      )}
-
-      {/* Modal Fechamento de Turno */}
-      {showCloseModal && shift && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-sm">
-          <div className="flex min-h-full items-start justify-center p-2 sm:p-4">
-            <Card className="my-2 w-full max-w-4xl overflow-hidden sm:my-6">
-              <div className="mb-4 flex flex-col gap-3 border-b border-border pb-4 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-foreground">Fechamento de Turno</h2>
-                  <p className="text-sm text-muted">Confira o resumo e encerre o turno.</p>
-                </div>
-                <Badge variant={closeDifferenceStatus.variant}>{closeDifferenceStatus.label}</Badge>
-              </div>
-
-              <div className="max-h-[calc(100vh-10rem)] space-y-5 overflow-y-auto pr-1">
-                {shiftNeedsAttention && (
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-200">
-                    Atencao: turno aberto ha <strong>{shiftDurationLabel}</strong>. Revise com cuidado.
-                  </div>
-                )}
-
-                {/* Resumo */}
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Total informado</p><p className="mt-1 font-bold text-amber-300">{formatCurrency(dailyClosingSummary.totalInformado)}</p></div>
-                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Total lancado</p><p className="mt-1 font-bold text-foreground">{formatCurrency(dailyClosingSummary.totalLancado)}</p></div>
-                  <div className={`rounded-lg border p-3 ${dailyClosingSummary.faltante === 0 ? "border-emerald-500/20 bg-emerald-500/5" : dailyClosingSummary.faltante > 0 ? "border-amber-500/20 bg-amber-500/5" : "border-rose-500/30 bg-rose-500/10"}`}><p className="text-[10px] uppercase tracking-wide text-muted">Faltante</p><p className={`mt-1 font-bold ${dailyClosingSummary.faltante === 0 ? "text-emerald-400" : dailyClosingSummary.faltante > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(dailyClosingSummary.faltante)}</p></div>
-                  <div className={`rounded-lg border p-3 ${dailyClosingSummary.cashNet < 0 ? "border-rose-500/30 bg-rose-500/10" : "border-emerald-500/20 bg-emerald-500/5"}`}><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro liquido</p><p className={`mt-1 font-bold ${dailyClosingSummary.cashNet < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(dailyClosingSummary.cashNet)}</p></div>
-                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-3"><p className="text-[10px] uppercase tracking-wide text-muted">Empresas</p><p className="mt-1 font-bold text-foreground">{currentDailyClosingRows.length}</p></div>
-                </div>
-
-                {currentDailyClosingRows.length > 0 && (
-                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
-                    <p className="text-sm font-semibold text-foreground mb-3">{currentDailyClosingRows.length} empresa(s) registrada(s)</p>
-                    <DataTable
-                      className="max-h-56"
-                      columns={[
-                        { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
-                        { key: "informado", header: "Informado", render: (row) => formatCurrency(Number(row.ceia_base ?? 0)) },
-                        { key: "lancado", header: "Lancado", render: (row) => formatCurrency(Number(row.ceia_total_lancado ?? 0)) },
-                        { key: "faltante", header: "Faltante", render: (row) => { const v = Number(row.ceia_faltante ?? 0); return <span className={`font-semibold ${v === 0 ? "text-emerald-400" : v > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(v)}</span>; }},
-                        { key: "liquido", header: "Dinheiro", render: (row) => { const v = Number(row.cash_net || 0); return <span className={`font-semibold ${v < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(v)}</span>; }},
-                      ]}
-                      rows={currentDailyClosingRows}
-                      keyExtractor={(row) => row.id}
-                    />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div className="rounded-lg border border-success/20 bg-success/10 p-4"><p className="text-xs uppercase tracking-wide text-muted">Total esperado em caixa</p><p className="mt-1 text-2xl font-bold text-success">{formatCurrency(expectedCashVal)}</p><p className="text-xs text-muted">Dinheiro liquido + suprimentos - sangrias</p></div>
-                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4"><p className="text-xs uppercase tracking-wide text-muted">Valor contado</p><p className="mt-1 text-xl font-bold text-foreground">{closeDeclared.trim() ? formatCurrency(closeDeclaredValue) : "A informar"}</p></div>
-                  <div className={`rounded-lg border p-4 ${closeDifferenceToneClass}`}><p className="text-xs uppercase tracking-wide">Diferenca</p><p className="mt-1 text-2xl font-bold">{closeDeclared.trim() ? formatCurrency(closeDifferencePreview) : formatCurrency(0)}</p><p className="text-xs opacity-80">{closeDeclared.trim() ? (closeDifferencePreview === 0 ? "Caixa conferido" : closeDifferencePreview > 0 ? "Declarado acima" : "Declarado abaixo") : "Aguardando contagem"}</p></div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3"><p className="text-xs text-muted">Suprimento</p><p className="text-lg font-bold text-emerald-400">{formatCurrency(cashTotals.suprimento)}</p></div>
-                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3"><p className="text-xs text-muted">Sangria</p><p className="text-lg font-bold text-amber-400">{formatCurrency(cashTotals.sangria)}</p></div>
-                  <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-3"><p className="text-xs text-muted">Ajuste</p><p className="text-lg font-bold text-sky-400">{formatCurrency(cashTotals.ajuste)}</p></div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4"><p className="text-xs uppercase tracking-wide text-muted">Tempo do turno</p><p className={`mt-1 text-xl font-bold ${shiftNeedsAttention ? "text-amber-300" : "text-foreground"}`}>{shiftDurationLabel}</p></div>
-                  <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4"><p className="text-xs uppercase tracking-wide text-muted">Caixa inicial</p><p className="mt-1 text-xl font-bold text-foreground">{formatCurrency(openingCashRegistered)}</p></div>
-                </div>
-
-                <div className="rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-sm font-semibold text-foreground">Checklist de fechamento</p>
-                    <Badge variant={closeChecklistComplete ? "success" : "warning"}>{closeChecklistComplete ? "Completo" : "Pendente"}</Badge>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    {[
-                      { key: "vendas", label: "Conferi os fechamentos por empresa" },
-                      { key: "movimentos", label: "Revisei sangrias, suprimentos e ajustes" },
-                      { key: "caixa", label: "Contei o caixa fisico da gaveta" },
-                      { key: "comprovantes", label: "Confirmei a conferencia geral" },
-                    ].map((item) => (
-                      <label key={item.key} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2 text-sm text-foreground">
-                        <input type="checkbox" className="mt-0.5 rounded" checked={closeChecklist[item.key as keyof typeof closeChecklist]} onChange={() => setCloseChecklist((prev) => ({ ...prev, [item.key]: !prev[item.key as keyof typeof prev] }))} />
-                        <span>{item.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <Input label="Valor contado (gaveta)" value={closeDeclared} onChange={(e) => setCloseDeclared(maskMoneyInput(e.target.value))} autoFocus placeholder="0,00" hint="Conte o valor fisico antes de fechar." />
-                  <Input label="Observacoes" value={closeObs} onChange={(e) => setCloseObs(e.target.value)} placeholder="Divergencias ou repasses" hint={closeDeclared.trim() && closeDifferencePreview !== 0 ? "Obrigatorio quando houver diferenca." : ""} />
-                </div>
-              </div>
-
-              <div className="mt-6 flex flex-col gap-3 border-t border-border pt-4 md:flex-row md:items-center md:justify-between">
-                <p className="text-xs text-muted">O sistema calcula o dinheiro liquido e encerra o turno com rastreabilidade.</p>
-                <div className="flex gap-2 sm:justify-end">
-                  <Button type="button" variant="ghost" onClick={() => setShowCloseModal(false)}>Continuar</Button>
-                  <Button type="button" variant="danger" onClick={confirmCloseShift} disabled={isClosing || currentDailyClosingRows.length === 0 || !closeDeclared.trim() || !closeChecklistComplete || (closeDeclared.trim() !== "" && closeDifferencePreview !== 0 && !closeObs.trim())}>
-                    {isClosing ? "Fechando..." : "Fechar turno"}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
         </div>
       )}
 
