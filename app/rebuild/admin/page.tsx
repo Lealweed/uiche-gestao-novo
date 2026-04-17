@@ -1814,7 +1814,7 @@ export default function AdminRebuildPage() {
   };
 
   return (
-    <RebuildShell>
+    <RebuildShell navBadges={{ mensagens: unreadCount }}>
       {/* Breadcrumbs */}
       <Breadcrumb
         items={[
