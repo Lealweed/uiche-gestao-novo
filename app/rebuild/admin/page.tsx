@@ -111,6 +111,12 @@ type DailyCashClosingRow = {
   company: string;
   total_sold?: number | string | null;
   total_informado?: number | string | null;
+  total_cea?: number | string | null;
+  total_lancado_sem_taxas?: number | string | null;
+  taxa_estadual?: number | string | null;
+  taxa_interestadual?: number | string | null;
+  total_taxas?: number | string | null;
+  total_geral_lancado?: number | string | null;
   amount_pix?: number | string | null;
   amount_card?: number | string | null;
   amount_cash?: number | string | null;
@@ -126,6 +132,7 @@ type DailyCashClosingRow = {
   total_lancado?: number | string | null;
   ceia_faltante?: number | string | null;
   diferenca?: number | string | null;
+  diferenca_cea?: number | string | null;
   qtd_taxa_estadual?: number | string | null;
   qtd_taxa_interestadual?: number | string | null;
   link_pagamento?: number | string | null;
@@ -319,7 +326,28 @@ export default function AdminRebuildPage() {
   }, []);
 
   useEffect(() => {
-    if (activeConversation) return;
+    const activeConversationHasIdentity = Boolean(activeConversation?.operatorId || activeConversation?.boothId);
+    const activeConversationHasMessages = activeConversationHasIdentity
+      ? operatorMessages.some(
+          (message) =>
+            (activeConversation?.boothId
+              ? (message.booth_id ?? null) === activeConversation.boothId
+              : message.operator_id === activeConversation?.operatorId)
+        )
+      : false;
+
+    const firstMessage = operatorMessages[0];
+    if (firstMessage && (!activeConversationHasIdentity || !activeConversationHasMessages)) {
+      setActiveConversation({
+        operatorId: firstMessage.operator_id,
+        boothId: firstMessage.booth_id,
+        operatorName: nameOf(firstMessage.profiles) ?? "Operador",
+        boothName: boothOf(firstMessage.booths)?.name ?? "Guiche",
+      });
+      return;
+    }
+
+    if (activeConversationHasIdentity) return;
 
     const linkedConversation = operatorBoothLinks.find((link) => link.active && link.operator_id);
     if (linkedConversation?.operator_id) {
@@ -328,17 +356,6 @@ export default function AdminRebuildPage() {
         boothId: linkedConversation.booth_id ?? null,
         operatorName: nameOf(linkedConversation.profiles) ?? "Operador",
         boothName: boothOf(linkedConversation.booths)?.name ?? "Guiche",
-      });
-      return;
-    }
-
-    const firstMessage = operatorMessages[0];
-    if (firstMessage) {
-      setActiveConversation({
-        operatorId: firstMessage.operator_id,
-        boothId: firstMessage.booth_id,
-        operatorName: nameOf(firstMessage.profiles) ?? "Operador",
-        boothName: boothOf(firstMessage.booths)?.name ?? "Guiche",
       });
     }
   }, [activeConversation, operatorBoothLinks, operatorMessages]);
@@ -771,11 +788,12 @@ export default function AdminRebuildPage() {
     let query = supabase
       .from("operator_messages")
       .update({ read: true, read_at: new Date().toISOString(), read_by: data.user?.id ?? null })
-      .eq("operator_id", conversation.operatorId)
       .eq("sender_role", "operator")
       .eq("read", false);
 
-    query = conversation.boothId ? query.eq("booth_id", conversation.boothId) : query.is("booth_id", null);
+    query = conversation.boothId
+      ? query.eq("booth_id", conversation.boothId)
+      : query.eq("operator_id", conversation.operatorId).is("booth_id", null);
 
     const { error } = await query;
     if (error && !isSchemaToleranceError(error)) {
@@ -862,6 +880,36 @@ export default function AdminRebuildPage() {
     }
   }
 
+  const auditToNum = (value: number | string | null | undefined) => Number(value ?? 0);
+
+  function getAuditTotalCea(row: DailyCashClosingRow) {
+    return auditToNum(row.total_cea ?? row.total_informado ?? row.ceia_base ?? row.total_sold);
+  }
+
+  function getAuditTotalSemTaxas(row: DailyCashClosingRow) {
+    return auditToNum(row.total_lancado_sem_taxas ?? row.total_lancado ?? row.ceia_total_lancado);
+  }
+
+  function getAuditTaxaEstadual(row: DailyCashClosingRow) {
+    return auditToNum(row.taxa_estadual ?? row.ceia_link_estadual);
+  }
+
+  function getAuditTaxaInterestadual(row: DailyCashClosingRow) {
+    return auditToNum(row.taxa_interestadual ?? row.ceia_link_interestadual);
+  }
+
+  function getAuditTotalTaxas(row: DailyCashClosingRow) {
+    return auditToNum(row.total_taxas ?? (getAuditTaxaEstadual(row) + getAuditTaxaInterestadual(row)));
+  }
+
+  function getAuditTotalGeralLancado(row: DailyCashClosingRow) {
+    return auditToNum(row.total_geral_lancado ?? (getAuditTotalSemTaxas(row) + getAuditTotalTaxas(row)));
+  }
+
+  function getAuditDiferencaCea(row: DailyCashClosingRow) {
+    return auditToNum(row.diferenca_cea ?? row.ceia_faltante ?? row.diferenca);
+  }
+
   const repassesComputed = useMemo(() => {
     let faturamento = 0;
     let central = 0;
@@ -872,7 +920,7 @@ export default function AdminRebuildPage() {
     const companyByName = new Map(companies.map(c => [c.name.toLowerCase().trim(), c]));
 
     for (const row of dailyCashClosingRows) {
-      const v = Number(row.ceia_total_lancado || 0);
+      const v = getAuditTotalSemTaxas(row);
       const companyName = (row.company || "").trim();
       const companyNameKey = companyName.toLowerCase();
       const matchedCompany = companyByName.get(companyNameKey);
@@ -910,8 +958,8 @@ export default function AdminRebuildPage() {
     let qtd_federal = 0;
     let valor_federal = 0;
     for (const row of dailyCashClosingRows) {
-      const es = Number(row.ceia_link_estadual ?? 0);
-      const fed = Number(row.ceia_link_interestadual ?? 0);
+      const es = getAuditTaxaEstadual(row);
+      const fed = getAuditTaxaInterestadual(row);
       const qe = Number(row.qtd_taxa_estadual ?? 0);
       const qf = Number(row.qtd_taxa_interestadual ?? 0);
       if (es > 0 || qe > 0) { qtd_estadual += qe || (es > 0 ? 1 : 0); valor_estadual += es; }
@@ -950,7 +998,7 @@ export default function AdminRebuildPage() {
     for (const row of dailyCashClosingRows) {
       if (!row.date) continue;
       const date = new Date(row.date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-      dailyMap.set(date, (dailyMap.get(date) || 0) + Number(row.ceia_total_lancado || 0));
+      dailyMap.set(date, (dailyMap.get(date) || 0) + getAuditTotalGeralLancado(row));
     }
     return Array.from(dailyMap.entries())
       .map(([date, valor]) => ({ date, valor }))

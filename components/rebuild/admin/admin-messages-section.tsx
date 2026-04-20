@@ -100,37 +100,42 @@ export function AdminMessagesSection({
       if (!link.active || !link.operator_id) continue;
       const booth = boothOf(link.booths);
       const boothId = link.booth_id ?? null;
-      const key = `${link.operator_id}:${boothId ?? "sem-guiche"}`;
+      const key = boothId ? `booth:${boothId}` : `operator:${link.operator_id}`;
+      const existing = conversationMap.get(key);
 
       conversationMap.set(key, {
         key,
-        operatorId: link.operator_id,
+        operatorId: existing?.operatorId ?? link.operator_id,
         boothId,
-        operatorName: nameOf(link.profiles) ?? "Operador",
-        boothName: booth?.name ?? "Guiche",
-        boothCode: booth?.code ?? "--",
-        lastMessage: "Sem mensagens ainda.",
-        lastAt: null,
-        unreadMessages: 0,
+        operatorName: existing?.operatorName ?? nameOf(link.profiles) ?? "Operador",
+        boothName: existing?.boothName ?? booth?.name ?? "Guiche",
+        boothCode: existing?.boothCode ?? booth?.code ?? "--",
+        lastMessage: existing?.lastMessage ?? "Sem mensagens ainda.",
+        lastAt: existing?.lastAt ?? null,
+        unreadMessages: existing?.unreadMessages ?? 0,
       });
     }
 
     for (const message of operatorMessages) {
       const booth = boothOf(message.booths);
-      const key = `${message.operator_id}:${message.booth_id ?? "sem-guiche"}`;
+      const boothId = message.booth_id ?? null;
+      const key = boothId ? `booth:${boothId}` : `operator:${message.operator_id}`;
       const existing = conversationMap.get(key);
       const messageTime = new Date(message.created_at).getTime();
       const existingTime = existing?.lastAt ? new Date(existing.lastAt).getTime() : 0;
+      const shouldPromoteMessage = messageTime >= existingTime;
 
       conversationMap.set(key, {
         key,
-        operatorId: message.operator_id,
-        boothId: message.booth_id,
-        operatorName: existing?.operatorName ?? nameOf(message.profiles) ?? "Operador",
+        operatorId: shouldPromoteMessage ? message.operator_id : existing?.operatorId ?? message.operator_id,
+        boothId,
+        operatorName: shouldPromoteMessage
+          ? nameOf(message.profiles) ?? existing?.operatorName ?? "Operador"
+          : existing?.operatorName ?? nameOf(message.profiles) ?? "Operador",
         boothName: existing?.boothName ?? booth?.name ?? "Guiche",
         boothCode: existing?.boothCode ?? booth?.code ?? "--",
-        lastMessage: messageTime >= existingTime ? message.message : existing?.lastMessage ?? message.message,
-        lastAt: messageTime >= existingTime ? message.created_at : existing?.lastAt ?? message.created_at,
+        lastMessage: shouldPromoteMessage ? message.message : existing?.lastMessage ?? message.message,
+        lastAt: shouldPromoteMessage ? message.created_at : existing?.lastAt ?? message.created_at,
         unreadMessages: (existing?.unreadMessages ?? 0) + (!message.read && message.sender_role === "operator" ? 1 : 0),
       });
     }
@@ -155,11 +160,13 @@ export function AdminMessagesSection({
     if (!selectedConversation) return [];
 
     return operatorMessages
-      .filter(
-        (message) =>
-          message.operator_id === selectedConversation.operatorId &&
-          (message.booth_id ?? null) === (selectedConversation.boothId ?? null)
-      )
+      .filter((message) => {
+        if (selectedConversation.boothId) {
+          return (message.booth_id ?? null) === selectedConversation.boothId;
+        }
+
+        return message.operator_id === selectedConversation.operatorId && (message.booth_id ?? null) === null;
+      })
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [operatorMessages, selectedConversation]);
 

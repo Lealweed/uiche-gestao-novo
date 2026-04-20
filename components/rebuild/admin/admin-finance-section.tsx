@@ -22,6 +22,12 @@ type DailyCashClosingRow = {
   company: string;
   total_sold?: number | string | null;
   total_informado?: number | string | null;
+  total_cea?: number | string | null;
+  total_lancado_sem_taxas?: number | string | null;
+  taxa_estadual?: number | string | null;
+  taxa_interestadual?: number | string | null;
+  total_taxas?: number | string | null;
+  total_geral_lancado?: number | string | null;
   amount_pix?: number | string | null;
   amount_card?: number | string | null;
   amount_cash?: number | string | null;
@@ -36,6 +42,7 @@ type DailyCashClosingRow = {
   total_lancado?: number | string | null;
   ceia_faltante?: number | string | null;
   diferenca?: number | string | null;
+  diferenca_cea?: number | string | null;
   qtd_taxa_estadual?: number | string | null;
   qtd_taxa_interestadual?: number | string | null;
   link_pagamento?: number | string | null;
@@ -70,16 +77,32 @@ function formatPeriodDate(value: string) {
 
 const toNum = (v: any) => Number(v ?? 0);
 
-function getTotalInformado(row: DailyCashClosingRow) {
-  return toNum(row.total_informado ?? row.ceia_base ?? row.total_sold);
+function getTotalCea(row: DailyCashClosingRow) {
+  return toNum(row.total_cea ?? row.total_informado ?? row.ceia_base ?? row.total_sold);
 }
 
-function getTotalLancado(row: DailyCashClosingRow) {
-  return toNum(row.total_lancado ?? row.ceia_total_lancado);
+function getTotalLancadoSemTaxas(row: DailyCashClosingRow) {
+  return toNum(row.total_lancado_sem_taxas ?? row.total_lancado ?? row.ceia_total_lancado);
 }
 
-function getDiferenca(row: DailyCashClosingRow) {
-  return toNum(row.diferenca ?? row.ceia_faltante);
+function getTaxaEstadual(row: DailyCashClosingRow) {
+  return toNum(row.taxa_estadual ?? row.ceia_link_estadual);
+}
+
+function getTaxaInterestadual(row: DailyCashClosingRow) {
+  return toNum(row.taxa_interestadual ?? row.ceia_link_interestadual);
+}
+
+function getTotalTaxas(row: DailyCashClosingRow) {
+  return toNum(row.total_taxas ?? (getTaxaEstadual(row) + getTaxaInterestadual(row)));
+}
+
+function getTotalGeralLancado(row: DailyCashClosingRow) {
+  return toNum(row.total_geral_lancado ?? (getTotalLancadoSemTaxas(row) + getTotalTaxas(row)));
+}
+
+function getDiferencaCea(row: DailyCashClosingRow) {
+  return toNum(row.diferenca_cea ?? row.diferenca ?? row.ceia_faltante);
 }
 
 function getConferenceStatus(row: DailyCashClosingRow) {
@@ -95,7 +118,7 @@ function getConferenceStatus(row: DailyCashClosingRow) {
     return { key: "EXCEDIDO" as const, label: "EXCEDIDO", variant: "danger" as const, textClass: "text-red-600" };
   }
 
-  const diff = getDiferenca(row);
+  const diff = getDiferencaCea(row);
   if (Math.abs(diff) < 0.01) {
     return { key: "CONFERIDO" as const, label: "CONFERIDO", variant: "success" as const, textClass: "text-emerald-600" };
   }
@@ -159,13 +182,14 @@ export function AdminFinanceSection({
   const summary = useMemo(
     () => filteredRows.reduce(
       (acc, row) => {
-        acc.totalInformado += getTotalInformado(row);
-        acc.totalLancado += getTotalLancado(row);
-        acc.diferenca += getDiferenca(row);
-        if (getConferenceStatus(row).key === "CONFERIDO") acc.conferidos += 1;
+        acc.totalCea += getTotalCea(row);
+        acc.totalSemTaxas += getTotalLancadoSemTaxas(row);
+        acc.totalTaxas += getTotalTaxas(row);
+        acc.totalGeral += getTotalGeralLancado(row);
+        acc.diferencaCea += getDiferencaCea(row);
         return acc;
       },
-      { totalInformado: 0, totalLancado: 0, diferenca: 0, conferidos: 0 },
+      { totalCea: 0, totalSemTaxas: 0, totalTaxas: 0, totalGeral: 0, diferencaCea: 0 },
     ),
     [filteredRows],
   );
@@ -186,26 +210,28 @@ export function AdminFinanceSection({
       data: new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR"),
       operador: row.operator_name ?? nameOf(row.profiles ?? null) ?? "-",
       empresa: row.company,
-      total_informado: getTotalInformado(row),
-      total_lancado: getTotalLancado(row),
-      diferenca: getDiferenca(row),
-      status_conferencia: getConferenceStatus(row).label,
-      status: String(row.status ?? "-"),
-      created_at: row.created_at ? new Date(row.created_at).toLocaleString("pt-BR") : "-",
-      observacao: row.notes ?? "",
+      total_cea: getTotalCea(row),
+      total_lancado_sem_taxas: getTotalLancadoSemTaxas(row),
+      taxa_estadual: getTaxaEstadual(row),
+      taxa_interestadual: getTaxaInterestadual(row),
+      total_taxas: getTotalTaxas(row),
+      total_geral_lancado: getTotalGeralLancado(row),
+      diferenca_cea: getDiferencaCea(row),
+      status: getConferenceStatus(row).label,
     }));
 
     exportToCSV("relatorio-central-viagens", rows, [
       { key: "data", label: "Data" },
       { key: "operador", label: "Operador" },
       { key: "empresa", label: "Empresa" },
-      { key: "total_informado", label: "Total informado" },
-      { key: "total_lancado", label: "Total lancado" },
-      { key: "diferenca", label: "Diferenca" },
-      { key: "status_conferencia", label: "Status conferencia" },
+      { key: "total_cea", label: "Total CEA" },
+      { key: "total_lancado_sem_taxas", label: "Total lancado sem taxas" },
+      { key: "taxa_estadual", label: "Taxa estadual" },
+      { key: "taxa_interestadual", label: "Taxa interestadual" },
+      { key: "total_taxas", label: "Total de taxas" },
+      { key: "total_geral_lancado", label: "Total geral lancado" },
+      { key: "diferenca_cea", label: "Diferenca CEA" },
       { key: "status", label: "Status" },
-      { key: "created_at", label: "Criado em" },
-      { key: "observacao", label: "Observacao" },
     ]);
   }
 
@@ -266,34 +292,41 @@ export function AdminFinanceSection({
       </Card>
 
       {/* Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
-          label="Total informado"
-          value={formatCurrency(summary.totalInformado)}
+          label="Total CEA"
+          value={formatCurrency(summary.totalCea)}
           icon={<Wallet className="h-5 w-5" />}
           delta={`${filteredRows.length} registro(s)`}
           deltaType="neutral"
         />
         <StatCard
-          label="Total lancado"
-          value={formatCurrency(summary.totalLancado)}
+          label="Lancado sem taxas"
+          value={formatCurrency(summary.totalSemTaxas)}
           icon={<TrendingUp className="h-5 w-5" />}
-          delta="Soma das linhas filtradas"
+          delta="CEA separado das taxas"
           deltaType="neutral"
         />
         <StatCard
-          label="Diferenca"
-          value={formatCurrency(summary.diferenca)}
+          label="Total de taxas"
+          value={formatCurrency(summary.totalTaxas)}
           icon={<Wallet className="h-5 w-5" />}
-          delta={Math.abs(summary.diferenca) < 0.01 ? "Periodo conferido" : summary.diferenca > 0 ? "Faltando no periodo" : "Excedido no periodo"}
-          deltaType={Math.abs(summary.diferenca) < 0.01 ? "positive" : "neutral"}
+          delta="Estadual + interestadual"
+          deltaType="neutral"
         />
         <StatCard
-          label="Conferidos"
-          value={String(summary.conferidos)}
+          label="Total geral lancado"
+          value={formatCurrency(summary.totalGeral)}
+          icon={<TrendingUp className="h-5 w-5" />}
+          delta="Sem misturar CEA e taxas"
+          deltaType="neutral"
+        />
+        <StatCard
+          label="Diferenca CEA"
+          value={formatCurrency(summary.diferencaCea)}
           icon={<Eye className="h-5 w-5" />}
-          delta="Status CONFERIDO"
-          deltaType={summary.conferidos > 0 ? "positive" : "neutral"}
+          delta={Math.abs(summary.diferencaCea) < 0.01 ? "CONFERIDO" : summary.diferencaCea > 0 ? "FALTANDO" : "EXCEDIDO"}
+          deltaType={Math.abs(summary.diferencaCea) < 0.01 ? "positive" : "neutral"}
         />
       </div>
 
@@ -310,18 +343,20 @@ export function AdminFinanceSection({
             { key: "data", header: "Data", render: (row) => new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR") },
             { key: "operador", header: "Operador", render: (row) => row.operator_name ?? nameOf(row.profiles ?? null) ?? "-" },
             { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
-            { key: "total_informado", header: "Total informado", render: (row) => formatCurrency(getTotalInformado(row)) },
-            { key: "total_lancado", header: "Total lancado", render: (row) => formatCurrency(getTotalLancado(row)) },
-            { key: "diferenca", header: "Diferenca", render: (row) => {
+            { key: "total_cea", header: "Total CEA", render: (row) => formatCurrency(getTotalCea(row)) },
+            { key: "total_lancado_sem_taxas", header: "Lancado sem taxas", render: (row) => formatCurrency(getTotalLancadoSemTaxas(row)) },
+            { key: "taxa_estadual", header: "Taxa estadual", render: (row) => formatCurrency(getTaxaEstadual(row)) },
+            { key: "taxa_interestadual", header: "Taxa interestadual", render: (row) => formatCurrency(getTaxaInterestadual(row)) },
+            { key: "total_taxas", header: "Total taxas", render: (row) => formatCurrency(getTotalTaxas(row)) },
+            { key: "total_geral_lancado", header: "Total geral", render: (row) => formatCurrency(getTotalGeralLancado(row)) },
+            { key: "diferenca_cea", header: "Diferenca CEA", render: (row) => {
               const status = getConferenceStatus(row);
-              return <span className={`font-semibold ${status.textClass}`}>{formatCurrency(getDiferenca(row))}</span>;
+              return <span className={`font-semibold ${status.textClass}`}>{formatCurrency(getDiferencaCea(row))}</span>;
             }},
-            { key: "status_conferencia", header: "Conferencia", render: (row) => {
+            { key: "status", header: "Status", render: (row) => {
               const status = getConferenceStatus(row);
               return <Badge variant={status.variant}>{status.label}</Badge>;
             }},
-            { key: "status", header: "Status", render: (row) => String(row.status ?? "-") },
-            { key: "created_at", header: "Criado em", render: (row) => row.created_at ? new Date(row.created_at).toLocaleString("pt-BR") : "-" },
           ]}
           rows={filteredRows}
           keyExtractor={(row) => row.id}
