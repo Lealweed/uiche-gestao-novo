@@ -105,29 +105,36 @@ type CashMovementRow = { id: string; movement_type: "suprimento"|"sangria"|"ajus
 type ShiftCashClosingRow = { id: string; expected_cash: number; declared_cash: number; difference: number; note: string|null; created_at: string; user_id?: string; booth_id?: string; profiles: { full_name: string }|{ full_name: string }[]|null; booths: { code: string; name: string }|{ code: string; name: string }[]|null };
 type DailyCashClosingRow = {
   id: string;
-  office_id?: string;
-  user_id?: string;
+  office_id?: string | null;
+  user_id?: string | null;
   date: string;
   company: string;
-  total_sold: number;
-  amount_pix: number;
-  amount_card: number;
-  amount_cash: number;
-  ceia_amount?: number;
-  ceia_base: number;
-  ceia_pix: number;
-  ceia_debito: number;
-  ceia_credito: number;
-  ceia_link_estadual: number;
-  ceia_link_interestadual: number;
-  ceia_dinheiro: number;
-  ceia_total_lancado: number;
-  ceia_faltante: number;
-  qtd_taxa_estadual: number;
-  qtd_taxa_interestadual: number;
-  link_pagamento: number;
-  cash_net: number;
-  status: "open" | "closed";
+  total_sold?: number | string | null;
+  total_informado?: number | string | null;
+  amount_pix?: number | string | null;
+  amount_card?: number | string | null;
+  amount_cash?: number | string | null;
+  ceia_amount?: number | string | null;
+  ceia_base?: number | string | null;
+  ceia_pix?: number | string | null;
+  ceia_debito?: number | string | null;
+  ceia_credito?: number | string | null;
+  ceia_link_estadual?: number | string | null;
+  ceia_link_interestadual?: number | string | null;
+  ceia_dinheiro?: number | string | null;
+  ceia_total_lancado?: number | string | null;
+  total_lancado?: number | string | null;
+  ceia_faltante?: number | string | null;
+  diferenca?: number | string | null;
+  qtd_taxa_estadual?: number | string | null;
+  qtd_taxa_interestadual?: number | string | null;
+  link_pagamento?: number | string | null;
+  cash_net?: number | string | null;
+  status?: "open" | "closed" | string | null;
+  status_conferencia?: "CONFERIDO" | "FALTANDO" | "EXCEDIDO" | string | null;
+  operator_name?: string | null;
+  booth_name?: string | null;
+  booth_code?: string | null;
   notes: string | null;
   created_at: string;
   profiles: { full_name: string }|{ full_name: string }[]|null;
@@ -488,9 +495,8 @@ export default function AdminRebuildPage() {
         .order("created_at", { ascending: false })
         .limit(5000);
       let dailyCloseQ = supabase
-        .from("daily_cash_closings")
-        .select("id,office_id,user_id,date,company,total_sold,amount_pix,amount_card,amount_cash,ceia_amount,ceia_base,ceia_pix,ceia_debito,ceia_credito,ceia_link_estadual,ceia_link_interestadual,ceia_dinheiro,ceia_total_lancado,ceia_faltante,qtd_taxa_estadual,qtd_taxa_interestadual,link_pagamento,cash_net,status,notes,created_at")
-        .order("date", { ascending: false })
+        .from("v_admin_cash_audit")
+        .select("*")
         .order("created_at", { ascending: false })
         .limit(5000);
 
@@ -558,8 +564,16 @@ export default function AdminRebuildPage() {
       const hydratedClosings= ((closeRes.data ?? []) as unknown as ShiftCashClosingRow[]).map(c => ({ ...c, profiles: c.user_id ? { full_name: profileMap.get(c.user_id) ?? "-" } : null, booths: c.booth_id ? boothMap.get(c.booth_id) ?? null : null }));
       const hydratedDailyClosings = ((dailyCloseRes.data ?? []) as unknown as Omit<DailyCashClosingRow, "profiles" | "booths">[]).map((row) => ({
         ...row,
-        profiles: row.user_id ? { full_name: profileMap.get(row.user_id) ?? "-" } : null,
-        booths: row.office_id ? boothMap.get(row.office_id) ?? null : null,
+        profiles: row.user_id
+          ? { full_name: profileMap.get(row.user_id) ?? row.operator_name ?? "-" }
+          : row.operator_name
+            ? { full_name: row.operator_name }
+            : null,
+        booths: row.office_id
+          ? boothMap.get(row.office_id) ?? (row.booth_name ? { name: row.booth_name, code: row.booth_code ?? "-" } : null)
+          : row.booth_name
+            ? { name: row.booth_name, code: row.booth_code ?? "-" }
+            : null,
       }));
       const hydratedTxs     = ((txRes.data ?? []) as unknown as TxForReport[]).map(tx => ({ ...tx, profiles: tx.operator_id ? { full_name: profileMap.get(tx.operator_id) ?? "-" } : null, booths: tx.booth_id ? boothMap.get(tx.booth_id) ?? null : null, companies: tx.company_id ? { name: companyMap.get(tx.company_id) ?? "-" } : null, transaction_categories: tx.category_id ? { name: catMap.get(tx.category_id) ?? "-" } : null, transaction_subcategories: tx.subcategory_id ? { name: subMap.get(tx.subcategory_id) ?? "-" } : null }));
       const hydratedAttendance = ((attendanceRes.data ?? []) as { id: string; user_id: string; clock_in: string; clock_out: string | null }[]).map((row) => ({

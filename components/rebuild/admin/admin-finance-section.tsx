@@ -20,24 +20,31 @@ type DailyCashClosingRow = {
   user_id?: string | null;
   date: string;
   company: string;
-  total_sold: number;
-  amount_pix: number;
-  amount_card: number;
-  amount_cash: number;
-  ceia_base: number;
-  ceia_pix: number;
-  ceia_debito: number;
-  ceia_credito: number;
-  ceia_link_estadual: number;
-  ceia_link_interestadual: number;
-  ceia_dinheiro: number;
-  ceia_total_lancado: number;
-  ceia_faltante: number;
-  qtd_taxa_estadual: number;
-  qtd_taxa_interestadual: number;
-  link_pagamento: number;
-  cash_net: number;
-  status: "open" | "closed";
+  total_sold?: number | string | null;
+  total_informado?: number | string | null;
+  amount_pix?: number | string | null;
+  amount_card?: number | string | null;
+  amount_cash?: number | string | null;
+  ceia_base?: number | string | null;
+  ceia_pix?: number | string | null;
+  ceia_debito?: number | string | null;
+  ceia_credito?: number | string | null;
+  ceia_link_estadual?: number | string | null;
+  ceia_link_interestadual?: number | string | null;
+  ceia_dinheiro?: number | string | null;
+  ceia_total_lancado?: number | string | null;
+  total_lancado?: number | string | null;
+  ceia_faltante?: number | string | null;
+  diferenca?: number | string | null;
+  qtd_taxa_estadual?: number | string | null;
+  qtd_taxa_interestadual?: number | string | null;
+  link_pagamento?: number | string | null;
+  cash_net?: number | string | null;
+  status?: "open" | "closed" | string | null;
+  status_conferencia?: "CONFERIDO" | "FALTANDO" | "EXCEDIDO" | string | null;
+  operator_name?: string | null;
+  booth_name?: string | null;
+  booth_code?: string | null;
   notes: string | null;
   created_at: string;
   profiles: { full_name: string } | { full_name: string }[] | null;
@@ -61,14 +68,41 @@ function formatPeriodDate(value: string) {
   return `${day}/${month}/${year}`;
 }
 
-function getCeiaDifferenceStatus(diff: number) {
+const toNum = (v: any) => Number(v ?? 0);
+
+function getTotalInformado(row: DailyCashClosingRow) {
+  return toNum(row.total_informado ?? row.ceia_base ?? row.total_sold);
+}
+
+function getTotalLancado(row: DailyCashClosingRow) {
+  return toNum(row.total_lancado ?? row.ceia_total_lancado);
+}
+
+function getDiferenca(row: DailyCashClosingRow) {
+  return toNum(row.diferenca ?? row.ceia_faltante);
+}
+
+function getConferenceStatus(row: DailyCashClosingRow) {
+  const normalized = String(row.status_conferencia ?? "").trim().toUpperCase();
+
+  if (normalized === "CONFERIDO") {
+    return { key: "CONFERIDO" as const, label: "CONFERIDO", variant: "success" as const, textClass: "text-emerald-600" };
+  }
+  if (normalized === "FALTANDO") {
+    return { key: "FALTANDO" as const, label: "FALTANDO", variant: "warning" as const, textClass: "text-amber-600" };
+  }
+  if (normalized === "EXCEDIDO") {
+    return { key: "EXCEDIDO" as const, label: "EXCEDIDO", variant: "danger" as const, textClass: "text-red-600" };
+  }
+
+  const diff = getDiferenca(row);
   if (Math.abs(diff) < 0.01) {
-    return { key: "conferido" as const, label: "Conferido", variant: "success" as const, textClass: "text-emerald-600" };
+    return { key: "CONFERIDO" as const, label: "CONFERIDO", variant: "success" as const, textClass: "text-emerald-600" };
   }
   if (diff > 0) {
-    return { key: "faltando" as const, label: "Faltando", variant: "warning" as const, textClass: "text-amber-600" };
+    return { key: "FALTANDO" as const, label: "FALTANDO", variant: "warning" as const, textClass: "text-amber-600" };
   }
-  return { key: "excedido" as const, label: "Excedido", variant: "danger" as const, textClass: "text-red-600" };
+  return { key: "EXCEDIDO" as const, label: "EXCEDIDO", variant: "danger" as const, textClass: "text-red-600" };
 }
 
 /* ====== COMPONENTE ====== */
@@ -83,7 +117,7 @@ export function AdminFinanceSection({
 }: AdminFinanceSectionProps) {
   const [selectedCompany, setSelectedCompany] = useState("all");
   const [selectedOperator, setSelectedOperator] = useState("all");
-  const [conferenceFilter, setConferenceFilter] = useState<"all" | "conferido" | "faltando" | "excedido">("all");
+  const [conferenceFilter, setConferenceFilter] = useState<"all" | "CONFERIDO" | "FALTANDO" | "EXCEDIDO">("all");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -100,16 +134,23 @@ export function AdminFinanceSection({
   );
 
   const operatorOptions = useMemo(
-    () => Array.from(new Set(dailyCashClosingRows.map((row) => nameOf(row.profiles ?? null)).filter((v): v is string => Boolean(v && v !== "-")))).sort((a, b) => a.localeCompare(b, "pt-BR")),
+    () => Array.from(
+      new Map(
+        dailyCashClosingRows
+          .filter((row) => Boolean(row.user_id))
+          .map((row) => [row.user_id ?? "", row.operator_name ?? nameOf(row.profiles ?? null) ?? "-"])
+      ).entries(),
+    )
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR")),
     [dailyCashClosingRows],
   );
 
   const filteredRows = useMemo(
     () => dailyCashClosingRows.filter((row) => {
       const companyMatch = selectedCompany === "all" || row.company === selectedCompany;
-      const operatorName = nameOf(row.profiles ?? null) ?? "-";
-      const operatorMatch = selectedOperator === "all" || operatorName === selectedOperator;
-      const conferenceMatch = conferenceFilter === "all" || getCeiaDifferenceStatus(Number(row.ceia_faltante || 0)).key === conferenceFilter;
+      const operatorMatch = selectedOperator === "all" || row.user_id === selectedOperator;
+      const conferenceMatch = conferenceFilter === "all" || getConferenceStatus(row).key === conferenceFilter;
       return companyMatch && operatorMatch && conferenceMatch;
     }),
     [conferenceFilter, dailyCashClosingRows, selectedCompany, selectedOperator],
@@ -118,21 +159,16 @@ export function AdminFinanceSection({
   const summary = useMemo(
     () => filteredRows.reduce(
       (acc, row) => {
-        acc.base += Number(row.ceia_base || 0);
-        acc.lancado += Number(row.ceia_total_lancado || 0);
-        acc.diferenca += Number(row.ceia_faltante || 0);
-        if (Math.abs(Number(row.ceia_faltante || 0)) < 0.01) acc.conferidos += 1;
-        else acc.comDiferenca += 1;
+        acc.totalInformado += getTotalInformado(row);
+        acc.totalLancado += getTotalLancado(row);
+        acc.diferenca += getDiferenca(row);
+        if (getConferenceStatus(row).key === "CONFERIDO") acc.conferidos += 1;
         return acc;
       },
-      { base: 0, lancado: 0, diferenca: 0, conferidos: 0, comDiferenca: 0 },
+      { totalInformado: 0, totalLancado: 0, diferenca: 0, conferidos: 0 },
     ),
     [filteredRows],
   );
-
-  const percentConferidos = filteredRows.length > 0
-    ? ((summary.conferidos / filteredRows.length) * 100).toFixed(1)
-    : "0.0";
 
   function handleViewAll() {
     setSelectedCompany("all");
@@ -140,46 +176,35 @@ export function AdminFinanceSection({
     setConferenceFilter("all");
   }
 
+  async function handleClearAll() {
+    handleViewAll();
+    await onClearFilters();
+  }
+
   function handleExport() {
     const rows = filteredRows.map((row) => ({
       data: new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR"),
+      operador: row.operator_name ?? nameOf(row.profiles ?? null) ?? "-",
       empresa: row.company,
-      operador: nameOf(row.profiles ?? null) ?? "-",
-      base_ceia: Number(row.ceia_base || 0),
-      total_lancado: Number(row.ceia_total_lancado || 0),
-      faltante: Number(row.ceia_faltante || 0),
-      status: getCeiaDifferenceStatus(Number(row.ceia_faltante || 0)).label,
-      pix: Number(row.ceia_pix || 0),
-      debito: Number(row.ceia_debito || 0),
-      credito: Number(row.ceia_credito || 0),
-      dinheiro: Number(row.ceia_dinheiro || 0),
-      link_pagamento: Number(row.link_pagamento || 0),
-      link_estadual: Number(row.ceia_link_estadual || 0),
-      link_interestadual: Number(row.ceia_link_interestadual || 0),
-      qtd_taxa_estadual: Number(row.qtd_taxa_estadual || 0),
-      qtd_taxa_interestadual: Number(row.qtd_taxa_interestadual || 0),
-      dinheiro_liquido: Number(row.cash_net || 0),
+      total_informado: getTotalInformado(row),
+      total_lancado: getTotalLancado(row),
+      diferenca: getDiferenca(row),
+      status_conferencia: getConferenceStatus(row).label,
+      status: String(row.status ?? "-"),
+      created_at: row.created_at ? new Date(row.created_at).toLocaleString("pt-BR") : "-",
       observacao: row.notes ?? "",
     }));
 
     exportToCSV("relatorio-central-viagens", rows, [
       { key: "data", label: "Data" },
-      { key: "empresa", label: "Empresa" },
       { key: "operador", label: "Operador" },
-      { key: "base_ceia", label: "Total informado" },
+      { key: "empresa", label: "Empresa" },
+      { key: "total_informado", label: "Total informado" },
       { key: "total_lancado", label: "Total lancado" },
-      { key: "faltante", label: "Faltante" },
+      { key: "diferenca", label: "Diferenca" },
+      { key: "status_conferencia", label: "Status conferencia" },
       { key: "status", label: "Status" },
-      { key: "pix", label: "PIX" },
-      { key: "debito", label: "Debito" },
-      { key: "credito", label: "Credito" },
-      { key: "dinheiro", label: "Dinheiro" },
-      { key: "link_pagamento", label: "Link de pagamento" },
-      { key: "link_estadual", label: "Taxa estadual" },
-      { key: "link_interestadual", label: "Taxa interestadual" },
-      { key: "qtd_taxa_estadual", label: "Qtd taxa estadual" },
-      { key: "qtd_taxa_interestadual", label: "Qtd taxa interestadual" },
-      { key: "dinheiro_liquido", label: "Dinheiro liquido" },
+      { key: "created_at", label: "Criado em" },
       { key: "observacao", label: "Observacao" },
     ]);
   }
@@ -209,7 +234,7 @@ export function AdminFinanceSection({
             <label className="mb-1 block text-sm text-foreground">Operador</label>
             <select value={selectedOperator} onChange={(e) => setSelectedOperator(e.target.value)} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground">
               <option value="all">Todos os operadores</option>
-              {operatorOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+              {operatorOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </div>
 
@@ -217,9 +242,9 @@ export function AdminFinanceSection({
             <label className="mb-1 block text-sm text-foreground">Status</label>
             <select value={conferenceFilter} onChange={(e) => setConferenceFilter(e.target.value as typeof conferenceFilter)} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground">
               <option value="all">Todos</option>
-              <option value="conferido">Conferido</option>
-              <option value="faltando">Faltando</option>
-              <option value="excedido">Excedido</option>
+              <option value="CONFERIDO">CONFERIDO</option>
+              <option value="FALTANDO">FALTANDO</option>
+              <option value="EXCEDIDO">EXCEDIDO</option>
             </select>
           </div>
 
@@ -232,7 +257,7 @@ export function AdminFinanceSection({
             <Download className="mr-2 h-4 w-4" />
             CSV
           </Button>
-          <Button variant="ghost" type="button" onClick={() => void onClearFilters()}>Limpar</Button>
+          <Button variant="ghost" type="button" onClick={() => void handleClearAll()}>Limpar</Button>
         </form>
 
         <div className="mt-4">
@@ -244,31 +269,31 @@ export function AdminFinanceSection({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total informado"
-          value={formatCurrency(summary.base)}
+          value={formatCurrency(summary.totalInformado)}
           icon={<Wallet className="h-5 w-5" />}
-          delta={`${filteredRows.length} fechamento(s)`}
+          delta={`${filteredRows.length} registro(s)`}
           deltaType="neutral"
         />
         <StatCard
           label="Total lancado"
-          value={formatCurrency(summary.lancado)}
+          value={formatCurrency(summary.totalLancado)}
           icon={<TrendingUp className="h-5 w-5" />}
-          delta={summary.lancado >= summary.base ? "Lancamento completo ou acima" : "Existem diferencas"}
-          deltaType={summary.lancado >= summary.base ? "positive" : "neutral"}
+          delta="Soma das linhas filtradas"
+          deltaType="neutral"
         />
         <StatCard
-          label="Diferenca acumulada"
+          label="Diferenca"
           value={formatCurrency(summary.diferenca)}
           icon={<Wallet className="h-5 w-5" />}
           delta={Math.abs(summary.diferenca) < 0.01 ? "Periodo conferido" : summary.diferenca > 0 ? "Faltando no periodo" : "Excedido no periodo"}
           deltaType={Math.abs(summary.diferenca) < 0.01 ? "positive" : "neutral"}
         />
         <StatCard
-          label="% conferidos"
-          value={`${percentConferidos}%`}
+          label="Conferidos"
+          value={String(summary.conferidos)}
           icon={<Eye className="h-5 w-5" />}
-          delta={`${summary.conferidos} ok · ${summary.comDiferenca} com diferenca`}
-          deltaType={summary.comDiferenca === 0 ? "positive" : "neutral"}
+          delta="Status CONFERIDO"
+          deltaType={summary.conferidos > 0 ? "positive" : "neutral"}
         />
       </div>
 
@@ -283,22 +308,24 @@ export function AdminFinanceSection({
         <DataTable
           columns={[
             { key: "data", header: "Data", render: (row) => new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR") },
+            { key: "operador", header: "Operador", render: (row) => row.operator_name ?? nameOf(row.profiles ?? null) ?? "-" },
             { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
-            { key: "operador", header: "Operador", render: (row) => nameOf(row.profiles ?? null) ?? "-" },
-            { key: "base", header: "Base", render: (row) => formatCurrency(Number(row.ceia_base || 0)) },
-            { key: "lancado", header: "Lancado", render: (row) => formatCurrency(Number(row.ceia_total_lancado || 0)) },
-            { key: "faltante", header: "Faltante", render: (row) => {
-              const status = getCeiaDifferenceStatus(Number(row.ceia_faltante || 0));
-              return <span className={`font-semibold ${status.textClass}`}>{formatCurrency(Number(row.ceia_faltante || 0))}</span>;
+            { key: "total_informado", header: "Total informado", render: (row) => formatCurrency(getTotalInformado(row)) },
+            { key: "total_lancado", header: "Total lancado", render: (row) => formatCurrency(getTotalLancado(row)) },
+            { key: "diferenca", header: "Diferenca", render: (row) => {
+              const status = getConferenceStatus(row);
+              return <span className={`font-semibold ${status.textClass}`}>{formatCurrency(getDiferenca(row))}</span>;
             }},
-            { key: "status", header: "Status", render: (row) => {
-              const status = getCeiaDifferenceStatus(Number(row.ceia_faltante || 0));
+            { key: "status_conferencia", header: "Conferencia", render: (row) => {
+              const status = getConferenceStatus(row);
               return <Badge variant={status.variant}>{status.label}</Badge>;
             }},
+            { key: "status", header: "Status", render: (row) => String(row.status ?? "-") },
+            { key: "created_at", header: "Criado em", render: (row) => row.created_at ? new Date(row.created_at).toLocaleString("pt-BR") : "-" },
           ]}
           rows={filteredRows}
           keyExtractor={(row) => row.id}
-          emptyMessage="Nenhum fechamento encontrado."
+          emptyMessage="Nenhum registro encontrado para os filtros atuais."
         />
       </Card>
     </div>
