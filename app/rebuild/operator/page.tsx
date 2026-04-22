@@ -876,7 +876,7 @@ export default function OperatorRebuildPage() {
             <div className="rounded-xl border border-success/30 bg-success/10 p-5">
               <p className="text-xs uppercase tracking-widest text-muted mb-1">Total Esperado em Caixa</p>
               <p className="text-3xl font-bold text-success">{formatCurrency(expectedCashVal)}</p>
-              <p className="text-xs text-muted mt-1">Dinheiro liquido + suprimentos - sangrias</p>
+              <p className="text-xs text-muted mt-1">Dinheiro liquido + entradas - saidas</p>
             </div>
             <div className="rounded-xl border border-border bg-[hsl(var(--card-elevated))] p-5">
               <p className="text-xs uppercase tracking-widest text-muted mb-1">Valor Contado</p>
@@ -891,14 +891,14 @@ export default function OperatorRebuildPage() {
             </div>
           </div>
 
-          {/* KPIs – linha 3: suprimento / sangria / ajuste */}
+          {/* KPIs – linha 3: entrada / saida / ajuste */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-              <p className="text-xs text-muted mb-1">Suprimento</p>
+              <p className="text-xs text-muted mb-1">Entrada</p>
               <p className="text-2xl font-bold text-emerald-400">{formatCurrency(cashTotals.suprimento)}</p>
             </div>
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-              <p className="text-xs text-muted mb-1">Sangria</p>
+              <p className="text-xs text-muted mb-1">Saida</p>
               <p className="text-2xl font-bold text-amber-400">{formatCurrency(cashTotals.sangria)}</p>
             </div>
             <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
@@ -946,7 +946,7 @@ export default function OperatorRebuildPage() {
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {[
                 { key: "vendas", label: "Conferi os fechamentos por empresa" },
-                { key: "movimentos", label: "Revisei sangrias, suprimentos e ajustes" },
+                { key: "movimentos", label: "Revisei saidas, entradas e ajustes" },
                 { key: "caixa", label: "Contei o caixa fisico da gaveta" },
                 { key: "comprovantes", label: "Confirmei a conferencia geral" },
               ].map((item) => (
@@ -1081,7 +1081,7 @@ export default function OperatorRebuildPage() {
               <p className="text-sm text-muted">Informe o caixa inicial do guiche {booths.find((item) => item.booth_id === boothId)?.booth_name ?? "selecionado"}.</p>
             </div>
             <div className="space-y-4">
-              <Input label="Caixa inicial (R$)" value={openingCash} onChange={(e) => setOpeningCash(e.target.value)} autoFocus type="number" min="0" step="0.01" placeholder="0,00" hint="Sera registrado automaticamente como suprimento inicial." />
+              <Input label="Caixa inicial (R$)" value={openingCash} onChange={(e) => setOpeningCash(e.target.value)} autoFocus type="number" min="0" step="0.01" placeholder="0,00" hint="Sera registrado automaticamente como entrada inicial." />
               <Input label="Observacao inicial (opcional)" value={openingNote} onChange={(e) => setOpeningNote(e.target.value)} placeholder="Ex.: troco inicial" />
             </div>
             <div className="mt-6 flex gap-3 justify-end border-t border-border pt-4">
@@ -1094,11 +1094,11 @@ export default function OperatorRebuildPage() {
         </div>
       )}
 
-      {/* Modal Suprimento/Sangria */}
+      {/* Modal Entrada/Saida */}
       {showCashModal && shift && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <Card className="w-full max-w-md">
-            <h2 className="text-lg font-bold text-foreground mb-4">{cashModalType === "suprimento" ? "Novo Suprimento" : "Nova Sangria"}</h2>
+            <h2 className="text-lg font-bold text-foreground mb-4">{cashModalType === "suprimento" ? "Nova Entrada" : "Nova Saida"}</h2>
             <form onSubmit={submitCashMovement} className="space-y-4">
               <Input label="Valor (R$)" value={cashAmount} onChange={(e) => setCashAmount(e.target.value)} autoFocus type="number" min="0.01" step="0.01" required />
               <Input label="Observacao (Opcional)" value={cashNote} onChange={(e) => setCashNote(e.target.value)} placeholder="Motivo" />

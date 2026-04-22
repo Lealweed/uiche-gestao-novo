@@ -185,8 +185,8 @@ export function OperatorCeiaSection({
           </Button>
           {shift ? (
             <>
-              <Button variant="success" size="sm" onClick={onOpenSupply} disabled={operatorBlocked}>Suprimento</Button>
-              <Button variant="danger" size="sm" onClick={onOpenWithdrawal} disabled={operatorBlocked}>Sangria</Button>
+              <Button variant="success" size="sm" onClick={onOpenSupply} disabled={operatorBlocked}>Entrada</Button>
+              <Button variant="danger" size="sm" onClick={onOpenWithdrawal} disabled={operatorBlocked}>Saida</Button>
               <Button variant="secondary" size="sm" onClick={onOpenCloseShift} disabled={operatorBlocked}>
                 <Wallet size={16} className="mr-1" /> Fechar turno
               </Button>
@@ -256,7 +256,7 @@ export function OperatorCeiaSection({
 
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               <Input label="Custos" value={form.costsAmount} onChange={(event) => form.setCostsAmount(form.maskMoneyInput(event.target.value))} placeholder="0,00" />
-              <Input label="Sangria do resumo" value={form.sangriaAmount} onChange={(event) => form.setSangriaAmount(form.maskMoneyInput(event.target.value))} placeholder="0,00" />
+              <Input label="Saida do resumo" value={form.sangriaAmount} onChange={(event) => form.setSangriaAmount(form.maskMoneyInput(event.target.value))} placeholder="0,00" />
             </div>
 
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -310,7 +310,7 @@ export function OperatorCeiaSection({
                 <p className="mt-2 text-2xl font-bold">{formatCurrency(form.resultadoLiquido)}</p>
               </div>
               <div className="rounded-lg border border-current/20 bg-black/10 p-4 text-center">
-                <p className="text-xs uppercase tracking-wide opacity-80">Custos + sangria</p>
+                <p className="text-xs uppercase tracking-wide opacity-80">Custos + saida</p>
                 <p className="mt-2 text-2xl font-bold">{formatCurrency(form.formCostsAmount + form.formSangriaAmount)}</p>
               </div>
             </div>
@@ -397,11 +397,11 @@ export function OperatorCeiaSection({
               <div><p className="text-[10px] uppercase tracking-wide text-muted">Link pagamento</p><p className="font-semibold text-sky-400">{formatCurrency(Number(history.selectedRow.link_pagamento || 0))}</p></div>
               <div><p className="text-[10px] uppercase tracking-wide text-muted">Taxa estadual</p><p className="font-semibold text-amber-300">{formatCurrency(Number(history.selectedRow.ceia_link_estadual || 0))}</p></div>
               <div><p className="text-[10px] uppercase tracking-wide text-muted">Taxa interestadual</p><p className="font-semibold text-amber-200">{formatCurrency(Number(history.selectedRow.ceia_link_interestadual || 0))}</p></div>
-              <div><p className="text-[10px] uppercase tracking-wide text-muted">Custos / Sangria</p><p className="font-semibold text-foreground">{formatCurrency(Number(history.selectedRow.costs_amount || 0) + Number(history.selectedRow.sangria_amount || 0))}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wide text-muted">Custos / Saida</p><p className="font-semibold text-foreground">{formatCurrency(Number(history.selectedRow.costs_amount || 0) + Number(history.selectedRow.sangria_amount || 0))}</p></div>
             </div>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div><p className="text-[10px] uppercase tracking-wide text-muted">Custos</p><p className="font-semibold text-rose-300">{formatCurrency(Number(history.selectedRow.costs_amount || 0))}</p></div>
-              <div><p className="text-[10px] uppercase tracking-wide text-muted">Sangria</p><p className="font-semibold text-amber-300">{formatCurrency(Number(history.selectedRow.sangria_amount || 0))}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wide text-muted">Saida</p><p className="font-semibold text-amber-300">{formatCurrency(Number(history.selectedRow.sangria_amount || 0))}</p></div>
               <div><p className="text-[10px] uppercase tracking-wide text-muted">Resultado liquido</p><p className="font-semibold text-emerald-400">{formatCurrency(Number(history.selectedRow.ceia_total_lancado || 0) - Number(history.selectedRow.costs_amount || 0) - Number(history.selectedRow.sangria_amount || 0))}</p></div>
             </div>
             <div className="mt-3 flex items-center gap-2">
