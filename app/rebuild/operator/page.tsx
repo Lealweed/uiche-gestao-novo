@@ -86,6 +86,11 @@ function maskMoneyInput(value: string): string {
   });
 }
 
+function getShiftBusinessDate(openedAt?: string | null): string {
+  if (!openedAt) return new Date().toISOString().slice(0, 10);
+  return new Date(openedAt).toISOString().slice(0, 10);
+}
+
 /* ====== COMPONENTE PRINCIPAL ====== */
 export default function OperatorRebuildPage() {
   const router = useRouter();
@@ -245,8 +250,14 @@ export default function OperatorRebuildPage() {
 
       // Ponto Digital: clock_in automatico
       try {
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const { data: openPunch } = await supabase.from("user_attendance").select("id").eq("user_id", uid).is("clock_out", null).gte("clock_in", today.toISOString()).maybeSingle();
+        const { data: openPunch } = await supabase
+          .from("user_attendance")
+          .select("id")
+          .eq("user_id", uid)
+          .is("clock_out", null)
+          .order("clock_in", { ascending: false })
+          .limit(1)
+          .maybeSingle();
         if (!openPunch) await supabase.from("user_attendance").insert({ user_id: uid });
       } catch { /* silencioso */ }
     })();
@@ -355,15 +366,28 @@ export default function OperatorRebuildPage() {
   }
 
   async function syncAttendanceAfterPunch(type: Punch["punch_type"], uid: string) {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
     if (type === "entrada") {
-      const { data: openRow, error: selectError } = await supabase.from("user_attendance").select("id").eq("user_id", uid).is("clock_out", null).gte("clock_in", today.toISOString()).maybeSingle();
+      const { data: openRow, error: selectError } = await supabase
+        .from("user_attendance")
+        .select("id")
+        .eq("user_id", uid)
+        .is("clock_out", null)
+        .order("clock_in", { ascending: false })
+        .limit(1)
+        .maybeSingle();
       if (selectError && !isSchemaToleranceError(selectError)) return "Falha ao sincronizar a presenca do dia.";
-      if (!openRow) { const { error } = await supabase.from("user_attendance").insert({ user_id: uid }); if (error && !isSchemaToleranceError(error)) return "Falha ao sincronizar a presenca do dia."; }
+      if (!openRow) {
+        const { error } = await supabase.from("user_attendance").insert({ user_id: uid });
+        if (error && !isSchemaToleranceError(error)) return "Falha ao sincronizar a presenca do dia.";
+      }
       return null;
     }
     if (type === "saida") {
-      const { error } = await supabase.from("user_attendance").update({ clock_out: new Date().toISOString() }).eq("user_id", uid).is("clock_out", null).gte("clock_in", today.toISOString());
+      const { error } = await supabase
+        .from("user_attendance")
+        .update({ clock_out: new Date().toISOString() })
+        .eq("user_id", uid)
+        .is("clock_out", null);
       if (error && !isSchemaToleranceError(error)) return "Falha ao finalizar a presenca do dia.";
     }
     return null;
@@ -490,7 +514,7 @@ export default function OperatorRebuildPage() {
 
   function openCloseShiftModal() {
     if (!shift || !userId) return;
-    setDailyClosingDate(new Date().toISOString().slice(0, 10));
+    setDailyClosingDate(getShiftBusinessDate(shift.opened_at));
     setExpectedCashVal(dailyClosingExpectedCash);
     setCloseDeclared(""); setCloseObs("");
     setCloseChecklist({ vendas: false, movimentos: false, caixa: false, comprovantes: false });
@@ -530,14 +554,17 @@ export default function OperatorRebuildPage() {
       const { error } = await supabase.rpc("close_shift", { p_shift_id: shift.id, p_ip: null, p_notes: closingSummary || null });
       if (error) { setMessage(`Erro: ${error.message}`); return; }
 
+      const attendanceWarning = await syncAttendanceAfterPunch("saida", userId);
+
       const { error: closeDailyRowsError } = await supabase.from("daily_cash_closings").update({ status: "closed" }).eq("user_id", userId).eq("office_id", shift.booth_id).eq("date", dailyClosingDate);
       if (closeDailyRowsError && !isSchemaToleranceError(closeDailyRowsError)) console.warn("Falha ao atualizar status dos fechamentos diarios:", closeDailyRowsError.message);
 
       await logAction("CLOSE_SHIFT", "shifts", shift.id, { expected_cash: expectedCashVal, declared_cash: declaredCash, difference, checklist_confirmed: true, shift_duration_label: shiftDurationLabel, summary_date: dailyClosingDate, summary_rows: currentDailyClosingRows.length });
       setLastCloseResult({ expectedCash: normalizedExpected, declaredCash: normalizedDeclared, difference, note: closingSummary || null, closedAt: new Date().toISOString() });
       await loadDailyClosings(userId);
+      await loadPunches(userId);
       setShift(null); setCashMovements([]); setShowCloseModal(false); setSection("ceia");
-      setMessage(`Fechamento concluido. Resultado: ${difference === 0 ? "caixa conferido" : difference > 0 ? `sobra de ${formatCurrency(difference)}` : `falta de ${formatCurrency(Math.abs(difference))}`}.`);
+      setMessage(`Fechamento concluido. Resultado: ${difference === 0 ? "caixa conferido" : difference > 0 ? `sobra de ${formatCurrency(difference)}` : `falta de ${formatCurrency(Math.abs(difference))}`}.${attendanceWarning ? ` ${attendanceWarning}` : ""}`);
     } finally { setIsClosing(false); }
   }
 
@@ -817,6 +844,12 @@ export default function OperatorRebuildPage() {
   useEffect(() => {
     if (showCloseModal) setExpectedCashVal(dailyClosingExpectedCash);
   }, [dailyClosingExpectedCash, showCloseModal]);
+
+  useEffect(() => {
+    if (!shift?.opened_at) return;
+    const businessDate = getShiftBusinessDate(shift.opened_at);
+    setDailyClosingDate((current) => current === businessDate ? current : businessDate);
+  }, [shift?.opened_at]);
 
   const show = (s: string) => section === s;
 
