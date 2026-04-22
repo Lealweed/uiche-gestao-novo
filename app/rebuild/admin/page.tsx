@@ -6,7 +6,7 @@ import { canAccessAdminArea, canAccessAdminSection, getDefaultAdminSectionForRol
 import { isSchemaToleranceError } from "@/lib/schema-tolerance";
 
 import { AdminAttendanceSection } from "@/components/rebuild/admin/admin-attendance-section";
-import { AdminCashClosingSection } from "@/components/rebuild/admin/admin-cash-closing-section";
+import { AdminCashClosingConsolidado } from "@/components/rebuild/admin/admin-cash-closing-consolidado";
 import { AdminCompaniesSection } from "@/components/rebuild/admin/admin-companies-section";
 import { AdminDashboardSection } from "@/components/rebuild/admin/admin-dashboard-section";
 import { AdminFinanceSection } from "@/components/rebuild/admin/admin-finance-section";
@@ -2079,11 +2079,7 @@ export default function AdminRebuildPage() {
 
         {/* FECHAMENTO DE CAIXA */}
         {show("fechamento-caixa") && (
-          <AdminCashClosingSection
-            shiftCashClosingRows={shiftCashClosingRows}
-            shiftRows={rows}
-            isMounted={isMounted}
-          />
+          <AdminCashClosingConsolidado />
         )}
 
         {/* RELATORIOS */}

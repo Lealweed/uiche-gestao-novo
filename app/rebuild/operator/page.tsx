@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { canAccessAdminArea, getHomeRouteForRole } from "@/lib/rbac";
 import { tolerantData, isSchemaToleranceError } from "@/lib/schema-tolerance";
+import { OperatorCeiaSection } from "@/components/rebuild/operator/operator-ceia-section";
 import { OperatorPunchSection } from "@/components/rebuild/operator/operator-punch-section";
 import { RebuildShell } from "@/components/rebuild/shell/rebuild-shell";
 import { Card } from "@/components/rebuild/ui/card";
@@ -982,268 +983,80 @@ export default function OperatorRebuildPage() {
 
       {/* ===== CENTRAL VIAGENS (tela principal) ===== */}
       {!showCloseModal && show("ceia") && (
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Central Viagens</h1>
-              <p className="text-sm text-muted">
-                {shift
-                  ? `Turno aberto · ${booths.find((b) => b.booth_id === shift.booth_id)?.booth_name ?? "Guiche"} · ${shiftDurationLabel}`
-                  : "Abra um turno para iniciar os lancamentos"}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="ghost" size="sm" className="relative" onClick={() => void openChatPanel()}>
-                <MessageSquare size={16} className="mr-1" /> Chat
-                {unreadChatCount > 0 && (
-                  <span className="absolute -top-1 -right-1 size-5 flex items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white animate-pulse">
-                    {unreadChatCount > 9 ? "9+" : unreadChatCount}
-                  </span>
-                )}
-              </Button>
-              {shift && (
-                <>
-                  <Button variant="success" size="sm" onClick={() => { setCashModalType("suprimento"); setCashType("suprimento"); setShowCashModal(true); }} disabled={operatorBlocked}>Suprimento</Button>
-                  <Button variant="danger" size="sm" onClick={() => { setCashModalType("sangria"); setCashType("sangria"); setShowCashModal(true); }} disabled={operatorBlocked}>Sangria</Button>
-                  <Button variant="secondary" size="sm" onClick={() => openCloseShiftModal()} disabled={operatorBlocked}>
-                    <Wallet size={16} className="mr-1" /> Fechar turno
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Abrir turno */}
-          {!shift ? (
-            <Card className="border-slate-600">
-              <div className="text-center py-8">
-                <p className="text-lg font-semibold text-foreground mb-4">Nenhum turno aberto</p>
-                <p className="text-sm text-muted mb-6">Selecione o guiche e abra o turno para lancar fechamentos.</p>
-                <div className="flex items-center justify-center gap-3">
-                  <Select value={boothId} onChange={(e) => setBoothId(e.target.value)} disabled={operatorBlocked} className="w-48">
-                    <option value="">Selecione guiche</option>
-                    {booths.map((b) => <option key={b.booth_id} value={b.booth_id}>{b.booth_name}</option>)}
-                  </Select>
-                  <Button variant="success" onClick={openShift} disabled={operatorBlocked || !boothId}>Abrir Turno</Button>
-                </div>
-                {lastCloseResult && (
-                  <div className="mt-6 mx-auto max-w-md rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4 text-left">
-                    <p className="text-sm font-semibold text-foreground mb-2">Ultimo fechamento</p>
-                    <div className="grid grid-cols-3 gap-2 text-sm">
-                      <div><p className="text-xs text-muted">Esperado</p><p className="font-semibold text-foreground">{formatCurrency(lastCloseResult.expectedCash)}</p></div>
-                      <div><p className="text-xs text-muted">Declarado</p><p className="font-semibold text-foreground">{formatCurrency(lastCloseResult.declaredCash)}</p></div>
-                      <div><p className="text-xs text-muted">Diferenca</p><p className={`font-semibold ${lastCloseResult.difference === 0 ? "text-emerald-400" : lastCloseResult.difference > 0 ? "text-amber-400" : "text-rose-400"}`}>{formatCurrency(lastCloseResult.difference)}</p></div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Card>
-          ) : (
-            <>
-              {/* BLOCO A: Entrada CEIA */}
-              <Card>
-                <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-foreground">Lancamento de fechamento</h2>
-                    <p className="text-sm text-muted">Preencha o total informado e distribua pelos meios de pagamento.</p>
-                  </div>
-                  <Badge variant={dailyClosingCeiaFaltante === 0 && dailyClosingFormCeiaBase > 0 ? "success" : "warning"}>
-                    {dailyClosingCeiaFaltante === 0 && dailyClosingFormCeiaBase > 0 ? "Validacao ok" : "Preencha os campos"}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <Input label="Data" type="date" value={dailyClosingDate} onChange={(e) => setDailyClosingDate(e.target.value)} />
-                  <Select label="Empresa" value={dailyClosingCompany} onChange={(e) => setDailyClosingCompany(e.target.value)}>
-                    <option value="">Selecione a empresa</option>
-                    {companies.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </Select>
-                  <Input label="Total informado" value={dailyClosingCeiaBase} onChange={(e) => setDailyClosingCeiaBase(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <Input label="PIX" value={dailyClosingCeiaPix} onChange={(e) => setDailyClosingCeiaPix(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Debito" value={dailyClosingCeiaDebito} onChange={(e) => setDailyClosingCeiaDebito(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Credito" value={dailyClosingCeiaCredito} onChange={(e) => setDailyClosingCeiaCredito(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Dinheiro" value={dailyClosingCeiaDinheiro} onChange={(e) => setDailyClosingCeiaDinheiro(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <Input label="Link de pagamento" value={dailyClosingLinkPagamento} onChange={(e) => setDailyClosingLinkPagamento(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Taxa estadual" value={dailyClosingCeiaLinkEstadual} onChange={(e) => setDailyClosingCeiaLinkEstadual(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Taxa interestadual" value={dailyClosingCeiaLinkInterestadual} onChange={(e) => setDailyClosingCeiaLinkInterestadual(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <Input label="Custos" value={dailyClosingCostsAmount} onChange={(e) => setDailyClosingCostsAmount(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                  <Input label="Sangria do resumo" value={dailyClosingSangriaAmount} onChange={(e) => setDailyClosingSangriaAmount(maskMoneyInput(e.target.value))} placeholder="0,00" />
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <Input label="Qtd taxa estadual" type="number" min="0" step="1" value={dailyClosingQtdTaxaEstadual} onChange={(e) => setDailyClosingQtdTaxaEstadual(e.target.value)} placeholder="0" />
-                  <Input label="Qtd taxa interestadual" type="number" min="0" step="1" value={dailyClosingQtdTaxaInterestadual} onChange={(e) => setDailyClosingQtdTaxaInterestadual(e.target.value)} placeholder="0" />
-                </div>
-
-                <div className="mt-3">
-                  <Input label="Observacoes" value={dailyClosingNotes} onChange={(e) => setDailyClosingNotes(e.target.value)} placeholder="Opcional" />
-                </div>
-
-                <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div className={`rounded-lg border px-3 py-2 text-sm ${dailyClosingCeiaFaltante === 0 && dailyClosingFormCeiaBase > 0 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>
-                    {dailyClosingCeiaFaltante === 0 && dailyClosingFormCeiaBase > 0 ? "Meios de pagamento batem com o total informado." : dailyClosingFormCeiaBase === 0 ? "Informe o total." : `Faltam ${formatCurrency(Math.abs(dailyClosingCeiaFaltante))} para fechar.`}
-                  </div>
-                  <Button variant="success" onClick={saveDailyClosing} disabled={isSavingDailyClosing || !dailyClosingCompany || dailyClosingFormCeiaBase === 0}>
-                    {isSavingDailyClosing ? "Salvando..." : "Salvar fechamento"}
-                  </Button>
-                </div>
-              </Card>
-
-              {/* BLOCO B: Resultado em tempo real */}
-              <div className={`rounded-xl border p-6 ${dailyClosingCeiaToneClass}`}>
-                <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold">Conferencia em tempo real</h2>
-                    <p className="text-sm opacity-80">{dailyClosingCeiaStatusMessage}</p>
-                  </div>
-                  <Badge variant={dailyClosingCeiaStatus.variant}>{dailyClosingCeiaStatus.label}</Badge>
-                </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <div className="rounded-lg border border-current/20 bg-black/10 p-4 text-center">
-                    <p className="text-xs uppercase tracking-wide opacity-80">Total vendido externo</p>
-                    <p className="mt-2 text-3xl font-bold">{formatCurrency(dailyClosingFormCeiaBase)}</p>
-                  </div>
-                  <div className="rounded-lg border border-current/20 bg-black/10 p-4 text-center">
-                    <p className="text-xs uppercase tracking-wide opacity-80">Total lancado</p>
-                    <p className="mt-2 text-3xl font-bold">{formatCurrency(dailyClosingCeiaTotalLancado)}</p>
-                  </div>
-                  <div className="rounded-lg border border-current/20 bg-black/10 p-4 text-center">
-                    <p className="text-xs uppercase tracking-wide opacity-80">Diferenca</p>
-                    <p className="mt-2 text-3xl font-bold">{formatCurrency(dailyClosingCeiaFaltante)}</p>
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <div className="rounded-lg border border-current/20 bg-black/10 p-4 text-center">
-                    <p className="text-xs uppercase tracking-wide opacity-80">Total abatimentos</p>
-                    <p className="mt-2 text-2xl font-bold">{formatCurrency(dailyClosingTotalAbatimentos)}</p>
-                  </div>
-                  <div className="rounded-lg border border-current/20 bg-black/10 p-4 text-center">
-                    <p className="text-xs uppercase tracking-wide opacity-80">Resultado liquido</p>
-                    <p className="mt-2 text-2xl font-bold">{formatCurrency(dailyClosingResultadoLiquido)}</p>
-                  </div>
-                  <div className="rounded-lg border border-current/20 bg-black/10 p-4 text-center">
-                    <p className="text-xs uppercase tracking-wide opacity-80">Custos + sangria</p>
-                    <p className="mt-2 text-2xl font-bold">{formatCurrency(dailyClosingFormCostsAmount + dailyClosingFormSangriaAmount)}</p>
-                  </div>
-                </div>
-                {dailyClosingCeiaFaltante !== 0 && (
-                  <div className="mt-4 rounded-lg border border-current/30 bg-black/20 p-3 text-sm font-semibold">
-                    <p className="text-[10px] uppercase tracking-wide opacity-80">Alerta</p>
-                    <p className="mt-1">
-                      {dailyClosingCeiaFaltante > 0
-                        ? `Ainda faltam ${formatCurrency(dailyClosingCeiaFaltante)} para fechar.`
-                        : `O lancamento excedeu em ${formatCurrency(Math.abs(dailyClosingCeiaFaltante))}.`}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Resumo do dia */}
-              {currentDailyClosingRows.length > 0 && (
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <Card className="text-center p-4"><p className="text-xs text-muted uppercase mb-1">Total vendido externo</p><p className="text-xl font-bold text-amber-300">{formatCurrency(dailyClosingSummary.totalInformado)}</p></Card>
-                  <Card className="text-center p-4"><p className="text-xs text-muted uppercase mb-1">Total lancado</p><p className="text-xl font-bold text-foreground">{formatCurrency(dailyClosingSummary.totalLancado)}</p></Card>
-                  <Card className={`text-center p-4 ${dailyClosingSummary.faltante === 0 ? "border-emerald-500/30" : dailyClosingSummary.faltante > 0 ? "border-amber-500/30" : "border-rose-500/30"}`}>
-                    <p className="text-xs text-muted uppercase mb-1">Diferenca</p>
-                    <p className={`text-xl font-bold ${dailyClosingSummary.faltante === 0 ? "text-emerald-400" : dailyClosingSummary.faltante > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(dailyClosingSummary.faltante)}</p>
-                  </Card>
-                  <Card className="text-center p-4"><p className="text-xs text-muted uppercase mb-1">Resultado liquido</p><p className="text-xl font-bold text-foreground">{formatCurrency(dailyClosingSummary.resultadoLiquido)}</p></Card>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* BLOCO C: Historico CEIA */}
-          <Card>
-            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">Historico de fechamentos</h2>
-                <p className="text-sm text-muted">Todos os fechamentos salvos por data e empresa.</p>
-              </div>
-              <Badge variant="secondary">{filteredDailyClosingRows.length} registro{filteredDailyClosingRows.length !== 1 ? "s" : ""}</Badge>
-            </div>
-
-            <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Input label="Filtrar por data" type="date" value={dailyClosingFilterDate} onChange={(e) => setDailyClosingFilterDate(e.target.value)} />
-              <Input label="Filtrar por empresa" value={dailyClosingFilterCompany} onChange={(e) => setDailyClosingFilterCompany(e.target.value)} placeholder="Ex.: MP" />
-            </div>
-
-            <DataTable
-              columns={[
-                { key: "data", header: "Data", render: (row) => isMounted ? new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR") : row.date },
-                { key: "guiche", header: "Guiche", render: (row) => booths.find((item) => item.booth_id === row.office_id)?.booth_name ?? row.office_id },
-                { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
-                { key: "base", header: "Total vendido externo", render: (row) => formatCurrency(Number(row.ceia_base ?? row.total_sold ?? 0)) },
-                { key: "lancado", header: "Lancado", render: (row) => formatCurrency(Number(row.ceia_total_lancado ?? 0)) },
-                { key: "abatimentos", header: "Abatimentos", render: (row) => formatCurrency(Number(row.costs_amount ?? 0) + Number(row.sangria_amount ?? 0)) },
-                { key: "resultado", header: "Resultado liquido", render: (row) => formatCurrency(Number(row.ceia_total_lancado ?? 0) - Number(row.costs_amount ?? 0) - Number(row.sangria_amount ?? 0)) },
-                { key: "faltante", header: "Diferenca", render: (row) => {
-                  const val = Number(row.ceia_faltante ?? 0);
-                  return <span className={`font-semibold ${val === 0 ? "text-emerald-400" : val > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(val)}</span>;
-                }},
-                { key: "status", header: "Status", render: (row) => {
-                  const val = Number(row.ceia_faltante ?? 0);
-                  return <Badge variant={val === 0 ? "success" : val > 0 ? "warning" : "danger"}>{val === 0 ? "Conferido" : val > 0 ? "Faltando" : "Excedido"}</Badge>;
-                }},
-                { key: "acoes", header: "", render: (row) => <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedDailyClosingId(row.id)}>Detalhes</Button> },
-              ]}
-              rows={filteredDailyClosingRows}
-              keyExtractor={(row) => row.id}
-              emptyMessage="Nenhum fechamento salvo ainda."
-            />
-
-            {selectedDailyClosing && (
-              <div className="mt-4 rounded-lg border border-border bg-[hsl(var(--card-elevated))] p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Detalhes do fechamento</p>
-                    <p className="text-xs text-muted">{selectedDailyClosing.company} em {isMounted ? new Date(`${selectedDailyClosing.date}T12:00:00`).toLocaleDateString("pt-BR") : selectedDailyClosing.date}</p>
-                  </div>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedDailyClosingId(null)}>Fechar</Button>
-                </div>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Total vendido externo</p><p className="font-semibold text-amber-300">{formatCurrency(Number(selectedDailyClosing.ceia_base ?? selectedDailyClosing.total_sold ?? 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Lancado</p><p className="font-semibold text-foreground">{formatCurrency(Number(selectedDailyClosing.ceia_total_lancado ?? 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Diferenca</p><p className={`font-semibold ${Number(selectedDailyClosing.ceia_faltante ?? 0) === 0 ? "text-emerald-400" : Number(selectedDailyClosing.ceia_faltante ?? 0) > 0 ? "text-amber-300" : "text-rose-400"}`}>{formatCurrency(Number(selectedDailyClosing.ceia_faltante ?? 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro liquido</p><p className={`font-semibold ${Number(selectedDailyClosing.cash_net || 0) < 0 ? "text-rose-400" : "text-emerald-400"}`}>{formatCurrency(Number(selectedDailyClosing.cash_net || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Qtd taxas</p><p className="font-semibold text-foreground">{Number(selectedDailyClosing.qtd_taxa_estadual ?? 0)} est / {Number(selectedDailyClosing.qtd_taxa_interestadual ?? 0)} inter</p></div>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-8">
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">PIX</p><p className="font-semibold text-cyan-400">{formatCurrency(Number(selectedDailyClosing.ceia_pix || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Debito</p><p className="font-semibold text-blue-400">{formatCurrency(Number(selectedDailyClosing.ceia_debito || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Credito</p><p className="font-semibold text-violet-400">{formatCurrency(Number(selectedDailyClosing.ceia_credito || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Dinheiro</p><p className="font-semibold text-emerald-400">{formatCurrency(Number(selectedDailyClosing.ceia_dinheiro || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Link pagamento</p><p className="font-semibold text-sky-400">{formatCurrency(Number(selectedDailyClosing.link_pagamento || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Taxa estadual</p><p className="font-semibold text-amber-300">{formatCurrency(Number(selectedDailyClosing.ceia_link_estadual || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Taxa interestadual</p><p className="font-semibold text-amber-200">{formatCurrency(Number(selectedDailyClosing.ceia_link_interestadual || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Custos / Sangria</p><p className="font-semibold text-foreground">{formatCurrency(Number(selectedDailyClosing.costs_amount || 0) + Number(selectedDailyClosing.sangria_amount || 0))}</p></div>
-                </div>
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Custos</p><p className="font-semibold text-rose-300">{formatCurrency(Number(selectedDailyClosing.costs_amount || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Sangria</p><p className="font-semibold text-amber-300">{formatCurrency(Number(selectedDailyClosing.sangria_amount || 0))}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted">Resultado liquido</p><p className="font-semibold text-emerald-400">{formatCurrency(Number(selectedDailyClosing.ceia_total_lancado || 0) - Number(selectedDailyClosing.costs_amount || 0) - Number(selectedDailyClosing.sangria_amount || 0))}</p></div>
-                </div>
-                <div className="mt-3 flex items-center gap-2">
-                  <Badge variant={Number(selectedDailyClosing.ceia_faltante ?? 0) === 0 ? "success" : Number(selectedDailyClosing.ceia_faltante ?? 0) > 0 ? "warning" : "danger"}>
-                    {Number(selectedDailyClosing.ceia_faltante ?? 0) === 0 ? "Conferido" : Number(selectedDailyClosing.ceia_faltante ?? 0) > 0 ? "Faltando" : "Excedido"}
-                  </Badge>
-                  <Badge variant={selectedDailyClosing.status === "closed" ? "success" : "warning"}>{selectedDailyClosing.status === "closed" ? "Turno fechado" : "Turno aberto"}</Badge>
-                </div>
-                {selectedDailyClosing.notes && <p className="mt-3 text-sm text-muted">Obs: {selectedDailyClosing.notes}</p>}
-              </div>
-            )}
-          </Card>
-        </div>
+        <OperatorCeiaSection
+          userId={userId!}
+          shift={shift}
+          booths={booths}
+          boothId={boothId}
+          companies={companies}
+          operatorBlocked={operatorBlocked}
+          shiftDurationLabel={shiftDurationLabel}
+          lastCloseResult={lastCloseResult}
+          unreadChatCount={unreadChatCount}
+          isMounted={isMounted}
+          setBoothId={setBoothId}
+          onOpenChat={openChatPanel}
+          onOpenSupply={() => { setCashModalType("suprimento"); setCashType("suprimento"); setShowCashModal(true); }}
+          onOpenWithdrawal={() => { setCashModalType("sangria"); setCashType("sangria"); setShowCashModal(true); }}
+          onOpenCloseShift={openCloseShiftModal}
+          onOpenShift={openShift}
+          form={{
+            date: dailyClosingDate,
+            company: dailyClosingCompany,
+            ceiaBase: dailyClosingCeiaBase,
+            ceiaPix: dailyClosingCeiaPix,
+            ceiaDebito: dailyClosingCeiaDebito,
+            ceiaCredito: dailyClosingCeiaCredito,
+            ceiaDinheiro: dailyClosingCeiaDinheiro,
+            linkPagamento: dailyClosingLinkPagamento,
+            ceiaLinkEstadual: dailyClosingCeiaLinkEstadual,
+            ceiaLinkInterestadual: dailyClosingCeiaLinkInterestadual,
+            qtdTaxaEstadual: dailyClosingQtdTaxaEstadual,
+            qtdTaxaInterestadual: dailyClosingQtdTaxaInterestadual,
+            costsAmount: dailyClosingCostsAmount,
+            sangriaAmount: dailyClosingSangriaAmount,
+            notes: dailyClosingNotes,
+            formCeiaBase: dailyClosingFormCeiaBase,
+            formCostsAmount: dailyClosingFormCostsAmount,
+            formSangriaAmount: dailyClosingFormSangriaAmount,
+            ceiaTotalLancado: dailyClosingCeiaTotalLancado,
+            totalAbatimentos: dailyClosingTotalAbatimentos,
+            resultadoLiquido: dailyClosingResultadoLiquido,
+            ceiaFaltante: dailyClosingCeiaFaltante,
+            ceiaStatus: dailyClosingCeiaStatus,
+            ceiaToneClass: dailyClosingCeiaToneClass,
+            ceiaStatusMessage: dailyClosingCeiaStatusMessage,
+            isSaving: isSavingDailyClosing,
+            setDate: setDailyClosingDate,
+            setCompany: setDailyClosingCompany,
+            setCeiaBase: setDailyClosingCeiaBase,
+            setCeiaPix: setDailyClosingCeiaPix,
+            setCeiaDebito: setDailyClosingCeiaDebito,
+            setCeiaCredito: setDailyClosingCeiaCredito,
+            setCeiaDinheiro: setDailyClosingCeiaDinheiro,
+            setLinkPagamento: setDailyClosingLinkPagamento,
+            setCeiaLinkEstadual: setDailyClosingCeiaLinkEstadual,
+            setCeiaLinkInterestadual: setDailyClosingCeiaLinkInterestadual,
+            setQtdTaxaEstadual: setDailyClosingQtdTaxaEstadual,
+            setQtdTaxaInterestadual: setDailyClosingQtdTaxaInterestadual,
+            setCostsAmount: setDailyClosingCostsAmount,
+            setSangriaAmount: setDailyClosingSangriaAmount,
+            setNotes: setDailyClosingNotes,
+            onSave: saveDailyClosing,
+            maskMoneyInput,
+          }}
+          history={{
+            currentRows: currentDailyClosingRows,
+            summary: dailyClosingSummary,
+            filterDate: dailyClosingFilterDate,
+            filterCompany: dailyClosingFilterCompany,
+            filteredRows: filteredDailyClosingRows,
+            selectedRow: selectedDailyClosing,
+            setFilterDate: setDailyClosingFilterDate,
+            setFilterCompany: setDailyClosingFilterCompany,
+            setSelectedId: setSelectedDailyClosingId,
+          }}
+        />
       )}
 
       {/* ===== PONTO DIGITAL ===== */}
