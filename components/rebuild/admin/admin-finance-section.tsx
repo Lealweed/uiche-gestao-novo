@@ -20,6 +20,7 @@ type DailyCashClosingRow = {
   user_id?: string | null;
   date: string;
   company: string;
+  total_vendido_externo?: number | string | null;
   total_sold?: number | string | null;
   total_informado?: number | string | null;
   total_cea?: number | string | null;
@@ -46,6 +47,10 @@ type DailyCashClosingRow = {
   qtd_taxa_estadual?: number | string | null;
   qtd_taxa_interestadual?: number | string | null;
   link_pagamento?: number | string | null;
+  costs_amount?: number | string | null;
+  sangria_amount?: number | string | null;
+  total_abatimentos?: number | string | null;
+  resultado_liquido?: number | string | null;
   cash_net?: number | string | null;
   status?: "open" | "closed" | string | null;
   status_conferencia?: "CONFERIDO" | "FALTANDO" | "EXCEDIDO" | string | null;
@@ -78,7 +83,7 @@ function formatPeriodDate(value: string) {
 const toNum = (v: any) => Number(v ?? 0);
 
 function getTotalCea(row: DailyCashClosingRow) {
-  return toNum(row.total_cea ?? row.total_informado ?? row.ceia_base ?? row.total_sold);
+  return toNum(row.total_vendido_externo ?? row.total_cea ?? row.total_informado ?? row.ceia_base ?? row.total_sold);
 }
 
 function getTotalLancadoSemTaxas(row: DailyCashClosingRow) {
@@ -99,6 +104,14 @@ function getTotalTaxas(row: DailyCashClosingRow) {
 
 function getTotalGeralLancado(row: DailyCashClosingRow) {
   return toNum(row.total_geral_lancado ?? (getTotalLancadoSemTaxas(row) + getTotalTaxas(row)));
+}
+
+function getTotalAbatimentos(row: DailyCashClosingRow) {
+  return toNum(row.total_abatimentos ?? (toNum(row.costs_amount) + toNum(row.sangria_amount)));
+}
+
+function getResultadoLiquido(row: DailyCashClosingRow) {
+  return toNum(row.resultado_liquido ?? (getTotalGeralLancado(row) - getTotalAbatimentos(row)));
 }
 
 function getDiferencaCea(row: DailyCashClosingRow) {
@@ -140,6 +153,7 @@ export function AdminFinanceSection({
 }: AdminFinanceSectionProps) {
   const [selectedCompany, setSelectedCompany] = useState("all");
   const [selectedOperator, setSelectedOperator] = useState("all");
+  const [selectedBooth, setSelectedBooth] = useState("all");
   const [conferenceFilter, setConferenceFilter] = useState<"all" | "CONFERIDO" | "FALTANDO" | "EXCEDIDO">("all");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -169,14 +183,28 @@ export function AdminFinanceSection({
     [dailyCashClosingRows],
   );
 
+  const boothOptions = useMemo(
+    () => Array.from(
+      new Map(
+        dailyCashClosingRows
+          .filter((row) => Boolean(row.office_id))
+          .map((row) => [row.office_id ?? "", row.booth_name ?? row.booth_code ?? "Guiche"])
+      ).entries(),
+    )
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR")),
+    [dailyCashClosingRows],
+  );
+
   const filteredRows = useMemo(
     () => dailyCashClosingRows.filter((row) => {
       const companyMatch = selectedCompany === "all" || row.company === selectedCompany;
       const operatorMatch = selectedOperator === "all" || row.user_id === selectedOperator;
+      const boothMatch = selectedBooth === "all" || row.office_id === selectedBooth;
       const conferenceMatch = conferenceFilter === "all" || getConferenceStatus(row).key === conferenceFilter;
-      return companyMatch && operatorMatch && conferenceMatch;
+      return companyMatch && operatorMatch && boothMatch && conferenceMatch;
     }),
-    [conferenceFilter, dailyCashClosingRows, selectedCompany, selectedOperator],
+    [conferenceFilter, dailyCashClosingRows, selectedBooth, selectedCompany, selectedOperator],
   );
 
   const summary = useMemo(
@@ -186,10 +214,12 @@ export function AdminFinanceSection({
         acc.totalSemTaxas += getTotalLancadoSemTaxas(row);
         acc.totalTaxas += getTotalTaxas(row);
         acc.totalGeral += getTotalGeralLancado(row);
+        acc.totalAbatimentos += getTotalAbatimentos(row);
+        acc.resultadoLiquido += getResultadoLiquido(row);
         acc.diferencaCea += getDiferencaCea(row);
         return acc;
       },
-      { totalCea: 0, totalSemTaxas: 0, totalTaxas: 0, totalGeral: 0, diferencaCea: 0 },
+      { totalCea: 0, totalSemTaxas: 0, totalTaxas: 0, totalGeral: 0, totalAbatimentos: 0, resultadoLiquido: 0, diferencaCea: 0 },
     ),
     [filteredRows],
   );
@@ -197,6 +227,7 @@ export function AdminFinanceSection({
   function handleViewAll() {
     setSelectedCompany("all");
     setSelectedOperator("all");
+    setSelectedBooth("all");
     setConferenceFilter("all");
   }
 
@@ -209,6 +240,7 @@ export function AdminFinanceSection({
     const rows = filteredRows.map((row) => ({
       data: new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR"),
       operador: row.operator_name ?? nameOf(row.profiles ?? null) ?? "-",
+      guiche: row.booth_name ?? row.booth_code ?? "-",
       empresa: row.company,
       total_cea: getTotalCea(row),
       total_lancado_sem_taxas: getTotalLancadoSemTaxas(row),
@@ -216,6 +248,8 @@ export function AdminFinanceSection({
       taxa_interestadual: getTaxaInterestadual(row),
       total_taxas: getTotalTaxas(row),
       total_geral_lancado: getTotalGeralLancado(row),
+      total_abatimentos: getTotalAbatimentos(row),
+      resultado_liquido: getResultadoLiquido(row),
       diferenca_cea: getDiferencaCea(row),
       status: getConferenceStatus(row).label,
     }));
@@ -223,6 +257,7 @@ export function AdminFinanceSection({
     exportToCSV("relatorio-central-viagens", rows, [
       { key: "data", label: "Data" },
       { key: "operador", label: "Operador" },
+      { key: "guiche", label: "Guiche" },
       { key: "empresa", label: "Empresa" },
       { key: "total_cea", label: "Total CEA" },
       { key: "total_lancado_sem_taxas", label: "Total lancado sem taxas" },
@@ -230,6 +265,8 @@ export function AdminFinanceSection({
       { key: "taxa_interestadual", label: "Taxa interestadual" },
       { key: "total_taxas", label: "Total de taxas" },
       { key: "total_geral_lancado", label: "Total geral lancado" },
+      { key: "total_abatimentos", label: "Total abatimentos" },
+      { key: "resultado_liquido", label: "Resultado liquido" },
       { key: "diferenca_cea", label: "Diferenca CEA" },
       { key: "status", label: "Status" },
     ]);
@@ -265,6 +302,14 @@ export function AdminFinanceSection({
           </div>
 
           <div className="min-w-[200px]">
+            <label className="mb-1 block text-sm text-foreground">Guiche</label>
+            <select value={selectedBooth} onChange={(e) => setSelectedBooth(e.target.value)} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground">
+              <option value="all">Todos os guiches</option>
+              {boothOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </div>
+
+          <div className="min-w-[200px]">
             <label className="mb-1 block text-sm text-foreground">Status</label>
             <select value={conferenceFilter} onChange={(e) => setConferenceFilter(e.target.value as typeof conferenceFilter)} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground">
               <option value="all">Todos</option>
@@ -292,7 +337,7 @@ export function AdminFinanceSection({
       </Card>
 
       {/* Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard
           label="Total CEA"
           value={formatCurrency(summary.totalCea)}
@@ -322,6 +367,20 @@ export function AdminFinanceSection({
           deltaType="neutral"
         />
         <StatCard
+          label="Abatimentos"
+          value={formatCurrency(summary.totalAbatimentos)}
+          icon={<Wallet className="h-5 w-5" />}
+          delta="Custos + sangria"
+          deltaType="neutral"
+        />
+        <StatCard
+          label="Resultado liquido"
+          value={formatCurrency(summary.resultadoLiquido)}
+          icon={<TrendingUp className="h-5 w-5" />}
+          delta="Lancado - abatimentos"
+          deltaType="positive"
+        />
+        <StatCard
           label="Diferenca CEA"
           value={formatCurrency(summary.diferencaCea)}
           icon={<Eye className="h-5 w-5" />}
@@ -341,14 +400,17 @@ export function AdminFinanceSection({
         <DataTable
           columns={[
             { key: "data", header: "Data", render: (row) => new Date(`${row.date}T12:00:00`).toLocaleDateString("pt-BR") },
+            { key: "guiche", header: "Guiche", render: (row) => row.booth_name ?? row.booth_code ?? "-" },
             { key: "operador", header: "Operador", render: (row) => row.operator_name ?? nameOf(row.profiles ?? null) ?? "-" },
             { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
-            { key: "total_cea", header: "Total CEA", render: (row) => formatCurrency(getTotalCea(row)) },
+            { key: "total_cea", header: "Total externo", render: (row) => formatCurrency(getTotalCea(row)) },
             { key: "total_lancado_sem_taxas", header: "Lancado sem taxas", render: (row) => formatCurrency(getTotalLancadoSemTaxas(row)) },
             { key: "taxa_estadual", header: "Taxa estadual", render: (row) => formatCurrency(getTaxaEstadual(row)) },
             { key: "taxa_interestadual", header: "Taxa interestadual", render: (row) => formatCurrency(getTaxaInterestadual(row)) },
             { key: "total_taxas", header: "Total taxas", render: (row) => formatCurrency(getTotalTaxas(row)) },
             { key: "total_geral_lancado", header: "Total geral", render: (row) => formatCurrency(getTotalGeralLancado(row)) },
+            { key: "total_abatimentos", header: "Abatimentos", render: (row) => formatCurrency(getTotalAbatimentos(row)) },
+            { key: "resultado_liquido", header: "Resultado liquido", render: (row) => formatCurrency(getResultadoLiquido(row)) },
             { key: "diferenca_cea", header: "Diferenca CEA", render: (row) => {
               const status = getConferenceStatus(row);
               return <span className={`font-semibold ${status.textClass}`}>{formatCurrency(getDiferencaCea(row))}</span>;

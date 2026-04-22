@@ -82,6 +82,51 @@ type TopCompanyDatum = {
   repasse: number;
 };
 
+type FinanceByBoothSummary = {
+  boothId: string;
+  boothLabel: string;
+  grossSales: number;
+  txCount: number;
+  companyCount: number;
+  pixSales: number;
+  creditSales: number;
+  debitSales: number;
+  cashSales: number;
+  linkSales: number;
+  costsAmount: number;
+  sangriaResumo: number;
+  totalAbatimentos: number;
+  netResult: number;
+  suprimento: number;
+  sangria: number;
+  ajuste: number;
+  saldo: number;
+  expected: number;
+  declared: number;
+  difference: number;
+  stateTaxCount: number;
+  stateTaxValue: number;
+  federalTaxCount: number;
+  federalTaxValue: number;
+  movementCount: number;
+  closingCount: number;
+};
+
+type FinanceByBoothCompanyRow = {
+  boothId: string;
+  boothLabel: string;
+  company: string;
+  operatorName: string;
+  totalVendidoExterno: number;
+  totalLancado: number;
+  totalAbatimentos: number;
+  resultadoLiquido: number;
+  taxaEstadual: number;
+  taxaInterestadual: number;
+  custos: number;
+  sangria: number;
+};
+
 function formatPayoutDeadline(days: number | null | undefined) {
   const safeDays = typeof days === "number" && Number.isFinite(days) && days >= 0 ? Math.trunc(days) : 0;
   return `D+${safeDays}`;
@@ -124,6 +169,12 @@ type AdminDashboardSectionProps = {
     qtd_federal: number;
     valor_federal: number;
   };
+  summaryClosingTotals: {
+    totalAbatimentos: number;
+    resultadoLiquido: number;
+  };
+  financeByBooth: FinanceByBoothSummary[];
+  financeByBoothCompany: FinanceByBoothCompanyRow[];
 };
 
 export function AdminDashboardSection({
@@ -146,6 +197,9 @@ export function AdminDashboardSection({
   rows,
   adjustments,
   boardingTaxAudit,
+  summaryClosingTotals,
+  financeByBooth,
+  financeByBoothCompany,
   onExportCSV,
   onForceCloseShift,
   onApproveAdjustment,
@@ -208,6 +262,11 @@ export function AdminDashboardSection({
       <div className="grid grid-cols-2 gap-4">
         <StatCard label="Taxa Estadual" value={formatCurrency(boardingTaxAudit.valor_estadual)} icon={<Banknote className="h-5 w-5" />} delta={`${boardingTaxAudit.qtd_estadual} emitida${boardingTaxAudit.qtd_estadual !== 1 ? "s" : ""}`} />
         <StatCard label="Taxa Federal" value={formatCurrency(boardingTaxAudit.valor_federal)} icon={<Banknote className="h-5 w-5" />} delta={`${boardingTaxAudit.qtd_federal} emitida${boardingTaxAudit.qtd_federal !== 1 ? "s" : ""}`} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <StatCard label="Custos e Sangrias" value={formatCurrency(summaryClosingTotals.totalAbatimentos)} icon={<CreditCard className="h-5 w-5" />} delta="Abatimentos do resumo" />
+        <StatCard label="Resultado Liquido Diario" value={formatCurrency(summaryClosingTotals.resultadoLiquido)} icon={<Wallet className="h-5 w-5" />} delta="Lancado menos abatimentos" />
       </div>
 
       {isMounted && (
@@ -319,6 +378,41 @@ export function AdminDashboardSection({
           ]}
           rows={rows.slice(0, 50)}
           emptyMessage="Nenhum turno encontrado."
+        />
+      </Card>
+
+      <Card>
+        <SectionHeader title="Acompanhamento Por Guiche" subtitle="Resumo em tempo real do fechamento por resumo." className="mb-4" />
+        <DataTable
+          columns={[
+            { key: "guiche", header: "Guiche", render: (row) => <span className="font-semibold">{row.boothLabel}</span> },
+            { key: "empresas", header: "Empresas", render: (row) => row.companyCount },
+            { key: "externo", header: "Total externo", render: (row) => formatCurrency(row.grossSales) },
+            { key: "taxas", header: "Taxas", render: (row) => formatCurrency(row.stateTaxValue + row.federalTaxValue) },
+            { key: "abatimentos", header: "Abatimentos", render: (row) => formatCurrency(row.totalAbatimentos) },
+            { key: "liquido", header: "Resultado liquido", render: (row) => formatCurrency(row.netResult) },
+            { key: "caixa", header: "Fechamento caixa", render: (row) => row.closingCount > 0 ? formatCurrency(row.declared) : "-" },
+          ]}
+          rows={financeByBooth}
+          emptyMessage="Nenhum fechamento por guiche encontrado no periodo."
+        />
+      </Card>
+
+      <Card>
+        <SectionHeader title="Empresas Dentro De Cada Guiche" subtitle="Relatorio final diario por guiche, empresa e operador." className="mb-4" />
+        <DataTable
+          columns={[
+            { key: "guiche", header: "Guiche", render: (row) => row.boothLabel },
+            { key: "empresa", header: "Empresa", render: (row) => <span className="font-semibold">{row.company}</span> },
+            { key: "operador", header: "Operador", render: (row) => row.operatorName },
+            { key: "externo", header: "Total externo", render: (row) => formatCurrency(row.totalVendidoExterno) },
+            { key: "lancado", header: "Total lancado", render: (row) => formatCurrency(row.totalLancado) },
+            { key: "taxas", header: "Taxas", render: (row) => formatCurrency(row.taxaEstadual + row.taxaInterestadual) },
+            { key: "abatimentos", header: "Abatimentos", render: (row) => formatCurrency(row.totalAbatimentos) },
+            { key: "liquido", header: "Resultado liquido", render: (row) => formatCurrency(row.resultadoLiquido) },
+          ]}
+          rows={financeByBoothCompany}
+          emptyMessage="Nenhum resumo por empresa encontrado no periodo."
         />
       </Card>
 

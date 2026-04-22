@@ -109,6 +109,7 @@ type DailyCashClosingRow = {
   user_id?: string | null;
   date: string;
   company: string;
+  total_vendido_externo?: number | string | null;
   total_sold?: number | string | null;
   total_informado?: number | string | null;
   total_cea?: number | string | null;
@@ -136,6 +137,10 @@ type DailyCashClosingRow = {
   qtd_taxa_estadual?: number | string | null;
   qtd_taxa_interestadual?: number | string | null;
   link_pagamento?: number | string | null;
+  costs_amount?: number | string | null;
+  sangria_amount?: number | string | null;
+  total_abatimentos?: number | string | null;
+  resultado_liquido?: number | string | null;
   cash_net?: number | string | null;
   status?: "open" | "closed" | string | null;
   status_conferencia?: "CONFERIDO" | "FALTANDO" | "EXCEDIDO" | string | null;
@@ -178,10 +183,16 @@ type FinanceByBoothSummary = {
   boothLabel: string;
   grossSales: number;
   txCount: number;
+  companyCount: number;
   pixSales: number;
   creditSales: number;
   debitSales: number;
   cashSales: number;
+  linkSales: number;
+  costsAmount: number;
+  sangriaResumo: number;
+  totalAbatimentos: number;
+  netResult: number;
   suprimento: number;
   sangria: number;
   ajuste: number;
@@ -195,6 +206,21 @@ type FinanceByBoothSummary = {
   federalTaxValue: number;
   movementCount: number;
   closingCount: number;
+};
+
+type FinanceByBoothCompanyRow = {
+  boothId: string;
+  boothLabel: string;
+  company: string;
+  operatorName: string;
+  totalVendidoExterno: number;
+  totalLancado: number;
+  totalAbatimentos: number;
+  resultadoLiquido: number;
+  taxaEstadual: number;
+  taxaInterestadual: number;
+  custos: number;
+  sangria: number;
 };
 
 const DEFAULT_BOARDING_TAXES: BoardingTax[] = [
@@ -906,6 +932,14 @@ export default function AdminRebuildPage() {
     return auditToNum(row.total_geral_lancado ?? (getAuditTotalSemTaxas(row) + getAuditTotalTaxas(row)));
   }
 
+  function getAuditTotalAbatimentos(row: DailyCashClosingRow) {
+    return auditToNum(row.total_abatimentos ?? (auditToNum(row.costs_amount) + auditToNum(row.sangria_amount)));
+  }
+
+  function getAuditResultadoLiquido(row: DailyCashClosingRow) {
+    return auditToNum(row.resultado_liquido ?? (getAuditTotalGeralLancado(row) - getAuditTotalAbatimentos(row)));
+  }
+
   function getAuditDiferencaCea(row: DailyCashClosingRow) {
     return auditToNum(row.diferenca_cea ?? row.ceia_faltante ?? row.diferenca);
   }
@@ -1036,6 +1070,11 @@ export default function AdminRebuildPage() {
     difference: shiftCashClosingRows.reduce((a,r)=>a+Number(r.difference||0),0),
   }), [shiftCashClosingRows]);
 
+  const summaryClosingTotals = useMemo(() => dailyCashClosingRows.reduce((acc, row) => ({
+    totalAbatimentos: acc.totalAbatimentos + getAuditTotalAbatimentos(row),
+    resultadoLiquido: acc.resultadoLiquido + getAuditResultadoLiquido(row),
+  }), { totalAbatimentos: 0, resultadoLiquido: 0 }), [dailyCashClosingRows]);
+
   const financeByBooth = useMemo<FinanceByBoothSummary[]>(() => {
     const summaryMap = new Map<string, FinanceByBoothSummary>();
 
@@ -1053,10 +1092,16 @@ export default function AdminRebuildPage() {
           boothLabel,
           grossSales: 0,
           txCount: 0,
+          companyCount: 0,
           pixSales: 0,
           creditSales: 0,
           debitSales: 0,
           cashSales: 0,
+          linkSales: 0,
+          costsAmount: 0,
+          sangriaResumo: 0,
+          totalAbatimentos: 0,
+          netResult: 0,
           suprimento: 0,
           sangria: 0,
           ajuste: 0,
@@ -1076,30 +1121,28 @@ export default function AdminRebuildPage() {
       return summaryMap.get(normalizedBoothId)!;
     };
 
-    for (const tx of reportTxs) {
-      const summaryRow = ensureSummary(tx.booth_id, tx.booths ?? null);
-      const amount = Number(tx.amount || 0);
-      const paymentMethod = (tx.payment_method ?? "").toLowerCase();
-      const stateTax = Number(tx.boarding_tax_state || 0);
-      const federalTax = Number(tx.boarding_tax_federal || 0);
+    for (const row of dailyCashClosingRows) {
+      const summaryRow = ensureSummary(row.office_id, row.booths ?? null);
+      const companySet = new Set((summaryRow as FinanceByBoothSummary & { _companies?: Set<string> })._companies ?? []);
+      const companyName = String(row.company ?? "").trim();
+      if (companyName) companySet.add(companyName.toLowerCase());
+      (summaryRow as FinanceByBoothSummary & { _companies?: Set<string> })._companies = companySet;
 
-      summaryRow.grossSales += amount;
+      summaryRow.grossSales += getAuditTotalCea(row);
       summaryRow.txCount += 1;
-
-      if (paymentMethod === "pix") summaryRow.pixSales += amount;
-      else if (paymentMethod === "credit") summaryRow.creditSales += amount;
-      else if (paymentMethod === "debit") summaryRow.debitSales += amount;
-      else if (paymentMethod === "cash") summaryRow.cashSales += amount;
-
-      if (stateTax > 0) {
-        summaryRow.stateTaxCount += 1;
-        summaryRow.stateTaxValue += stateTax;
-      }
-
-      if (federalTax > 0) {
-        summaryRow.federalTaxCount += 1;
-        summaryRow.federalTaxValue += federalTax;
-      }
+      summaryRow.pixSales += auditToNum(row.ceia_pix);
+      summaryRow.creditSales += auditToNum(row.ceia_credito);
+      summaryRow.debitSales += auditToNum(row.ceia_debito);
+      summaryRow.cashSales += auditToNum(row.ceia_dinheiro);
+      summaryRow.linkSales += auditToNum(row.link_pagamento);
+      summaryRow.costsAmount += auditToNum(row.costs_amount);
+      summaryRow.sangriaResumo += auditToNum(row.sangria_amount);
+      summaryRow.totalAbatimentos += getAuditTotalAbatimentos(row);
+      summaryRow.netResult += getAuditResultadoLiquido(row);
+      summaryRow.stateTaxCount += Number(row.qtd_taxa_estadual ?? 0);
+      summaryRow.stateTaxValue += getAuditTaxaEstadual(row);
+      summaryRow.federalTaxCount += Number(row.qtd_taxa_interestadual ?? 0);
+      summaryRow.federalTaxValue += getAuditTaxaInterestadual(row);
     }
 
     for (const movement of cashMovementRows) {
@@ -1124,10 +1167,55 @@ export default function AdminRebuildPage() {
     return Array.from(summaryMap.values())
       .map((summaryRow) => ({
         ...summaryRow,
+        companyCount: ((summaryRow as FinanceByBoothSummary & { _companies?: Set<string> })._companies?.size ?? 0),
         saldo: summaryRow.cashSales + summaryRow.suprimento - summaryRow.sangria + summaryRow.ajuste,
       }))
       .sort((a, b) => a.boothLabel.localeCompare(b.boothLabel));
-  }, [cashMovementRows, reportTxs, shiftCashClosingRows]);
+  }, [cashMovementRows, dailyCashClosingRows, shiftCashClosingRows]);
+
+  const financeByBoothCompany = useMemo<FinanceByBoothCompanyRow[]>(() => {
+    const summaryMap = new Map<string, FinanceByBoothCompanyRow>();
+
+    for (const row of dailyCashClosingRows) {
+      const booth = boothOf(row.booths ?? null);
+      const boothLabel = booth ? `${booth.code} - ${booth.name}` : row.booth_name ? `${row.booth_code ?? "-"} - ${row.booth_name}` : "Sem guiche";
+      const companyName = String(row.company ?? "-");
+      const operatorName = row.operator_name ?? nameOf(row.profiles ?? null) ?? "-";
+      const key = `${row.office_id ?? "sem-guiche"}::${companyName}`;
+
+      if (!summaryMap.has(key)) {
+        summaryMap.set(key, {
+          boothId: row.office_id ?? "sem-guiche",
+          boothLabel,
+          company: companyName,
+          operatorName,
+          totalVendidoExterno: 0,
+          totalLancado: 0,
+          totalAbatimentos: 0,
+          resultadoLiquido: 0,
+          taxaEstadual: 0,
+          taxaInterestadual: 0,
+          custos: 0,
+          sangria: 0,
+        });
+      }
+
+      const summary = summaryMap.get(key)!;
+      summary.totalVendidoExterno += getAuditTotalCea(row);
+      summary.totalLancado += getAuditTotalGeralLancado(row);
+      summary.totalAbatimentos += getAuditTotalAbatimentos(row);
+      summary.resultadoLiquido += getAuditResultadoLiquido(row);
+      summary.taxaEstadual += getAuditTaxaEstadual(row);
+      summary.taxaInterestadual += getAuditTaxaInterestadual(row);
+      summary.custos += auditToNum(row.costs_amount);
+      summary.sangria += auditToNum(row.sangria_amount);
+    }
+
+    return Array.from(summaryMap.values()).sort((a, b) => {
+      const boothCompare = a.boothLabel.localeCompare(b.boothLabel, "pt-BR");
+      return boothCompare !== 0 ? boothCompare : a.company.localeCompare(b.company, "pt-BR");
+    });
+  }, [dailyCashClosingRows]);
 
   async function applyDateFilters() {
     if (dateFrom && dateTo && dateFrom > dateTo) {
@@ -1930,6 +2018,9 @@ export default function AdminRebuildPage() {
             onClearFilters={clearDateFilters}
             repassesComputed={repassesComputed}
             boardingTaxAudit={boardingTaxAudit}
+            summaryClosingTotals={summaryClosingTotals}
+            financeByBooth={financeByBooth}
+            financeByBoothCompany={financeByBoothCompany}
             reportTxCount={dailyCashClosingRows.length}
             summary={summary}
             dailyRevenueData={dailyRevenueData}

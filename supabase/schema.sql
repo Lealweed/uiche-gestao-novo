@@ -231,14 +231,16 @@ create table if not exists public.daily_cash_closings (
   ceia_dinheiro numeric(12,2) not null default 0 check (ceia_dinheiro >= 0),
   ceia_total_lancado numeric(12,2) not null default 0 check (ceia_total_lancado >= 0),
   ceia_faltante numeric(12,2) not null default 0,
-  cash_net numeric(12,2) generated always as (round((amount_cash - ceia_amount)::numeric, 2)) stored,
+  qtd_taxa_estadual integer not null default 0 check (qtd_taxa_estadual >= 0),
+  qtd_taxa_interestadual integer not null default 0 check (qtd_taxa_interestadual >= 0),
+  link_pagamento numeric(12,2) not null default 0 check (link_pagamento >= 0),
+  costs_amount numeric(12,2) not null default 0 check (costs_amount >= 0),
+  sangria_amount numeric(12,2) not null default 0 check (sangria_amount >= 0),
+  cash_net numeric(12,2) not null default 0,
   status text not null default 'open' check (status in ('open', 'closed')),
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint daily_cash_closings_payment_sum_check check (
-    round((amount_pix + amount_card + amount_cash)::numeric, 2) = round(total_sold::numeric, 2)
-  ),
   unique(office_id, user_id, date, company)
 );
 
@@ -246,6 +248,7 @@ create index if not exists daily_cash_closings_office_idx on public.daily_cash_c
 create index if not exists daily_cash_closings_user_idx on public.daily_cash_closings(user_id, date desc);
 create index if not exists daily_cash_closings_company_idx on public.daily_cash_closings(company);
 create index if not exists daily_cash_closings_tenant_idx on public.daily_cash_closings(tenant_id);
+create index if not exists daily_cash_closings_status_date_idx on public.daily_cash_closings(status, date desc);
 
 -- Compatibilidade SaaS / recovery-safe
 do $$
@@ -289,6 +292,8 @@ alter table if exists public.daily_cash_closings add column if not exists ceia_l
 alter table if exists public.daily_cash_closings add column if not exists ceia_dinheiro numeric(12,2) not null default 0 check (ceia_dinheiro >= 0);
 alter table if exists public.daily_cash_closings add column if not exists ceia_total_lancado numeric(12,2) not null default 0 check (ceia_total_lancado >= 0);
 alter table if exists public.daily_cash_closings add column if not exists ceia_faltante numeric(12,2) not null default 0;
+alter table if exists public.daily_cash_closings add column if not exists costs_amount numeric(12,2) not null default 0 check (costs_amount >= 0);
+alter table if exists public.daily_cash_closings add column if not exists sangria_amount numeric(12,2) not null default 0 check (sangria_amount >= 0);
 
 update public.profiles set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
 update public.booths set tenant_id = (select id from public.tenants where slug = 'default') where tenant_id is null;
@@ -529,6 +534,134 @@ left join public.transactions t on t.shift_id = s.id
 left join public.transaction_receipts r on r.transaction_id = t.id
 group by s.id, b.name, p.full_name;
 
+create or replace view public.vw_ceia_closing_report as
+select
+  d.id,
+  d.office_id,
+  d.user_id,
+  d.date,
+  d.company,
+  d.total_sold,
+  d.amount_pix,
+  d.amount_card,
+  d.amount_cash,
+  d.ceia_base,
+  d.ceia_pix,
+  d.ceia_debito,
+  d.ceia_credito,
+  d.ceia_link_estadual,
+  d.ceia_link_interestadual,
+  d.ceia_dinheiro,
+  d.ceia_total_lancado,
+  d.ceia_faltante,
+  d.qtd_taxa_estadual,
+  d.qtd_taxa_interestadual,
+  d.link_pagamento,
+  d.costs_amount,
+  d.sangria_amount,
+  (
+    coalesce(d.costs_amount, 0)
+    + coalesce(d.sangria_amount, 0)
+  )::numeric(12,2) as total_abatimentos,
+  (
+    coalesce(d.ceia_total_lancado, 0)
+    - coalesce(d.costs_amount, 0)
+    - coalesce(d.sangria_amount, 0)
+  )::numeric(12,2) as resultado_liquido,
+  d.cash_net,
+  d.status,
+  d.notes,
+  d.created_at,
+  p.full_name as operator_name,
+  b.name as booth_name,
+  b.code as booth_code
+from public.daily_cash_closings d
+left join public.profiles p on p.user_id = d.user_id
+left join public.booths b on b.id = d.office_id;
+
+create or replace view public.v_admin_cash_audit as
+select
+  d.id,
+  d.office_id,
+  d.user_id,
+  d.date,
+  d.company,
+  d.total_sold as total_vendido_externo,
+  d.total_sold,
+  d.ceia_base as total_informado,
+  d.ceia_base as total_cea,
+  (
+    coalesce(d.ceia_pix, 0)
+    + coalesce(d.ceia_debito, 0)
+    + coalesce(d.ceia_credito, 0)
+    + coalesce(d.ceia_dinheiro, 0)
+    + coalesce(d.link_pagamento, 0)
+  )::numeric(12,2) as total_lancado_sem_taxas,
+  d.ceia_link_estadual as taxa_estadual,
+  d.ceia_link_interestadual as taxa_interestadual,
+  (
+    coalesce(d.ceia_link_estadual, 0)
+    + coalesce(d.ceia_link_interestadual, 0)
+  )::numeric(12,2) as total_taxas,
+  (
+    coalesce(d.ceia_pix, 0)
+    + coalesce(d.ceia_debito, 0)
+    + coalesce(d.ceia_credito, 0)
+    + coalesce(d.ceia_dinheiro, 0)
+    + coalesce(d.link_pagamento, 0)
+    + coalesce(d.ceia_link_estadual, 0)
+    + coalesce(d.ceia_link_interestadual, 0)
+  )::numeric(12,2) as total_geral_lancado,
+  d.amount_pix,
+  d.amount_card,
+  d.amount_cash,
+  d.ceia_amount,
+  d.ceia_base,
+  d.ceia_pix,
+  d.ceia_debito,
+  d.ceia_credito,
+  d.ceia_link_estadual,
+  d.ceia_link_interestadual,
+  d.ceia_dinheiro,
+  d.ceia_total_lancado,
+  d.ceia_total_lancado as total_lancado,
+  d.ceia_faltante,
+  d.ceia_faltante as diferenca,
+  d.ceia_faltante as diferenca_cea,
+  d.qtd_taxa_estadual,
+  d.qtd_taxa_interestadual,
+  d.link_pagamento,
+  d.costs_amount,
+  d.sangria_amount,
+  (
+    coalesce(d.costs_amount, 0)
+    + coalesce(d.sangria_amount, 0)
+  )::numeric(12,2) as total_abatimentos,
+  (
+    coalesce(d.ceia_total_lancado, 0)
+    - coalesce(d.costs_amount, 0)
+    - coalesce(d.sangria_amount, 0)
+  )::numeric(12,2) as resultado_liquido,
+  d.cash_net,
+  d.status,
+  case
+    when abs(coalesce(d.ceia_faltante, 0)) < 0.01 then 'CONFERIDO'
+    when coalesce(d.ceia_faltante, 0) > 0 then 'FALTANDO'
+    else 'EXCEDIDO'
+  end as status_conferencia,
+  d.notes,
+  d.created_at,
+  p.full_name as operator_name,
+  b.name as booth_name,
+  b.code as booth_code
+from public.daily_cash_closings d
+left join public.profiles p on p.user_id = d.user_id
+left join public.booths b on b.id = d.office_id;
+
+grant select on public.v_shift_totals to authenticated;
+grant select on public.vw_ceia_closing_report to authenticated;
+grant select on public.v_admin_cash_audit to authenticated;
+
 -- RLS
 alter table public.profiles enable row level security;
 alter table public.booths enable row level security;
@@ -727,6 +860,11 @@ for insert with check (
       and s.status = 'open'
   )
 );
+
+drop policy if exists shift_cash_closings_self_update on public.shift_cash_closings;
+create policy shift_cash_closings_self_update on public.shift_cash_closings
+for update using (user_id = auth.uid())
+with check (user_id = auth.uid());
 
 drop policy if exists shift_cash_closings_admin_update on public.shift_cash_closings;
 create policy shift_cash_closings_admin_update on public.shift_cash_closings
